@@ -4,7 +4,7 @@
 
 ## 專案定位
 
-OpenWorker 工程版是 AI 工程顧問公司的 AI 員工與自然語言操作層；AI-Engineering-OS 保持 Project / Job / Workflow / Artifact lifecycle 權威，專業 Engine 保持工程算法權威。
+OpenWorker 工程版是 AI 工程顧問公司的 AI 員工與自然語言操作層；AI-Engineering-OS 保持 Project / Job / Workflow / Artifact / Review / Delivery lifecycle 權威，專業 Engine 保持工程算法權威。
 
 ## 目前完成度
 
@@ -16,82 +16,99 @@ OpenWorker 工程版是 AI 工程顧問公司的 AI 員工與自然語言操作�
 - E5 Digital Thread / Provenance：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`
 - E6 RC Column Golden Job：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`
 - E6.1 Lifecycle Closure：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`
+- E6.2 Review / Approval / Delivery Closure：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`
 - E7 Media / Company Coworker：`NOT_STARTED`
 
-## E6.1 已完成內容
+## E6.2 權威來源盤點
 
-AI-Engineering-OS 現有 HTTP API 已確認包含：
+直接核對 AI-Engineering-OS 啟動程式與 domain code 後確認，Review / Approval / Delivery 並非缺失，只是先前 OpenWorker bridge 尚未接入：
 
-- `POST /api/v1/jobs/{id}/transitions`
-- `GET /api/v1/jobs/{id}/artifacts`
-- `POST /api/v1/projects/{id}/artifacts`
-- `GET /api/v1/artifacts/{id}`
+- `GET /api/v1/jobs/{id}/reviews`
+- `GET /api/v1/jobs/{id}/approval-status`
+- `GET /api/v1/artifacts/{id}/reviews`
+- `POST /api/v1/artifacts/{id}/reviews`
+- `GET /api/v1/jobs/{id}/deliveries`
+- `GET /api/v1/jobs/{id}/deliveries/latest`
+- `POST /api/v1/jobs/{id}/publish`
 
-OpenWorker `EngineeringOSClient` 已新增對應 bridge：
+AI-Engineering-OS 的 Approval 語義是衍生狀態，不是另一張 Approval entity：每一個 Job 目前最新 Artifact revision 都必須有最新 `approved` Review，`ApprovalStatus.Approved` 才為 true。全部核准時 Review Service 會把 Job 從 `review → completed`；發布時 Delivery Service 再次執行 `RequireApproved()`，驗證成果 checksum 並在成功後 `completed → published`。
 
-- `transition_job()`
-- `list_job_artifacts()`
-- `register_artifact()`
-- `get_artifact()`
+## OpenWorker E6.2 已完成
 
-RC Column Golden Job 現在走：
+`EngineeringOSClient` 新增：
+
+- `list_job_reviews()`
+- `list_artifact_reviews()`
+- `approval_status()`
+- `submit_artifact_review()`
+- `list_deliveries()`
+- `latest_delivery()`
+- `publish_job()`
+
+Tool Facade 新增：
+
+- `engineering_get_approval_status`：唯讀，不需 approval。
+- `engineering_list_job_reviews`：唯讀，不需 approval。
+- `engineering_submit_artifact_review`：會改變治理狀態，`requires_approval=True`。
+- `engineering_list_deliveries`：唯讀，不需 approval。
+- `engineering_publish_job`：正式發布外部副作用，`requires_approval=True`。
+
+RC Column Golden Job 新增顯式治理階段：
 
 ```text
-draft
-→ queued
-→ running
-→ forge.rc-column
-→ Design Forge Artifact
-→ AI-Engineering-OS Artifact registration
-→ review
-→ Digital Thread
+run()
+→ Job review state
+→ approve_for_delivery(reviewer=...)
+   → 對每個 registered Artifact 提交 approved Review
+   → AI-Engineering-OS derived approval status
+   → Job completed
+→ publish(publisher=...)
+   → AI-Engineering-OS RequireApproved
+   → checksum / delivery staging / website rebuild
+   → Job published
 ```
 
-Digital Thread 同時保存 Design Forge source Artifact、AI-Engineering-OS registered Artifact 與 review-state Job，並建立：
-
-```text
-OS Artifact --belongs_to_job--> OS Job
-OS Artifact --derived_from--> Design Forge Artifact
-```
-
-失敗補償：進入 `running` 後若專業計算、Artifact validation 或 Artifact registration 失敗，Golden Job 會嘗試走 AI-Engineering-OS 合法的 `running → cancelled` transition；不直接修改 OS 儲存層。
+`run()` 絕不自動呼叫 approve/publish。審查人與發布人必須由顯式操作提供，且 Agent Tool 層仍會經 OpenWorker Approval Gate。
 
 ## 目前 P0
 
-1. E1～E6.1 尚待完整 checkout + dependencies 的 pytest / compileall / diff check。
+1. E1～E6.2 尚待完整 checkout + dependencies 的 pytest / compileall / diff check。
 2. 真實 AI-Engineering-OS + civilforge-tool 多 repo runtime E2E 尚未執行。
-3. AI-Engineering-OS 正式 HTTP surface 目前未見獨立 Review decision / Approval / Delivery endpoint，因此 Golden Job 必須停在 `review`，不得自動冒充 completed/published。
+3. Golden Job 尚未把 EngSketch production drawing mutation 與 AI-BIM-Forge IFC mutation納入正式交付物。
 
 ## P1
 
-- 建立/接入正式 Review / Approval / Delivery API 後，延伸 Golden Job 至 completed / published。
 - EngSketch production drawing mutation 接入 Golden Job。
 - AI-BIM-Forge production IFC mutation 接入 Golden Job。
 - pcces-web / Quantity / Schedule / DWG/PDF 第二批 adapters。
 - adapter config persistence 與 Digital Thread persistence。
+- Review / Delivery evidence 納入 Digital Thread schema 的下一版。
 
-## Segment E6 / E6.1 驗收
+## E6 系列驗收
 
 - [x] RC Column schema / identity fail-closed。
 - [x] dependency readiness 在 side effect 前檢查。
 - [x] 建立 AI-Engineering-OS Job。
-- [x] `draft → queued → running` authoritative transitions。
+- [x] `draft → queued → running → review` authoritative transitions。
 - [x] 呼叫 `forge.rc-column` / `1.0.0`。
 - [x] protocol status 與 `design_ok` 分離。
-- [x] authoritative hashed Artifact validation。
 - [x] Design Artifact 正式註冊 AI-Engineering-OS Artifact。
-- [x] `running → review`。
 - [x] failure compensation `running → cancelled`。
 - [x] OS Artifact ↔ Design Artifact ↔ Job Digital Thread。
+- [x] Artifact Review bridge。
+- [x] derived Approval Status bridge。
+- [x] 全部 Artifact approved 後確認 Job `completed`。
+- [x] Delivery publish bridge，並由 OS 再次執行 approval / checksum gate。
+- [x] 發布後由 OS 轉為 `published`。
+- [x] governance mutating tools 維持 OpenWorker `requires_approval=True`。
 - [x] permanent regression tests / 中文規格 / self-review。
 - [ ] full repository verification。
 - [ ] real multi-repo runtime E2E。
-- [ ] approval / delivery closure。
-- [ ] EngSketch / BIM mutation。
+- [ ] EngSketch / BIM production mutation。
 
 ## 下一階段
 
-在 E7 前，優先處理 E6.2：確認 AI-Engineering-OS 是否已有尚未暴露的 Review / Approval / Delivery domain service；若存在則補 HTTP + OpenWorker bridge，若不存在則只做明確缺口規格，不在 OpenWorker 私造第二套 lifecycle。
+E6.3：把 EngSketch 正式圖面與 AI-BIM-Forge IFC Artifact 接入同一 Golden Job，讓 Approval Gate 不只核准 calculation trace，而是核准「計算 + 圖面 + BIM」的完整當前成果集合。
 
 ## 驗證原則
 

@@ -1,4 +1,4 @@
-"""E6 Golden Job: controlled RC-column path closed to AI-Engineering-OS review state."""
+"""E6 Golden Job: controlled RC-column path with explicit review/publish closure."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -14,6 +14,10 @@ class JobControlPlane(Protocol):
     def create_job(self, **kwargs: Any) -> dict[str, Any]: ...
     def transition_job(self, **kwargs: Any) -> dict[str, Any]: ...
     def register_artifact(self, **kwargs: Any) -> dict[str, Any]: ...
+    def submit_artifact_review(self, **kwargs: Any) -> dict[str, Any]: ...
+    def approval_status(self, job_id: str) -> dict[str, Any]: ...
+    def publish_job(self, **kwargs: Any) -> dict[str, Any]: ...
+    def get_job(self, job_id: str) -> dict[str, Any]: ...
 
 
 class Specialist(Protocol):
@@ -33,6 +37,13 @@ class GoldenJobResult:
     design_result: dict[str, Any]
     registered_artifacts: tuple[dict[str, Any], ...]
     digital_thread: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class GoldenJobReviewResult:
+    reviews: tuple[dict[str, Any], ...]
+    approval_status: dict[str, Any]
+    job: dict[str, Any]
 
 
 @dataclass
@@ -135,6 +146,40 @@ class RCColumnGoldenJob:
             except Exception:
                 pass
             raise
+
+    def approve_for_delivery(self, result: GoldenJobResult, *, reviewer: str,
+                             comment: str = "") -> GoldenJobReviewResult:
+        """Explicitly approve every current Golden Job artifact; never called by run()."""
+        job_id = _required_result_text(result.job, "id", "Golden Job")
+        if result.job.get("status") != "review":
+            raise RuntimeError("Golden Job must be in review status before approval")
+        reviews: list[dict[str, Any]] = []
+        for artifact in result.registered_artifacts:
+            artifact_id = _required_result_text(artifact, "id", "registered Artifact")
+            reviews.append(self.os_client.submit_artifact_review(
+                job_id=job_id,
+                artifact_id=artifact_id,
+                reviewer=reviewer,
+                decision="approved",
+                comment=comment,
+            ))
+        status = self.os_client.approval_status(job_id)
+        if status.get("approved") is not True:
+            raise RuntimeError("AI-Engineering-OS did not approve all current artifact revisions")
+        job = self.os_client.get_job(job_id)
+        if job.get("status") != "completed":
+            raise RuntimeError("approved Golden Job must transition to completed in AI-Engineering-OS")
+        return GoldenJobReviewResult(tuple(reviews), status, job)
+
+    def publish(self, review: GoldenJobReviewResult, *, publisher: str,
+                note: str = "") -> dict[str, Any]:
+        """Publish only after the authoritative approval gate reports approved."""
+        job_id = _required_result_text(review.job, "id", "approved Golden Job")
+        if review.approval_status.get("approved") is not True:
+            raise RuntimeError("Golden Job is not approved for delivery")
+        if review.job.get("status") != "completed":
+            raise RuntimeError("Golden Job must be completed before delivery publish")
+        return self.os_client.publish_job(job_id=job_id, publisher=publisher, note=note)
 
 
 def _required_result_text(payload: Mapping[str, Any], key: str, context: str) -> str:

@@ -21,7 +21,7 @@ def test_engineering_manifest_declares_control_plane_capability():
     assert "engineering_os" in manifest.tools
 
 
-def test_catalog_expands_engineering_control_plane_tools_without_special_engine_branching(tmp_path):
+def test_catalog_expands_engineering_control_plane_and_governance_tools_without_special_engine_branching(tmp_path):
     context = AgentContext(workspace=tmp_path, todo=TodoList())
     tools = expand(["engineering_os"], context)
     names = [tool.__name__ for tool in tools]
@@ -32,6 +32,11 @@ def test_catalog_expands_engineering_control_plane_tools_without_special_engine_
         "engineering_list_jobs",
         "engineering_get_job",
         "engineering_create_job",
+        "engineering_get_approval_status",
+        "engineering_list_job_reviews",
+        "engineering_submit_artifact_review",
+        "engineering_list_deliveries",
+        "engineering_publish_job",
     ]
 
 
