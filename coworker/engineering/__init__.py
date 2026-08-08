@@ -19,6 +19,7 @@ from .engineering_os import (
     TransportResponse,
     UrllibEngineeringOSTransport,
 )
+from .tools import engineering_os_tools
 
 __all__ = [
     "AdapterDescriptor",
@@ -38,4 +39,5 @@ __all__ = [
     "HealthStatus",
     "TransportResponse",
     "UrllibEngineeringOSTransport",
+    "engineering_os_tools",
 ]
