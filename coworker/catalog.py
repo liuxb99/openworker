@@ -1,8 +1,22 @@
-"""Vetted tool catalog — the stable ``id → capability`` layer a persona references."""
+"""Vetted tool catalog — the stable ``id → capability`` layer a persona references.
+
+A *capability* bundles a group of tools (the existing ``tools/`` factories) behind a stable
+id, plus what session context it needs (``requires``) and the risk classes it can produce
+(``risk``, used by the Phase 2 install-consent screen). ``expand(ids, context)`` turns a
+persona's ``tools:`` list into concrete callables, skipping capabilities whose context
+prerequisites aren't met (e.g. no shell without an executor) — matching the per-agent
+factories that used to assemble tools by hand.
+
+The catalog is **platform-owned and closed**: third parties get breadth from us adding
+vetted capabilities here and from MCP, never by adding entries. MCP tools are *not* in the
+catalog (see ``PERMISSIONS-AND-INBOX.md``).
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Callable
+
 import aisuite as ai
 
 from .agents.base import AgentContext
@@ -21,6 +35,7 @@ _REQUIREMENTS: dict[str, Callable[[AgentContext], bool]] = {
     "todo": lambda c: c.todo is not None,
 }
 
+
 @dataclass(frozen=True)
 class Capability:
     id: str
@@ -29,46 +44,138 @@ class Capability:
     build: Callable[[AgentContext], list]
     requires: tuple[str, ...] = ()
     risk: tuple[RiskClass, ...] = (RiskClass.READ,)
+
     def available(self, context: AgentContext) -> bool:
         return all(_REQUIREMENTS[r](context) for r in self.requires)
 
+
 def _code_files(context: AgentContext) -> list:
-    ws = str(context.workspace); replaced = {"search_files", "read_file", "read_file_lines"}
-    files = [t for t in ai.toolkits.files(root=ws, allow_write=True) if getattr(t,"__name__","") not in replaced]
+    ws = str(context.workspace)
+    replaced = {"search_files", "read_file", "read_file_lines"}
+    files = [
+        t
+        for t in ai.toolkits.files(root=ws, allow_write=True)
+        if getattr(t, "__name__", "") not in replaced
+    ]
     return [*files, *file_tools(ws)]
+
+
 def _files(context: AgentContext) -> list:
-    ws=str(context.workspace); file_kwargs={"roots":context.roots} if context.roots else {"root":ws,"allow_write":True}
-    return [t for t in ai.toolkits.files(**file_kwargs) if getattr(t,"__name__","")!="search_files"]
-def _git(context: AgentContext) -> list: return [*ai.toolkits.git(root=str(context.workspace)), *git_tools(str(context.workspace))]
-def _search(context: AgentContext) -> list: return search_tools(str(context.workspace))
-def _shell(context: AgentContext) -> list: return shell_tools(context.executor)
-def _todo(context: AgentContext) -> list: return todo_tools(context.todo)
+    ws = str(context.workspace)
+    file_kwargs = (
+        {"roots": context.roots} if context.roots else {"root": ws, "allow_write": True}
+    )
+    return [
+        t
+        for t in ai.toolkits.files(**file_kwargs)
+        if getattr(t, "__name__", "") != "search_files"
+    ]
+
+
+def _git(context: AgentContext) -> list:
+    ws = str(context.workspace)
+    return [*ai.toolkits.git(root=ws), *git_tools(ws)]
+
+
+def _search(context: AgentContext) -> list:
+    return search_tools(str(context.workspace))
+
+
+def _shell(context: AgentContext) -> list:
+    return shell_tools(context.executor)
+
+
+def _todo(context: AgentContext) -> list:
+    return todo_tools(context.todo)
+
+
 def _engineering_os(_context: AgentContext) -> list:
+    """Control-plane and managed-flow tools use the E2 client's localhost default config."""
     return [*engineering_os_tools(), *managed_engineering_tools()]
 
+
 _CAPS: list[Capability] = [
-    Capability("code_files","Code files","Read & edit files in a single repo workspace (line-numbered reads).",_code_files,("workspace",),(RiskClass.READ,RiskClass.WRITE_LOCAL)),
-    Capability("files","Files","Read & edit files across the session's workspace folders.",_files,("workspace",),(RiskClass.READ,RiskClass.WRITE_LOCAL)),
-    Capability("git","Git","Inspect git state and history (status, diff, log).",_git,("workspace",),(RiskClass.READ,)),
-    Capability("search","Search","Fast code/content search (grep).",_search,("workspace",),(RiskClass.READ,)),
-    Capability("shell","Shell","Run shell commands in a persistent session.",_shell,("executor",),(RiskClass.EXEC,)),
-    Capability("todo","Task list","Maintain a visible task/progress list.",_todo,("todo",),(RiskClass.READ,)),
-    Capability("engineering_os","Engineering control plane",
-               "Inspect and govern AI-Engineering-OS Projects/Jobs/Reviews/Deliveries and run approved authoritative engineering flows.",
-               _engineering_os,(),(RiskClass.READ,RiskClass.EXTERNAL)),
+    Capability(
+        id="code_files",
+        name="Code files",
+        description="Read & edit files in a single repo workspace (line-numbered reads).",
+        build=_code_files,
+        requires=("workspace",),
+        risk=(RiskClass.READ, RiskClass.WRITE_LOCAL),
+    ),
+    Capability(
+        id="files",
+        name="Files",
+        description="Read & edit files across the session's workspace folders.",
+        build=_files,
+        requires=("workspace",),
+        risk=(RiskClass.READ, RiskClass.WRITE_LOCAL),
+    ),
+    Capability(
+        id="git",
+        name="Git",
+        description="Inspect git state and history (status, diff, log).",
+        build=_git,
+        requires=("workspace",),
+        risk=(RiskClass.READ,),
+    ),
+    Capability(
+        id="search",
+        name="Search",
+        description="Fast code/content search (grep).",
+        build=_search,
+        requires=("workspace",),
+        risk=(RiskClass.READ,),
+    ),
+    Capability(
+        id="shell",
+        name="Shell",
+        description="Run shell commands in a persistent session.",
+        build=_shell,
+        requires=("executor",),
+        risk=(RiskClass.EXEC,),
+    ),
+    Capability(
+        id="todo",
+        name="Task list",
+        description="Maintain a visible task/progress list.",
+        build=_todo,
+        requires=("todo",),
+        risk=(RiskClass.READ,),
+    ),
+    Capability(
+        id="engineering_os",
+        name="Engineering control plane",
+        description=(
+            "Inspect and govern AI-Engineering-OS Projects/Jobs/Reviews/Deliveries, and run "
+            "approved authoritative engineering flows."
+        ),
+        build=_engineering_os,
+        risk=(RiskClass.READ, RiskClass.EXTERNAL),
+    ),
 ]
-CATALOG: dict[str, Capability] = {c.id:c for c in _CAPS}
+
+CATALOG: dict[str, Capability] = {c.id: c for c in _CAPS}
+
+
 def capability(cap_id: str) -> Capability:
-    cap=CATALOG.get(cap_id)
-    if cap is None: raise KeyError(f"Unknown capability id: {cap_id!r}")
+    cap = CATALOG.get(cap_id)
+    if cap is None:
+        raise KeyError(f"Unknown capability id: {cap_id!r}")
     return cap
+
+
 def expand(ids: list[str], context: AgentContext) -> list:
-    tools=[]
+    tools: list = []
     for cap_id in ids:
-        cap=capability(cap_id)
-        if cap.available(context): tools.extend(cap.build(context))
+        cap = capability(cap_id)
+        if cap.available(context):
+            tools.extend(cap.build(context))
     return tools
+
+
 def risk_summary(ids: list[str]) -> set[RiskClass]:
-    out=set()
-    for cap_id in ids: out.update(capability(cap_id).risk)
+    out: set[RiskClass] = set()
+    for cap_id in ids:
+        out.update(capability(cap_id).risk)
     return out
