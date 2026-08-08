@@ -89,11 +89,7 @@ def _todo(context: AgentContext) -> list:
 
 
 def _engineering_os(_context: AgentContext) -> list:
-    """Control-plane tools use the E2 client's localhost default configuration.
-
-    They deliberately need no workspace: the engineering control plane is an external
-    service and remains usable even when the persona's scratch workspace is empty.
-    """
+    """Control-plane tools use the E2 client's localhost default configuration."""
     return engineering_os_tools()
 
 
@@ -154,7 +150,7 @@ _CAPS: list[Capability] = [
             "through the authoritative engineering control plane."
         ),
         build=_engineering_os,
-        risk=(RiskClass.READ, RiskClass.WRITE_REMOTE),
+        risk=(RiskClass.READ, RiskClass.EXTERNAL),
     ),
 ]
 
