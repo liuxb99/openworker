@@ -17,7 +17,7 @@ from .engineering_os import (
     EngineeringOSHTTPError, EngineeringOSTimeoutError, EngineeringOSTransport,
     EngineeringOSTransportError, TransportResponse, UrllibEngineeringOSTransport,
 )
-from .golden_job import GoldenJobResult, RCColumnGoldenJob
+from .golden_job import GoldenJobResult, GoldenJobReviewResult, RCColumnGoldenJob
 from .specialists import (
     BIMForgeAdapter, CommandResult, DesignForgeAdapter, EngSketchAdapter, KnowGraphAdapter,
     SubprocessCommandRunner, core_specialist_adapters,
@@ -30,9 +30,10 @@ __all__ = [
     "EngineeringCapability", "EngineeringOSClient", "EngineeringOSConfig",
     "EngineeringOSContractError", "EngineeringOSError", "EngineeringOSHTTPError",
     "EngineeringOSTimeoutError", "EngineeringOSTransport", "EngineeringOSTransportError",
-    "EngSketchAdapter", "EvidenceKind", "EvidenceRef", "GoldenJobResult", "HealthReport",
-    "HealthStatus", "KnowGraphAdapter", "ProvenanceLink", "RCColumnGoldenJob", "RelationKind",
-    "SubprocessCommandRunner", "TransportResponse", "UrllibEngineeringOSTransport", "add_all",
-    "bim_forge_artifact_ref", "core_specialist_adapters", "design_forge_artifact_ref",
-    "engineering_os_tools", "engsketch_version_refs", "os_artifact_ref", "os_job_ref",
+    "EngSketchAdapter", "EvidenceKind", "EvidenceRef", "GoldenJobResult", "GoldenJobReviewResult",
+    "HealthReport", "HealthStatus", "KnowGraphAdapter", "ProvenanceLink", "RCColumnGoldenJob",
+    "RelationKind", "SubprocessCommandRunner", "TransportResponse", "UrllibEngineeringOSTransport",
+    "add_all", "bim_forge_artifact_ref", "core_specialist_adapters",
+    "design_forge_artifact_ref", "engineering_os_tools", "engsketch_version_refs",
+    "os_artifact_ref", "os_job_ref",
 ]
