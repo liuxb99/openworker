@@ -67,6 +67,17 @@ def test_design_forge_artifact_preserves_trace_and_versions():
     assert ref.metadata["formula_registry_version"] == "2026.08"
 
 
+def test_design_forge_artifact_requires_integrity_fields():
+    with pytest.raises(ValueError):
+        design_forge_artifact_ref(
+            {
+                "artifact_id": "art-x",
+                "path": "x.json",
+                "media_type": "application/json",
+            }
+        )
+
+
 def test_engsketch_manifest_produces_version_and_hashed_artifact_refs():
     refs = engsketch_version_refs(
         "bridge-A",
@@ -86,8 +97,14 @@ def test_engsketch_manifest_produces_version_and_hashed_artifact_refs():
         EvidenceKind.ARTIFACT,
         EvidenceKind.ARTIFACT,
     ]
+    assert refs[0].checksum == "manifest-sha"
     assert refs[1].uri.endswith("/v003/output/drawing.svg")
     assert refs[2].checksum == "png-sha"
+
+
+def test_engsketch_manifest_requires_version_checksum():
+    with pytest.raises(ValueError):
+        engsketch_version_refs("bridge-A", {"version": "v004"})
 
 
 def test_bim_artifact_requires_hash_path_and_type():
