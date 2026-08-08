@@ -7,6 +7,19 @@ through adapters instead of embedding domain implementations into the core runti
 
 from .adapters import EngineeringAdapter, EngineeringAdapterRegistry, EngineeringCapability
 from .contracts import AdapterDescriptor, ApprovalPolicy, HealthReport, HealthStatus
+from .digital_thread import (
+    DigitalThread,
+    EvidenceKind,
+    EvidenceRef,
+    ProvenanceLink,
+    RelationKind,
+    add_all,
+    bim_forge_artifact_ref,
+    design_forge_artifact_ref,
+    engsketch_version_refs,
+    os_artifact_ref,
+    os_job_ref,
+)
 from .engineering_os import (
     EngineeringOSClient,
     EngineeringOSConfig,
@@ -36,6 +49,7 @@ __all__ = [
     "BIMForgeAdapter",
     "CommandResult",
     "DesignForgeAdapter",
+    "DigitalThread",
     "EngineeringAdapter",
     "EngineeringAdapterRegistry",
     "EngineeringCapability",
@@ -48,12 +62,22 @@ __all__ = [
     "EngineeringOSTransport",
     "EngineeringOSTransportError",
     "EngSketchAdapter",
+    "EvidenceKind",
+    "EvidenceRef",
     "HealthReport",
     "HealthStatus",
     "KnowGraphAdapter",
+    "ProvenanceLink",
+    "RelationKind",
     "SubprocessCommandRunner",
     "TransportResponse",
     "UrllibEngineeringOSTransport",
+    "add_all",
+    "bim_forge_artifact_ref",
     "core_specialist_adapters",
+    "design_forge_artifact_ref",
     "engineering_os_tools",
+    "engsketch_version_refs",
+    "os_artifact_ref",
+    "os_job_ref",
 ]
