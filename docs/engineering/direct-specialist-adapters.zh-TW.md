@@ -31,10 +31,7 @@ OpenWorker Adapter：`DesignForgeAdapter`。
 
 能力：`structural`、`reporting`。
 
-正式 operations：
-
-- `capabilities`
-- `execute`
+正式 operations：`capabilities`、`execute`。
 
 `execute` 只接受 `payload.request` JSON object，寫入暫存 request.json 後，以 argv list 呼叫 CLI；不透過 shell。
 
@@ -46,11 +43,7 @@ OpenWorker Adapter：`EngSketchAdapter`。
 
 能力：`drawing`、`reporting`。
 
-E4 第一批只開：
-
-- `themes`
-- `validate`
-- `versions`
+E4 第一批只開：`themes`、`validate`、`versions`。
 
 刻意不開 `patch apply`、`generate`、`render` 等會建立或改變成果的操作。後續若開放，必須經 Tool Facade 與 Approval 分類，不得以 generic CLI escape hatch 暴露。
 
@@ -69,6 +62,17 @@ OpenWorker Adapter：`BIMForgeAdapter`。
 
 採 lazy import `aibim.api`；未安裝、API 缺失時 readiness 回報 unavailable/degraded，而不是假裝能力存在。
 
+目前所讀權威文件只公開函式名稱，未完整公開每個函式的參數 signature，因此 Adapter 不自行假設全部採 kwargs，而是使用透明呼叫封套：
+
+```json
+{
+  "args": [],
+  "kwargs": {}
+}
+```
+
+再以 `func(*args, **kwargs)` 轉交 canonical API。具體參數仍以 AI-BIM-Forge 本身 API 為權威。
+
 ### KnowGraphGo
 
 來源契約：嵌入式 Go Library + `knowgraph` CLI。
@@ -77,12 +81,14 @@ OpenWorker Adapter：`KnowGraphAdapter`。
 
 能力：`knowledge_graph`。
 
-E4 第一批只開：
+E4 第一批只開：`check`、`node_list`。
 
-- `check`
-- `node_list`
+必須配置 DSN；沒有 DSN 時明確 unavailable。直接核對 `cmd/knowgraph/root.go` 後，確認 `--dsn` 與 `--json` 是 top-level global flags，因此正式 argv 形狀為：
 
-必須配置 DSN；沒有 DSN 時明確 unavailable。`node_list` 強制 JSON 輸出。
+```text
+knowgraph --dsn <dsn> check
+knowgraph --dsn <dsn> --json node list --ns <namespace>
+```
 
 ## 3. 安全邊界
 
@@ -127,8 +133,8 @@ Direct Adapter 主要用於能力發現、診斷、預覽、受控專業操作�
 - Design Forge Tool Protocol health / execute。
 - 禁止任意 Design Forge operation。
 - EngSketch allowlist。
-- KnowGraphGo DSN fail-closed 與 JSON node list。
-- BIM canonical API readiness / invoke。
+- KnowGraphGo DSN fail-closed 與 global flag argv contract。
+- BIM canonical API readiness 與透明 args/kwargs forwarding。
 - 四個 Adapter 可同時註冊至 `EngineeringAdapterRegistry`。
 
 完整 repository pytest / compileall 尚需在已安裝 OpenWorker dependencies 的 checkout 執行。
