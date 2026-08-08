@@ -35,12 +35,7 @@ class SubprocessCommandRunner:
 
     def run(self, argv: Sequence[str], *, timeout: float) -> CommandResult:
         completed = subprocess.run(
-            list(argv),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
-            shell=False,
+            list(argv), capture_output=True, text=True, timeout=timeout, check=False, shell=False
         )
         return CommandResult(completed.returncode, completed.stdout, completed.stderr)
 
@@ -105,8 +100,7 @@ class DesignForgeAdapter:
             result = self._runner().run([self.binary, "capabilities"], timeout=self.timeout_seconds)
             if result.returncode != 0:
                 raise RuntimeError(result.stderr.strip() or "civilforge-tool capabilities failed")
-            value = _json_value(result.stdout, "civilforge-tool capabilities")
-            return {"capabilities": value}
+            return {"capabilities": _json_value(result.stdout, "civilforge-tool capabilities")}
         if operation != "execute":
             raise ValueError(f"unsupported Design Forge operation: {operation}")
         request = payload.get("request")
@@ -115,9 +109,7 @@ class DesignForgeAdapter:
         with tempfile.TemporaryDirectory(prefix="openworker-forge-") as tmp:
             request_path = Path(tmp) / "request.json"
             request_path.write_text(json.dumps(request, ensure_ascii=False), encoding="utf-8")
-            result = self._runner().run(
-                [self.binary, "execute", str(request_path)], timeout=self.timeout_seconds
-            )
+            result = self._runner().run([self.binary, "execute", str(request_path)], timeout=self.timeout_seconds)
         if result.returncode != 0:
             raise RuntimeError(result.stderr.strip() or "civilforge-tool execute failed")
         return _json_object(result.stdout, "civilforge-tool execute")
@@ -202,19 +194,19 @@ class KnowGraphAdapter:
         if self.runner is None and shutil.which(self.binary) is None:
             return {"status": "unavailable", "message": f"binary not found: {self.binary}"}
         try:
-            result = self._runner().run([self.binary, "check", "--dsn", self.dsn], timeout=self.timeout_seconds)
+            result = self._runner().run([self.binary, "--dsn", self.dsn, "check"], timeout=self.timeout_seconds)
             return {"status": "ready" if result.returncode == 0 else "unavailable", "stderr": result.stderr.strip()}
         except Exception as exc:
             return {"status": "unavailable", "message": str(exc)}
 
     def invoke(self, operation: str, payload: dict[str, Any]) -> dict[str, Any]:
         if operation == "check":
-            argv = [self.binary, "check", "--dsn", self.dsn]
+            argv = [self.binary, "--dsn", self.dsn, "check"]
         elif operation == "node_list":
             namespace = str(payload.get("namespace") or self.namespace).strip()
             if not namespace or any(ch in namespace for ch in "\r\n"):
                 raise ValueError("node_list requires a safe namespace")
-            argv = [self.binary, "node", "list", "--ns", namespace, "--dsn", self.dsn, "--json"]
+            argv = [self.binary, "--dsn", self.dsn, "--json", "node", "list", "--ns", namespace]
         else:
             raise ValueError(f"unsupported KnowGraphGo operation: {operation}")
         result = self._runner().run(argv, timeout=self.timeout_seconds)
@@ -265,11 +257,14 @@ class BIMForgeAdapter:
     def invoke(self, operation: str, payload: dict[str, Any]) -> dict[str, Any]:
         if operation not in self._OPERATIONS:
             raise ValueError(f"unsupported BIM Forge operation: {operation}")
-        kwargs = payload.get("kwargs", payload)
+        args = payload.get("args", [])
+        kwargs = payload.get("kwargs", {})
+        if not isinstance(args, list):
+            raise ValueError("BIM Forge payload.args must be a list")
         if not isinstance(kwargs, Mapping):
-            raise ValueError("BIM Forge payload must be an object or contain kwargs object")
+            raise ValueError("BIM Forge payload.kwargs must be an object")
         func = getattr(self._api(), operation)
-        result = func(**dict(kwargs))
+        result = func(*args, **dict(kwargs))
         return {"operation": operation, "result": result}
 
 
