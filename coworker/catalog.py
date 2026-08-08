@@ -14,12 +14,13 @@ catalog (see ``PERMISSIONS-AND-INBOX.md``).
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable
 
 import aisuite as ai
 
 from .agents.base import AgentContext
+from .engineering.tools import engineering_os_tools
 from .risk import RiskClass
 from .tools.files import file_tools
 from .tools.git import git_tools
@@ -27,7 +28,6 @@ from .tools.search import search_tools
 from .tools.shell import shell_tools
 from .tools.todo import todo_tools
 
-# Context prerequisites a capability may require, mapped to a predicate over AgentContext.
 _REQUIREMENTS: dict[str, Callable[[AgentContext], bool]] = {
     "workspace": lambda c: c.workspace is not None,
     "executor": lambda c: c.executor is not None,
@@ -38,7 +38,7 @@ _REQUIREMENTS: dict[str, Callable[[AgentContext], bool]] = {
 @dataclass(frozen=True)
 class Capability:
     id: str
-    name: str  # human label (consent screen)
+    name: str
     description: str
     build: Callable[[AgentContext], list]
     requires: tuple[str, ...] = ()
@@ -48,14 +48,7 @@ class Capability:
         return all(_REQUIREMENTS[r](context) for r in self.requires)
 
 
-# -- capability builders --------------------------------------------------------
-# These reproduce, exactly, what the Code and Cowork agent factories assembled by hand.
-
-
 def _code_files(context: AgentContext) -> list:
-    """Repo-oriented files: single-root, line-numbered/windowed `read_file`. Our `grep` and
-    windowed `read_file` replace aisuite's slower `search_files` / `read_file`/`read_file_lines`.
-    """
     ws = str(context.workspace)
     replaced = {"search_files", "read_file", "read_file_lines"}
     files = [
@@ -67,9 +60,6 @@ def _code_files(context: AgentContext) -> list:
 
 
 def _files(context: AgentContext) -> list:
-    """Knowledge-work files: multi-root aware (reads/writes across the session's roots), keeps
-    aisuite's `read_file`/`read_file_lines`. Only our `grep` replaces the slow `search_files`.
-    """
     ws = str(context.workspace)
     file_kwargs = (
         {"roots": context.roots} if context.roots else {"root": ws, "allow_write": True}
@@ -83,19 +73,24 @@ def _files(context: AgentContext) -> list:
 
 def _git(context: AgentContext) -> list:
     ws = str(context.workspace)
-    return [*ai.toolkits.git(root=ws), *git_tools(ws)]  # git_status, git_diff, git_log
+    return [*ai.toolkits.git(root=ws), *git_tools(ws)]
 
 
 def _search(context: AgentContext) -> list:
-    return search_tools(str(context.workspace))  # grep (ripgrep, .gitignore-aware)
+    return search_tools(str(context.workspace))
 
 
 def _shell(context: AgentContext) -> list:
-    return shell_tools(context.executor)  # run_shell + background task tools
+    return shell_tools(context.executor)
 
 
 def _todo(context: AgentContext) -> list:
-    return todo_tools(context.todo)  # todo_write (drives the Progress panel)
+    return todo_tools(context.todo)
+
+
+def _engineering_os(_context: AgentContext) -> list:
+    """Control-plane tools use the E2 client's localhost default configuration."""
+    return engineering_os_tools()
 
 
 _CAPS: list[Capability] = [
@@ -147,6 +142,16 @@ _CAPS: list[Capability] = [
         requires=("todo",),
         risk=(RiskClass.READ,),
     ),
+    Capability(
+        id="engineering_os",
+        name="Engineering control plane",
+        description=(
+            "Inspect AI-Engineering-OS readiness and Projects/Jobs, and create approved Jobs "
+            "through the authoritative engineering control plane."
+        ),
+        build=_engineering_os,
+        risk=(RiskClass.READ, RiskClass.EXTERNAL),
+    ),
 ]
 
 CATALOG: dict[str, Capability] = {c.id: c for c in _CAPS}
@@ -160,10 +165,6 @@ def capability(cap_id: str) -> Capability:
 
 
 def expand(ids: list[str], context: AgentContext) -> list:
-    """Expand a persona's ``tools:`` id list into concrete tool callables for this context.
-    Capabilities whose context prerequisites aren't met are skipped (no shell without an
-    executor, no files without a workspace) — exactly like the old hand-written factories.
-    """
     tools: list = []
     for cap_id in ids:
         cap = capability(cap_id)
@@ -173,7 +174,6 @@ def expand(ids: list[str], context: AgentContext) -> list:
 
 
 def risk_summary(ids: list[str]) -> set[RiskClass]:
-    """The union of risk classes a tool list can produce — for the install-consent screen."""
     out: set[RiskClass] = set()
     for cap_id in ids:
         out.update(capability(cap_id).risk)
