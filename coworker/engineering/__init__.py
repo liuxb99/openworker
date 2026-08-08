@@ -19,11 +19,23 @@ from .engineering_os import (
     TransportResponse,
     UrllibEngineeringOSTransport,
 )
+from .specialists import (
+    BIMForgeAdapter,
+    CommandResult,
+    DesignForgeAdapter,
+    EngSketchAdapter,
+    KnowGraphAdapter,
+    SubprocessCommandRunner,
+    core_specialist_adapters,
+)
 from .tools import engineering_os_tools
 
 __all__ = [
     "AdapterDescriptor",
     "ApprovalPolicy",
+    "BIMForgeAdapter",
+    "CommandResult",
+    "DesignForgeAdapter",
     "EngineeringAdapter",
     "EngineeringAdapterRegistry",
     "EngineeringCapability",
@@ -35,9 +47,13 @@ __all__ = [
     "EngineeringOSTimeoutError",
     "EngineeringOSTransport",
     "EngineeringOSTransportError",
+    "EngSketchAdapter",
     "HealthReport",
     "HealthStatus",
+    "KnowGraphAdapter",
+    "SubprocessCommandRunner",
     "TransportResponse",
     "UrllibEngineeringOSTransport",
+    "core_specialist_adapters",
     "engineering_os_tools",
 ]
