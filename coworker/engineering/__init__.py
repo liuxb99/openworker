@@ -7,6 +7,18 @@ through adapters instead of embedding domain implementations into the core runti
 
 from .adapters import EngineeringAdapter, EngineeringAdapterRegistry, EngineeringCapability
 from .contracts import AdapterDescriptor, ApprovalPolicy, HealthReport, HealthStatus
+from .engineering_os import (
+    EngineeringOSClient,
+    EngineeringOSConfig,
+    EngineeringOSContractError,
+    EngineeringOSError,
+    EngineeringOSHTTPError,
+    EngineeringOSTimeoutError,
+    EngineeringOSTransport,
+    EngineeringOSTransportError,
+    TransportResponse,
+    UrllibEngineeringOSTransport,
+)
 
 __all__ = [
     "AdapterDescriptor",
@@ -14,6 +26,16 @@ __all__ = [
     "EngineeringAdapter",
     "EngineeringAdapterRegistry",
     "EngineeringCapability",
+    "EngineeringOSClient",
+    "EngineeringOSConfig",
+    "EngineeringOSContractError",
+    "EngineeringOSError",
+    "EngineeringOSHTTPError",
+    "EngineeringOSTimeoutError",
+    "EngineeringOSTransport",
+    "EngineeringOSTransportError",
     "HealthReport",
     "HealthStatus",
+    "TransportResponse",
+    "UrllibEngineeringOSTransport",
 ]
