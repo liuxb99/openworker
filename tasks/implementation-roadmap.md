@@ -4,126 +4,95 @@
 
 ## 專案定位
 
-OpenWorker 工程版是 AI 工程顧問公司的 AI 員工與自然語言操作層。
-
-```text
-OpenWorker
-= AI Coworker / Persona / Tools / Permissions / Approval / Connectors / MCP
-        ↓
-AI-Engineering-OS
-= Project / Job / Workflow / Artifact / Review / Approval / Delivery
-        ↓
-專業工程 Engines
-= Design / Drawing / BIM / Quantity / PCCES / Schedule / CAD / PDF / Media
-        ↓
-KnowGraphGo
-= Knowledge / Evidence / Inference / Explain
-```
-
-不得在 OpenWorker 內複製第二套工程公式、工程 Job 控制平面或專業 Engine 實作。
+OpenWorker 工程版是 AI 工程顧問公司的 AI 員工與自然語言操作層；AI-Engineering-OS 保持 Project / Job / Workflow / Artifact lifecycle 權威，專業 Engine 保持工程算法權威。
 
 ## 目前完成度
 
-- E0 工程版定位與中文架構文件：`IMPLEMENTED`。
-- E1 Capability Registry / Readiness Contract：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`。
-- E2 AI-Engineering-OS Tool Bridge：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`。
-- E3 Engineering Tool Facade + Persona Wiring：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`。
-- E4 Direct Specialist Adapters：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`。
-- E5 Digital Thread / Artifact Provenance：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`。
-- E6 RC Column Golden Job v1：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`。
-- E7 Media / Company Coworker：`NOT_STARTED`。
+- E0 工程版定位與中文架構文件：`IMPLEMENTED`
+- E1 Capability Registry / Readiness：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`
+- E2 AI-Engineering-OS Bridge：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`
+- E3 Tool Facade + Persona Wiring：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`
+- E4 Direct Specialist Adapters：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`
+- E5 Digital Thread / Provenance：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`
+- E6 RC Column Golden Job：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`
+- E6.1 Lifecycle Closure：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`
+- E7 Media / Company Coworker：`NOT_STARTED`
 
-## E1～E5
+## E6.1 已完成內容
 
-已具備 typed adapter/readiness、AI-Engineering-OS bridge、Engineering Tool Facade、第一批 specialist adapters，以及 `openworker-digital-thread/1.0.0` provenance reference graph。E5 只引用來源權威身份，不建立第二套 Artifact Store。
+AI-Engineering-OS 現有 HTTP API 已確認包含：
 
-## E6 已完成內容
+- `POST /api/v1/jobs/{id}/transitions`
+- `GET /api/v1/jobs/{id}/artifacts`
+- `POST /api/v1/projects/{id}/artifacts`
+- `GET /api/v1/artifacts/{id}`
 
-新增 `RCColumnGoldenJob`，建立第一條固定工程驗收路徑：
+OpenWorker `EngineeringOSClient` 已新增對應 bridge：
+
+- `transition_job()`
+- `list_job_artifacts()`
+- `register_artifact()`
+- `get_artifact()`
+
+RC Column Golden Job 現在走：
 
 ```text
-AI-Engineering-OS readiness
-→ AI-CivilDesign-Forge readiness
-→ AI-Engineering-OS 建立 RC Column Job
-→ forge.rc-column v1.0.0
-→ Calculation Artifact
+draft
+→ queued
+→ running
+→ forge.rc-column
+→ Design Forge Artifact
+→ AI-Engineering-OS Artifact registration
+→ review
 → Digital Thread
 ```
 
-契約來源：
+Digital Thread 同時保存 Design Forge source Artifact、AI-Engineering-OS registered Artifact 與 review-state Job，並建立：
 
-- AI-CivilDesign-Forge `tool-protocol/1.0.0`
-- `forge.rc-column`
-- `schemas/tools/rc-column-input-v1.json`
-- E5 `DigitalThread`
+```text
+OS Artifact --belongs_to_job--> OS Job
+OS Artifact --derived_from--> Design Forge Artifact
+```
 
-E6 v1 明確不宣稱 EngSketch mutation、BIM mutation、OS Artifact registration、Review/Approval/Delivery 已完成；目前來源契約不足以誠實地把這些步驟寫成 production E2E。
+失敗補償：進入 `running` 後若專業計算、Artifact validation 或 Artifact registration 失敗，Golden Job 會嘗試走 AI-Engineering-OS 合法的 `running → cancelled` transition；不直接修改 OS 儲存層。
 
-永久測試：`tests/test_engineering_golden_job.py`。
-中文規格：`docs/engineering/golden-job.zh-TW.md`。
+## 目前 P0
 
-## 目前 P0 / P1
+1. E1～E6.1 尚待完整 checkout + dependencies 的 pytest / compileall / diff check。
+2. 真實 AI-Engineering-OS + civilforge-tool 多 repo runtime E2E 尚未執行。
+3. AI-Engineering-OS 正式 HTTP surface 目前未見獨立 Review decision / Approval / Delivery endpoint，因此 Golden Job 必須停在 `review`，不得自動冒充 completed/published。
 
-### P0
+## P1
 
-1. **E1～E6 尚待完整 repository 驗證**：需要完整 checkout + dependencies 執行 pytest / compileall / diff check。
-2. **Golden Job lifecycle 尚未閉合**：E6 v1 已證明 Job → Design Forge → Artifact Evidence，但 AI-Engineering-OS bridge 尚無 Job transition、Artifact registration、Review/Approval/Delivery API，因此不能虛構完整閉環。
+- 建立/接入正式 Review / Approval / Delivery API 後，延伸 Golden Job 至 completed / published。
+- EngSketch production drawing mutation 接入 Golden Job。
+- AI-BIM-Forge production IFC mutation 接入 Golden Job。
+- pcces-web / Quantity / Schedule / DWG/PDF 第二批 adapters。
+- adapter config persistence 與 Digital Thread persistence。
 
-### P1
+## Segment E6 / E6.1 驗收
 
-- EngSketch / BIM 正式 mutation contract 接入 Golden Job。
-- pcces-web / AI-CivilQuantity / AI-CivilSchedule / DWG/PDF adapters 第二批。
-- adapter config persistence。
-- 專業 Engine audit event schema。
-- Digital Thread 持久化至 AI-Engineering-OS。
+- [x] RC Column schema / identity fail-closed。
+- [x] dependency readiness 在 side effect 前檢查。
+- [x] 建立 AI-Engineering-OS Job。
+- [x] `draft → queued → running` authoritative transitions。
+- [x] 呼叫 `forge.rc-column` / `1.0.0`。
+- [x] protocol status 與 `design_ok` 分離。
+- [x] authoritative hashed Artifact validation。
+- [x] Design Artifact 正式註冊 AI-Engineering-OS Artifact。
+- [x] `running → review`。
+- [x] failure compensation `running → cancelled`。
+- [x] OS Artifact ↔ Design Artifact ↔ Job Digital Thread。
+- [x] permanent regression tests / 中文規格 / self-review。
+- [ ] full repository verification。
+- [ ] real multi-repo runtime E2E。
+- [ ] approval / delivery closure。
+- [ ] EngSketch / BIM mutation。
 
-## Segment E1 — Capability Registry / Readiness Contract
+## 下一階段
 
-**狀態**：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`
-
-## Segment E2 — AI-Engineering-OS Tool Bridge
-
-**狀態**：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`
-
-## Segment E3 — Engineering Tool Facade + Persona Wiring
-
-**狀態**：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`
-
-## Segment E4 — Direct Specialist Adapters
-
-**狀態**：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`
-
-## Segment E5 — Digital Thread / Artifact Provenance
-
-**狀態**：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`
-
-## Segment E6 — RC Column Golden Job
-
-**狀態**：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`
-
-**驗收**：
-
-- [x] 依來源 schema 驗證 RC 柱必要輸入。
-- [x] dependency readiness fail-closed。
-- [x] project identity conflict fail-closed。
-- [x] 建立真實 AI-Engineering-OS Job 的 production call path。
-- [x] 呼叫 `forge.rc-column` / `1.0.0` / nested `arguments.input`。
-- [x] protocol failure 與 engineering `design_ok` 分離。
-- [x] semantic identity mismatch fail-closed。
-- [x] 要求權威 hashed Artifact。
-- [x] Job + Design Artifact 組成 E5 Digital Thread。
-- [x] 永久 regression tests。
-- [x] 中文規格。
-- [ ] 真實多 repo runtime E2E。
-- [ ] OS Artifact registration / lifecycle transitions / review / approval / delivery。
-- [ ] EngSketch / BIM production mutation。
-
-## Segment E7 — Media / Company Coworker
-
-**狀態**：`NOT_STARTED`
-
-接入 SceneX / ComfyX 等展示能力，並擴充公司級工程 Coworker 工作流。
+在 E7 前，優先處理 E6.2：確認 AI-Engineering-OS 是否已有尚未暴露的 Review / Approval / Delivery domain service；若存在則補 HTTP + OpenWorker bridge，若不存在則只做明確缺口規格，不在 OpenWorker 私造第二套 lifecycle。
 
 ## 驗證原則
 
-每個 Segment 必須：Production Code、永久 Regression Tests、自我 Code Review、可執行靜態/單元驗證、Commit/Push 均完成。無法完整執行者維持 `IMPLEMENTED — WAITING FOR FULL VERIFICATION`，不得聲稱 `VERIFIED`。
+每個 Segment 必須包含 Production Code、永久 Regression Tests、自我 Code Review、Commit/Push。無法完整執行者維持 `IMPLEMENTED — WAITING FOR FULL VERIFICATION`，不得聲稱 `VERIFIED`。
