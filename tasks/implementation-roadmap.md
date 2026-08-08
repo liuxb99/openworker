@@ -30,68 +30,52 @@ KnowGraphGo
 - E3 Engineering Tool Facade + Persona Wiring：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`。
 - E4 Direct Specialist Adapters：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`。
 - E5 Digital Thread / Artifact Provenance：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`。
-- E6 Golden Job：`NOT_STARTED`。
+- E6 RC Column Golden Job v1：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`。
 - E7 Media / Company Coworker：`NOT_STARTED`。
 
-## E1～E3 已完成內容
+## E1～E5
 
-- Typed Adapter descriptor / health / readiness contract。
-- AI-Engineering-OS health、modules、Project、Job Bridge。
-- Engineering Tool Facade 與 Persona wiring。
-- `engineering_create_job` 沿用 OpenWorker Permission / Approval gate。
+已具備 typed adapter/readiness、AI-Engineering-OS bridge、Engineering Tool Facade、第一批 specialist adapters，以及 `openworker-digital-thread/1.0.0` provenance reference graph。E5 只引用來源權威身份，不建立第二套 Artifact Store。
 
-## E4 已完成內容
+## E6 已完成內容
 
-第一批 Direct Specialist Adapters：
+新增 `RCColumnGoldenJob`，建立第一條固定工程驗收路徑：
 
-1. `DesignForgeAdapter`：`civilforge-tool` / `tool-protocol/1.0.0`。
-2. `EngSketchAdapter`：DraftForge CLI allowlist。
-3. `BIMForgeAdapter`：lazy Python canonical API。
-4. `KnowGraphAdapter`：KnowGraphGo CLI / DSN fail-closed。
+```text
+AI-Engineering-OS readiness
+→ AI-CivilDesign-Forge readiness
+→ AI-Engineering-OS 建立 RC Column Job
+→ forge.rc-column v1.0.0
+→ Calculation Artifact
+→ Digital Thread
+```
 
-共同安全契約：argv list、`shell=False`、operation allowlist、timeout / exit-code / JSON validation，且 Direct Adapter 不取代 AI-Engineering-OS lifecycle 權威。
+契約來源：
 
-## E5 已完成內容
+- AI-CivilDesign-Forge `tool-protocol/1.0.0`
+- `forge.rc-column`
+- `schemas/tools/rc-column-input-v1.json`
+- E5 `DigitalThread`
 
-新增 `coworker/engineering/digital_thread.py`：
+E6 v1 明確不宣稱 EngSketch mutation、BIM mutation、OS Artifact registration、Review/Approval/Delivery 已完成；目前來源契約不足以誠實地把這些步驟寫成 production E2E。
 
-- `EvidenceKind`
-- `RelationKind`
-- `EvidenceRef`
-- `ProvenanceLink`
-- `DigitalThread`
-- deterministic serialization：`openworker-digital-thread/1.0.0`
-- conflicting identity fail-closed
-- unknown provenance endpoint fail-closed
-- identical EvidenceRef idempotency
-- breadth-first provenance tracing
-
-來源映射：
-
-- `os_job_ref()`：AI-Engineering-OS Job identity / revision / status / dirs。
-- `os_artifact_ref()`：AI-Engineering-OS Artifact / revision / checksum / source_run_id。
-- `design_forge_artifact_ref()`：CalculationRun / semantic_id / engine / formula registry / SHA256。
-- `engsketch_version_refs()`：version manifest + SVG / PNG hash references。
-- `bim_forge_artifact_ref()`：AI-BIM-Forge Tool Protocol ArtifactRef。
-
-E5 原則：只引用來源系統權威身份，不建立第二套 Artifact Store、不重新計算 checksum、不自行推斷 lineage。
-
-永久測試：`tests/test_engineering_digital_thread.py`。
-中文規格：`docs/engineering/digital-thread.zh-TW.md`。
+永久測試：`tests/test_engineering_golden_job.py`。
+中文規格：`docs/engineering/golden-job.zh-TW.md`。
 
 ## 目前 P0 / P1
 
 ### P0
 
-1. **E1～E5 尚待完整 repository 驗證**：需要完整 checkout + dependencies 執行 pytest / compileall / diff check。
-2. **Golden Job 尚未完成**：目前已有控制平面、Tool、Specialist Adapter 與 Digital Thread，但尚未組成一條可驗收 RC 柱端到端流程。
+1. **E1～E6 尚待完整 repository 驗證**：需要完整 checkout + dependencies 執行 pytest / compileall / diff check。
+2. **Golden Job lifecycle 尚未閉合**：E6 v1 已證明 Job → Design Forge → Artifact Evidence，但 AI-Engineering-OS bridge 尚無 Job transition、Artifact registration、Review/Approval/Delivery API，因此不能虛構完整閉環。
 
 ### P1
 
-- pcces-web / AI-CivilQuantity / AI-CivilSchedule / DWG/PDF adapters 尚未進入第二批。
-- adapter config persistence 尚未建立。
-- 專業 Engine audit event schema 尚未建立。
-- Digital Thread 尚未持久化至 AI-Engineering-OS；E5 第一版僅提供 OpenWorker 端 deterministic reference graph。
+- EngSketch / BIM 正式 mutation contract 接入 Golden Job。
+- pcces-web / AI-CivilQuantity / AI-CivilSchedule / DWG/PDF adapters 第二批。
+- adapter config persistence。
+- 專業 Engine audit event schema。
+- Digital Thread 持久化至 AI-Engineering-OS。
 
 ## Segment E1 — Capability Registry / Readiness Contract
 
@@ -109,44 +93,30 @@ E5 原則：只引用來源系統權威身份，不建立第二套 Artifact Stor
 
 **狀態**：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`
 
-第二批 specialist integrations（P1）：pcces-web → AI-CivilQuantity → AI-CivilSchedule → DWG_todo / PDF reconstruction。
-
 ## Segment E5 — Digital Thread / Artifact Provenance
+
+**狀態**：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`
+
+## Segment E6 — RC Column Golden Job
 
 **狀態**：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`
 
 **驗收**：
 
-- [x] AI-Engineering-OS Job identity 可轉為 EvidenceRef。
-- [x] AI-Engineering-OS Artifact identity / checksum / source_run_id 可保留。
-- [x] Design Forge Artifact / CalculationRun / Semantic ID / versions 可保留。
-- [x] EngSketch immutable version / parent / SVG / PNG checksum 可引用。
-- [x] BIM Forge ArtifactRef 可引用。
-- [x] cross-system provenance relation schema。
-- [x] deterministic serialization。
-- [x] identity conflict / unknown endpoint fail-closed。
+- [x] 依來源 schema 驗證 RC 柱必要輸入。
+- [x] dependency readiness fail-closed。
+- [x] project identity conflict fail-closed。
+- [x] 建立真實 AI-Engineering-OS Job 的 production call path。
+- [x] 呼叫 `forge.rc-column` / `1.0.0` / nested `arguments.input`。
+- [x] protocol failure 與 engineering `design_ok` 分離。
+- [x] semantic identity mismatch fail-closed。
+- [x] 要求權威 hashed Artifact。
+- [x] Job + Design Artifact 組成 E5 Digital Thread。
 - [x] 永久 regression tests。
 - [x] 中文規格。
-- [ ] 完整 checkout pytest / compileall / diff check。
-
-## Segment E6 — Golden Job
-
-**狀態**：`NOT_STARTED`
-
-```text
-Engineering Coworker
-→ 建立 RC 柱設計 Job
-→ AI-Engineering-OS
-→ AI-CivilDesign-Forge
-→ AI-EngSketch
-→ AI-BIM-Forge
-→ Digital Thread
-→ Review / Approval
-→ Delivery
-→ OpenWorker 回傳正式成果與追溯資訊
-```
-
-E6 必須使用真實 Project / Job / Artifact identity，不得用 hard-coded 假 ID 冒充端到端完成。
+- [ ] 真實多 repo runtime E2E。
+- [ ] OS Artifact registration / lifecycle transitions / review / approval / delivery。
+- [ ] EngSketch / BIM production mutation。
 
 ## Segment E7 — Media / Company Coworker
 
