@@ -6,9 +6,14 @@ through adapters instead of embedding domain implementations into the core runti
 """
 
 from .adapters import EngineeringAdapter, EngineeringAdapterRegistry, EngineeringCapability
+from .contracts import AdapterDescriptor, ApprovalPolicy, HealthReport, HealthStatus
 
 __all__ = [
+    "AdapterDescriptor",
+    "ApprovalPolicy",
     "EngineeringAdapter",
     "EngineeringAdapterRegistry",
     "EngineeringCapability",
+    "HealthReport",
+    "HealthStatus",
 ]
