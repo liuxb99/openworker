@@ -1,7 +1,7 @@
 """Typed bridge from OpenWorker to the AI-Engineering-OS control plane.
 
-The bridge deliberately owns only transport and API-contract concerns. Project/Job/
-Artifact business rules remain authoritative in AI-Engineering-OS.
+The bridge owns transport/API-contract concerns only. Project, Job, Artifact, Review and
+Delivery business rules remain authoritative in AI-Engineering-OS.
 """
 from __future__ import annotations
 
@@ -187,6 +187,57 @@ class EngineeringOSClient:
         if component_id is not None: payload["component_id"] = self._required_text(component_id, "component_id")
         if source_run_id is not None: payload["source_run_id"] = self._required_text(source_run_id, "source_run_id")
         return self._object("POST", f"/api/v1/projects/{project_id}/artifacts", payload)
+
+    # Review / approval governance. Approval is derived by AI-Engineering-OS from the
+    # latest review of every current Artifact revision; OpenWorker does not invent a
+    # second Approval entity.
+    def list_job_reviews(self, job_id: str) -> list[dict[str, Any]]:
+        return self._items(f"/api/v1/jobs/{self._required_id(job_id, 'job_id')}/reviews", "review")
+
+    def list_artifact_reviews(self, artifact_id: str) -> list[dict[str, Any]]:
+        return self._items(f"/api/v1/artifacts/{self._required_id(artifact_id, 'artifact_id')}/reviews", "review")
+
+    def approval_status(self, job_id: str) -> dict[str, Any]:
+        result = self._object("GET", f"/api/v1/jobs/{self._required_id(job_id, 'job_id')}/approval-status")
+        if not isinstance(result.get("approved"), bool):
+            raise EngineeringOSContractError("approval-status response must contain approved boolean")
+        return result
+
+    def submit_artifact_review(self, *, job_id: str, artifact_id: str, reviewer: str,
+                               decision: str, comment: str = "") -> dict[str, Any]:
+        job_id = self._required_id(job_id, "job_id")
+        artifact_id = self._required_id(artifact_id, "artifact_id")
+        reviewer = self._required_text(reviewer, "reviewer")
+        decision = self._required_text(decision, "decision")
+        if decision not in {"approved", "rejected", "rework"}:
+            raise ValueError("decision must be approved, rejected, or rework")
+        if decision in {"rejected", "rework"} and not comment.strip():
+            raise ValueError("comment is required for rejected or rework review")
+        return self._object("POST", f"/api/v1/artifacts/{artifact_id}/reviews", {
+            "job_id": job_id,
+            "reviewer": reviewer,
+            "decision": decision,
+            "comment": comment.strip(),
+        })
+
+    # Delivery/publish remains authoritative in AI-Engineering-OS. The server itself
+    # verifies approval, current Artifact checksums and job state before publishing.
+    def list_deliveries(self, job_id: str) -> list[dict[str, Any]]:
+        return self._items(f"/api/v1/jobs/{self._required_id(job_id, 'job_id')}/deliveries", "delivery")
+
+    def latest_delivery(self, job_id: str) -> dict[str, Any]:
+        return self._object("GET", f"/api/v1/jobs/{self._required_id(job_id, 'job_id')}/deliveries/latest")
+
+    def publish_job(self, *, job_id: str, publisher: str, note: str = "") -> dict[str, Any]:
+        job_id = self._required_id(job_id, "job_id")
+        publisher = self._required_text(publisher, "publisher")
+        result = self._object("POST", f"/api/v1/jobs/{job_id}/publish",
+                              {"publisher": publisher, "note": note.strip()})
+        delivery = result.get("delivery")
+        website = result.get("website")
+        if not isinstance(delivery, dict) or not isinstance(website, dict):
+            raise EngineeringOSContractError("publish response must contain delivery and website objects")
+        return result
 
     def _items(self, path: str, item_name: str) -> list[dict[str, Any]]:
         items = self._request_json("GET", path).get("items")
