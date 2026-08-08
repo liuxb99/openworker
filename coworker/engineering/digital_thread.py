@@ -204,15 +204,14 @@ def os_artifact_ref(artifact: Mapping[str, Any]) -> EvidenceRef:
 
 
 def design_forge_artifact_ref(artifact: Mapping[str, Any]) -> EvidenceRef:
-    checksum = artifact.get("sha256")
     return EvidenceRef(
         system="ai-civildesign-forge",
         kind=EvidenceKind.ARTIFACT,
         identifier=_required_text(artifact, "artifact_id", "Design Forge Artifact"),
         revision=str(artifact.get("schema_version")) if artifact.get("schema_version") else None,
-        checksum=str(checksum).strip() if checksum else None,
-        uri=str(artifact.get("path")).strip() if artifact.get("path") else None,
-        media_type=str(artifact.get("media_type")).strip() if artifact.get("media_type") else None,
+        checksum=_required_text(artifact, "sha256", "Design Forge Artifact"),
+        uri=_required_text(artifact, "path", "Design Forge Artifact"),
+        media_type=_required_text(artifact, "media_type", "Design Forge Artifact"),
         metadata={
             key: artifact[key]
             for key in (
@@ -236,6 +235,7 @@ def engsketch_version_refs(
     if not project:
         raise ValueError("EngSketch project must not be empty")
     version = _required_text(manifest, "version", "EngSketch manifest")
+    manifest_checksum = _required_text(manifest, "checksum", "EngSketch manifest")
     common = {
         "project": project,
         "parent_version": manifest.get("parent_version"),
@@ -249,7 +249,7 @@ def engsketch_version_refs(
             kind=EvidenceKind.VERSION,
             identifier=f"{project}:{version}",
             revision=version,
-            checksum=str(manifest.get("checksum")).strip() if manifest.get("checksum") else None,
+            checksum=manifest_checksum,
             metadata={k: v for k, v in common.items() if v not in (None, "")},
         )
     ]
