@@ -13,7 +13,8 @@ from typing import Any, Mapping, Protocol
 from urllib import error as urlerror
 from urllib import request as urlrequest
 
-from .contracts import EngineeringCapability, HealthReport, HealthStatus
+from .adapters import EngineeringCapability
+from .contracts import HealthReport, HealthStatus
 
 
 class EngineeringOSError(RuntimeError):
