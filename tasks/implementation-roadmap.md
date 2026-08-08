@@ -28,117 +28,110 @@ KnowGraphGo
 - E1 Capability Registry / Readiness Contract：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`。
 - E2 AI-Engineering-OS Tool Bridge：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`。
 - E3 Engineering Tool Facade + Persona Wiring：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`。
-- E4 Direct Specialist Adapters：`NOT_STARTED`。
+- E4 Direct Specialist Adapters：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`。
 - E5 Digital Thread / Artifact Provenance：`NOT_STARTED`。
 - E6 Golden Job：`NOT_STARTED`。
 - E7 Media / Company Coworker：`NOT_STARTED`。
 
-## E1 完成內容
+## E1～E3 已完成內容
 
-- `AdapterDescriptor`、`HealthStatus`、`HealthReport`、`ApprovalPolicy`。
-- legacy health 相容、exception containment、deterministic inventory、ready adapter filtering。
-- descriptor/name/capability consistency validation 與永久 regression tests。
+- Typed Adapter descriptor / health / readiness contract。
+- AI-Engineering-OS health、modules、Project、Job Bridge。
+- Engineering Tool Facade 與 Persona wiring。
+- `engineering_create_job` 沿用 OpenWorker Permission / Approval gate。
 
-## E2 完成內容
+## E4 已完成內容
 
-- `EngineeringOSConfig`、stdlib HTTP transport、injectable transport。
-- health / readiness / system modules / schema version / capability discovery。
-- Project list/get。
-- Job list/get/create。
-- timeout / transport / HTTP / contract error 分類。
-- path injection 與 payload fail-closed。
-- Bridge 中文規格與永久 regression tests。
+第一批 Direct Specialist Adapters：
 
-## E3 完成內容
+1. `DesignForgeAdapter`
+   - 權威來源：`AI-CivilDesign-Forge`
+   - transport：`civilforge-tool` machine-readable CLI
+   - protocol：`tool-protocol/1.0.0`
+   - operations：`capabilities`、`execute`
+   - capabilities：`structural`、`reporting`
 
-- `coworker/engineering/tools.py` Tool Facade。
-- `engineering_system_readiness`。
-- `engineering_list_projects` / `engineering_get_project`。
-- `engineering_list_jobs` / `engineering_get_job`。
-- `engineering_create_job`。
-- 唯讀工具 `requires_approval=False`。
-- `engineering_create_job` `requires_approval=True`，沿用 OpenWorker 標準 `RiskClass.EXTERNAL` / Approval gate。
-- `engineering_os` 正式加入 platform-owned Catalog。
-- Engineering persona frontmatter 加入 `engineering_os` capability。
-- Persona prompt 明確規定 Project / Job ID 與狀態不得虛構。
-- Tool Facade 與 Persona wiring 永久 regression tests。
-- 中文 `engineering-tool-facade.zh-TW.md`。
+2. `EngSketchAdapter`
+   - 權威來源：`AI-EngSketch`
+   - transport：`draftforge-cli`
+   - operations：`themes`、`validate`、`versions`
+   - capabilities：`drawing`、`reporting`
+   - E4 不開 generic shell / patch apply escape hatch
+
+3. `BIMForgeAdapter`
+   - 權威來源：`AI-BIM-Forge`
+   - transport：lazy Python API `aibim.api`
+   - canonical operations：`build_ifc_model`、`build_and_write_ifc`、`reopen_and_audit`、`get_element_quantities`
+   - capabilities：`bim_ifc`、`quantity`
+
+4. `KnowGraphAdapter`
+   - 權威來源：`KnowGraphGo`
+   - transport：`knowgraph` CLI
+   - operations：`check`、`node_list`
+   - capability：`knowledge_graph`
+   - DSN 未配置時 fail-closed
+
+共同安全契約：
+
+- subprocess 使用 argv list，不透過 shell。
+- operation allowlist，不接受任意 command string。
+- timeout、exit code、JSON shape 明確處理。
+- Direct Adapter 不取代 AI-Engineering-OS 的 Project / Job / Artifact / Delivery 權威。
+- Adapter 可呼叫不代表自動暴露為 Agent Tool；mutating Tool 仍須顯式 approval classification。
+
+永久測試：`tests/test_engineering_specialists.py`。
+中文規格：`docs/engineering/direct-specialist-adapters.zh-TW.md`。
 
 ## 目前 P0 / P1
 
 ### P0
 
-1. **E1～E3 尚待完整 repository 驗證**：需要完整 checkout 執行 pytest / compileall / diff check。
-2. **尚無專業 Engine direct adapter**：目前 Engineering Coworker 能操作控制平面，但還不能在需要時直接探測或調用獨立專業 Engine。
+1. **E1～E4 尚待完整 repository 驗證**：需要完整 checkout + dependencies 執行 pytest / compileall / diff check。
+2. **Digital Thread 尚未統一**：專業引擎輸出雖有各自 Artifact / Trace，但 OpenWorker 尚無統一 Requirement → Job → Engine → Artifact lineage contract。
 
 ### P1
 
-- Artifact lineage / provenance 尚未統一。
+- pcces-web / AI-CivilQuantity / AI-CivilSchedule / DWG/PDF adapters 尚未進入第二批。
 - Golden Job 與完整 E2E 尚未建立。
-- adapter endpoint/config persistence 尚未建立。
+- adapter config persistence 尚未建立。
 - 專業 Engine audit event schema 尚未建立。
 
 ## Segment E1 — Capability Registry / Readiness Contract
 
 **狀態**：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`
 
-- [x] Typed descriptor / health。
-- [x] deterministic inventory / ready filtering。
-- [x] legacy compatibility / permanent tests。
-- [ ] 完整 checkout pytest / compileall / diff check。
-
 ## Segment E2 — AI-Engineering-OS Tool Bridge
 
 **狀態**：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`
-
-- [x] health / readiness / modules。
-- [x] Project list/get。
-- [x] Job list/get/create。
-- [x] transport / timeout / HTTP / contract errors。
-- [x] 永久 tests 與中文規格。
-- [ ] 完整 checkout pytest / compileall / diff check。
 
 ## Segment E3 — Engineering Tool Facade + Persona Wiring
 
 **狀態**：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`
 
-**目標**：讓 Engineering Coworker 透過 OpenWorker 原生 Tool / Permission / Approval 架構操作 AI-Engineering-OS。
+## Segment E4 — Direct Specialist Adapters
+
+**狀態**：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`
 
 **驗收**：
 
-- [x] platform catalog 有 `engineering_os` capability。
-- [x] Engineering persona 宣告該 capability。
-- [x] readiness / Project / Job 唯讀工具。
-- [x] create Job 工具。
-- [x] read tools 不要求 approval。
-- [x] create Job 必須走 approval。
-- [x] 不修改 `engine.py` 做 engineering 特例。
-- [x] 永久 Tool / Persona wiring tests。
+- [x] AI-CivilDesign-Forge direct adapter。
+- [x] AI-EngSketch direct adapter。
+- [x] AI-BIM-Forge direct adapter。
+- [x] KnowGraphGo direct adapter。
+- [x] transport 依各 repo 真實契約選擇，不假設共同 HTTP API。
+- [x] subprocess 無 shell、operation allowlist。
+- [x] readiness fail-closed。
+- [x] 永久 regression tests。
 - [x] 中文規格。
 - [ ] 完整 checkout pytest / compileall / diff check。
 
-## Segment E4 — Direct Specialist Adapters
-
-**狀態**：`NOT_STARTED`
-
-**目標**：建立受控的專業 Engine direct adapters，用於 readiness、能力探測與控制平面之外的明確專業操作；不得取代 AI-Engineering-OS 的 Job / Delivery 權威。
-
-優先順序：
-
-1. AI-CivilDesign-Forge
-2. AI-EngSketch
-3. AI-BIM-Forge
-4. KnowGraphGo
-5. pcces-web
-6. AI-CivilQuantity
-7. AI-CivilSchedule
-8. DWG_todo / PDF reconstruction
+第二批 specialist integrations（P1）：pcces-web → AI-CivilQuantity → AI-CivilSchedule → DWG_todo / PDF reconstruction。
 
 ## Segment E5 — Digital Thread / Artifact Provenance
 
 **狀態**：`NOT_STARTED`
 
-建立 Requirement → Job → Workflow → Engine → Artifact → Review → Approval → Delivery 的跨系統追溯契約。
+建立 Requirement → Job → Workflow → Engine → Artifact → Review → Approval → Delivery 的跨系統追溯契約。優先統一 AI-CivilDesign-Forge Calculation Trace / artifact、EngSketch version manifest、AI-BIM-Forge IFC audit 與 AI-Engineering-OS Job/Artifact identity。
 
 ## Segment E6 — Golden Job
 
