@@ -1,21 +1,25 @@
 """AI-Engineering-OS managed RC-column flow.
 
-E6.3 deliberately delegates calculation, drawing and BIM orchestration to the existing
+E6.3+ deliberately delegates calculation, drawing and BIM orchestration to the existing
 AI-Engineering-OS rcflow instead of reproducing that workflow inside OpenWorker.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any, Mapping, Protocol
 
 from .digital_thread import DigitalThread, RelationKind, os_artifact_ref, os_job_ref
-from .engineering_os import EngineeringOSClient, EngineeringOSContractError
+from .engineering_os import EngineeringOSContractError
 
 
 _REQUIRED = (
     "component_id", "width_mm", "depth_mm", "clear_height_mm", "concrete_grade",
     "steel_grade", "axial_force_kn", "moment_x_knm",
 )
+
+
+class RCFlowControlPlane(Protocol):
+    def execute_rc_column_flow(self, *, job_id: str, column: Mapping[str, Any]) -> dict[str, Any]: ...
 
 
 @dataclass(frozen=True)
@@ -28,19 +32,21 @@ class ManagedRCFlowResult:
 
 
 def execute_managed_rc_column(
-    client: EngineeringOSClient,
+    client: RCFlowControlPlane,
     *,
     job_id: str,
     column: Mapping[str, Any],
 ) -> ManagedRCFlowResult:
     """Execute the authoritative OS RC flow: design -> drawing -> BIM -> review."""
-    job_id = client._required_id(job_id, "job_id")
+    if not isinstance(job_id, str) or not job_id.strip():
+        raise ValueError("job_id must not be empty")
+    job_id = job_id.strip()
     payload = dict(column)
     missing = [name for name in _REQUIRED if payload.get(name) in (None, "")]
     if missing:
         raise ValueError(f"managed RC column flow missing fields: {', '.join(missing)}")
 
-    result = client._object("POST", f"/api/v1/jobs/{job_id}/flows/rc-column", payload)
+    result = client.execute_rc_column_flow(job_id=job_id, column=payload)
     job = result.get("job")
     tasks = result.get("tasks")
     stages = result.get("stages")
