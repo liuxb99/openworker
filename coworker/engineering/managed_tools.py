@@ -4,12 +4,12 @@ from __future__ import annotations
 from typing import Any
 import aisuite as ai
 
-from .engineering_os import EngineeringOSClient
+from .flow_client import EngineeringOSFlowClient
 from .managed_rcflow import execute_managed_rc_column
 
 
-def managed_engineering_tools(client: EngineeringOSClient | None = None) -> list[Any]:
-    api = client or EngineeringOSClient()
+def managed_engineering_tools(client: EngineeringOSFlowClient | None = None) -> list[Any]:
+    api = client or EngineeringOSFlowClient()
 
     def engineering_run_rc_column_flow(
         job_id: str,
