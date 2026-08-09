@@ -17,6 +17,7 @@ from .engineering_os import (
     EngineeringOSHTTPError, EngineeringOSTimeoutError, EngineeringOSTransport,
     EngineeringOSTransportError, TransportResponse, UrllibEngineeringOSTransport,
 )
+from .flow_client import EngineeringOSFlowClient
 from .golden_job import GoldenJobResult, GoldenJobReviewResult, RCColumnGoldenJob
 from .specialists import (
     BIMForgeAdapter, CommandResult, DesignForgeAdapter, EngSketchAdapter, KnowGraphAdapter,
@@ -28,11 +29,12 @@ __all__ = [
     "AdapterDescriptor", "ApprovalPolicy", "BIMForgeAdapter", "CommandResult",
     "DesignForgeAdapter", "DigitalThread", "EngineeringAdapter", "EngineeringAdapterRegistry",
     "EngineeringCapability", "EngineeringOSClient", "EngineeringOSConfig",
-    "EngineeringOSContractError", "EngineeringOSError", "EngineeringOSHTTPError",
-    "EngineeringOSTimeoutError", "EngineeringOSTransport", "EngineeringOSTransportError",
-    "EngSketchAdapter", "EvidenceKind", "EvidenceRef", "GoldenJobResult", "GoldenJobReviewResult",
-    "HealthReport", "HealthStatus", "KnowGraphAdapter", "ProvenanceLink", "RCColumnGoldenJob",
-    "RelationKind", "SubprocessCommandRunner", "TransportResponse", "UrllibEngineeringOSTransport",
+    "EngineeringOSContractError", "EngineeringOSError", "EngineeringOSFlowClient",
+    "EngineeringOSHTTPError", "EngineeringOSTimeoutError", "EngineeringOSTransport",
+    "EngineeringOSTransportError", "EngSketchAdapter", "EvidenceKind", "EvidenceRef",
+    "GoldenJobResult", "GoldenJobReviewResult", "HealthReport", "HealthStatus",
+    "KnowGraphAdapter", "ProvenanceLink", "RCColumnGoldenJob", "RelationKind",
+    "SubprocessCommandRunner", "TransportResponse", "UrllibEngineeringOSTransport",
     "add_all", "bim_forge_artifact_ref", "core_specialist_adapters",
     "design_forge_artifact_ref", "engineering_os_tools", "engsketch_version_refs",
     "os_artifact_ref", "os_job_ref",
