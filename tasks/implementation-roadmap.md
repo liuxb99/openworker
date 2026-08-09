@@ -1,6 +1,6 @@
 # OpenWorker 工程版獨立分段開發 Roadmap
 
-更新日期：2026-08-08
+更新日期：2026-08-09
 
 ## 專案定位
 
@@ -18,11 +18,12 @@ OpenWorker 工程版是 AI 工程顧問公司的 AI 員工與自然語言操作�
 - E6.1 Lifecycle Closure：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`
 - E6.2 Review / Approval / Delivery：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`
 - E6.3 OS-managed Calculation + Drawing + BIM RC Flow：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`
+- E6.4 Public RC Flow API + E2E Verification Harness：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`
 - E7 Media / Company Coworker：`NOT_STARTED`
 
-## E6.3 架構修正
+## E6.3 / E6.4 架構
 
-核對 AI-Engineering-OS `internal/rcflow` 後確認，正式系統已具備完整 RC 柱三段流程：
+完整 RC Golden Path 以 AI-Engineering-OS `internal/rcflow` 為權威：
 
 ```text
 Job
@@ -33,21 +34,46 @@ Job
 → Job review
 ```
 
-因此正式 Golden Path 不再由 OpenWorker 自行逐一調三個 specialist，而是呼叫：
+OpenWorker 不自行重建上述 workflow，而是透過 public client API 呼叫：
+
+```python
+EngineeringOSFlowClient.execute_rc_column_flow(...)
+```
+
+正式 route 仍為：
 
 `POST /api/v1/jobs/{id}/flows/rc-column`
 
-新增：
+E6.4 已移除 `managed_rcflow.py` 對 `EngineeringOSClient._object()` / `_required_id()` 的直接依賴。Agent Tool 與 verification harness 均使用同一 public flow contract。
 
-- `coworker/engineering/managed_rcflow.py`
-- `coworker/engineering/managed_tools.py`
-- `engineering_run_rc_column_flow`（`requires_approval=True`）
-- Drawing / BIM Artifact completeness fail-closed
-- OS Artifact → Job Digital Thread
-- 永久 regression tests
-- 中文規格 `docs/engineering/managed-rcflow.zh-TW.md`
+## E6.4 可部署 E2E Verification
 
-E6/E6.1 的 direct Design Forge path 保留為低階 integration fixture；完整工程流程以 AI-Engineering-OS rcflow 為權威，避免 OpenWorker 形成第二套 Workflow Engine。
+新增 CLI：
+
+```text
+openworker-engineering-e2e
+```
+
+預設真實驗證路徑：
+
+```text
+readiness
+→ Project identity
+→ create Job
+→ OS RC Flow
+→ Calculation + Drawing + IFC Artifact completeness
+→ review
+```
+
+CLI 必須帶 `--confirm-side-effects` 才允許建立工程資料。
+
+治理階段保持顯式：
+
+- 沒有 `--reviewer`：停在 review。
+- 有 `--reviewer`：逐 Artifact Review，要求 derived Approval Status = approved 且 Job = completed。
+- `--publisher` 必須搭配 reviewer；Publish 後要求 Job = published。
+
+因此 harness 能實際驗證：AI-Engineering-OS、Design Forge、EngSketch、AI-BIM-Forge、Artifact lifecycle，以及選配的 Review / Delivery；但「程式已存在」不等於「真實環境已跑通」。
 
 ## E6 系列目前閉環
 
@@ -61,7 +87,7 @@ Engineering Coworker
    └─ BIM / IFC
 → OS Artifacts
 → review
-→ E6.2 Artifact Reviews
+→ Artifact Reviews
 → derived Approval Status
 → completed
 → Delivery Publish
@@ -71,9 +97,9 @@ Engineering Coworker
 
 ## 目前 P0
 
-1. E1～E6.3 尚待完整 checkout + dependencies 的 pytest / compileall / diff check。
-2. 真實 AI-Engineering-OS + Design Forge + EngSketch + AI-BIM-Forge + filesystem delivery runtime E2E 尚未在目前環境執行。
-3. `managed_rcflow.py` 第一版透過 package-internal client helpers 呼叫 route；後續應把 rcflow route 正式提升為 `EngineeringOSClient` public method，降低內部耦合。
+1. E1～E6.4 尚待完整 checkout + dependencies 的 pytest / compileall / diff check。
+2. 真實 AI-Engineering-OS + Design Forge + EngSketch + AI-BIM-Forge + filesystem delivery E2E 尚未在目前執行環境實際跑通。
+3. 必須在部署機使用 `openworker-engineering-e2e --confirm-side-effects` 產生一次真實驗證證據，才可把 E6 系列升級為 `VERIFIED`。
 
 ## P1
 
@@ -91,10 +117,13 @@ Engineering Coworker
 - [x] Job review closure。
 - [x] Artifact Review / derived approval / publish closure。
 - [x] mutating Agent tools 均經 OpenWorker Approval Gate。
+- [x] managed RC flow public client API。
+- [x] deployable E2E verification harness。
+- [x] E2E CLI side-effect confirmation gate。
 - [x] permanent regression tests / 中文規格。
 - [ ] full repository verification。
-- [ ] real multi-repo runtime E2E。
+- [ ] real multi-repo runtime E2E verification evidence。
 
 ## 下一階段
 
-優先 E6.4：把 managed rcflow 正式收進 `EngineeringOSClient` public contract、補真實 runtime-friendly verification harness，然後再進 E7 Media / Company Coworker。
+在進 E7 前，優先執行 E6.5 Verification Evidence / CI：讓 E6.4 harness 的真實執行結果能保存成 machine-readable evidence，並建立可重複的驗證入口；真實環境跑通後再把對應 Segment 升級為 VERIFIED。
