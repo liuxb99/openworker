@@ -1,7 +1,8 @@
 import json
 import pytest
 
-from coworker.engineering.engineering_os import EngineeringOSClient, EngineeringOSConfig, EngineeringOSContractError, TransportResponse
+from coworker.engineering.engineering_os import EngineeringOSConfig, EngineeringOSContractError, TransportResponse
+from coworker.engineering.flow_client import EngineeringOSFlowClient
 from coworker.engineering.managed_rcflow import execute_managed_rc_column
 
 
@@ -30,7 +31,7 @@ def test_managed_flow_uses_authoritative_rcflow_route_and_requires_drawing_and_b
              "stages":[{"engine":"design-forge"},{"engine":"engsketch"},{"engine":"aibim"}],
              "artifacts":[_artifact("a1","calculation_trace"),_artifact("a2","drawing_svg"),_artifact("a3","ifc_model")]}
     transport=FakeTransport(payload)
-    client=EngineeringOSClient(EngineeringOSConfig(),transport=transport)
+    client=EngineeringOSFlowClient(EngineeringOSConfig(),transport=transport)
     result=execute_managed_rc_column(client,job_id="job1",column=COLUMN)
     assert transport.calls[0][0]=="POST"
     assert transport.calls[0][1].endswith("/api/v1/jobs/job1/flows/rc-column")
@@ -41,7 +42,7 @@ def test_managed_flow_uses_authoritative_rcflow_route_and_requires_drawing_and_b
 
 def test_managed_flow_fails_closed_on_job_identity_mismatch():
     transport=FakeTransport({"job":{"id":"other","status":"review"},"tasks":[],"stages":[],"artifacts":[]})
-    client=EngineeringOSClient(transport=transport)
+    client=EngineeringOSFlowClient(transport=transport)
     with pytest.raises(EngineeringOSContractError,match="identity"):
         execute_managed_rc_column(client,job_id="job1",column=COLUMN)
     assert len(transport.calls)==1
@@ -50,14 +51,14 @@ def test_managed_flow_fails_closed_on_job_identity_mismatch():
 def test_managed_flow_requires_drawing_and_bim_artifacts():
     payload={"job":{"id":"job1","project_id":"prj1","status":"review","revision":4},
              "tasks":[],"stages":[],"artifacts":[_artifact("a1","calculation_trace")]}
-    client=EngineeringOSClient(transport=FakeTransport(payload))
+    client=EngineeringOSFlowClient(transport=FakeTransport(payload))
     with pytest.raises(EngineeringOSContractError,match="drawing"):
         execute_managed_rc_column(client,job_id="job1",column=COLUMN)
 
 
 def test_managed_flow_rejects_missing_input_before_remote_call():
     transport=FakeTransport({})
-    client=EngineeringOSClient(transport=transport)
+    client=EngineeringOSFlowClient(transport=transport)
     broken=dict(COLUMN); broken.pop("steel_grade")
     with pytest.raises(ValueError,match="steel_grade"):
         execute_managed_rc_column(client,job_id="job1",column=broken)
