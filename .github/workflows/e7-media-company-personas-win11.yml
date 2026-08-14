@@ -9,6 +9,7 @@ on:
       - 'coworker/personas/builtin/company.md'
       - 'coworker/personas/**'
       - 'tests/test_e7_builtin_personas.py'
+      - 'tests/test_e7_task_packages.py'
       - '.github/workflows/e7-media-company-personas-win11.yml'
   workflow_dispatch:
 
@@ -38,11 +39,11 @@ jobs:
       - name: Install OpenWorker
         run: python -m pip install -e ".[dev]"
 
-      - name: Compile persona runtime
-        run: python -m compileall -q coworker\personas tests\test_e7_builtin_personas.py
+      - name: Compile E7 persona runtime
+        run: python -m compileall -q coworker\personas tests\test_e7_builtin_personas.py tests\test_e7_task_packages.py
 
-      - name: E7 builtin persona contracts
-        run: python -m pytest tests\test_e7_builtin_personas.py -q
+      - name: E7 persona and task-package contracts
+        run: python -m pytest tests\test_e7_builtin_personas.py tests\test_e7_task_packages.py -q
 
-      - name: Registry smoke
-        run: python -c "from coworker.personas.registry import PersonaRegistry; r=PersonaRegistry(); assert r.get('media') is not None; assert r.get('company') is not None; print('media/company personas loaded')"
+      - name: Registry and task-package smoke
+        run: python -c "from coworker.personas.registry import PersonaRegistry; from coworker.personas.task_package import media_task_package,company_task_package; r=PersonaRegistry(); assert r.get('media') is not None; assert r.get('company') is not None; assert media_task_package(title='m',brief='b').kind.value=='media'; assert company_task_package(title='c',brief='b').kind.value=='company'; print('E7 personas/task packages loaded')"
