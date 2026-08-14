@@ -2,7 +2,7 @@
 
 更新日期：2026-08-14
 
-狀態：`IMPLEMENTED — DYNAMIC OS TOOL GATEWAY；WIN11 GATE QUEUED`
+狀態：`IMPLEMENTED — WIN11 H1/H3/H4/H5/H6 REGRESSION PASS；OFFICIAL GATE IN PROGRESS`
 
 ## 本批目標
 
@@ -171,7 +171,7 @@ prepare_call(call-id, exposed-name, arguments)
 
 ## Win11 本機 Action
 
-專用 workflow 已擴充為：
+專用 workflow：
 
 ```text
 OpenWorker Harness H3 H4 H5 H6 Official Win11
@@ -184,25 +184,29 @@ Run：
 31772297067
 OpenWorker ref: 162104f1510094d5c702e86c83c607cf08ee7ff4
 DeepSeek Harness ref: 47f943859bef60e4160492346772ded9b24f765a
-status at documentation update: queued
 ```
 
-Gate：
+目前已取得本機 runner，以下已 PASS：
 
 ```text
-compileall
-H1 runtime seam
-H3 ACP adapter
-H4 permission bridge
-H5 session boundary
-H6 dynamic Engineering-OS gateway
-H2 TypeScript contract
-exact official Harness pin
-official Harness workspace install
+OpenWorker checkout/install                  PASS
+compileall                                   PASS
+H1/H3/H4/H5/H6 Python runtime regressions    PASS
+H2 TypeScript contracts                      PASS
+```
+
+目前 Action 正繼續執行：
+
+```text
+pinned official Harness checkout
+exact upstream identity
+pnpm official workspace install
 official ACP initialize + session/new
 ```
 
-## 已確認的前置證據
+因此 H6 已不是 queued，但在最後 official gate 完成前仍不標 VERIFIED。
+
+## 已確認的 H3/H4 前置證據
 
 Run `31771872273` 已完整 `success`，包含：
 
@@ -214,37 +218,54 @@ pnpm official workspace install PASS
 official ACP initialize + session/new PASS
 ```
 
-因此 H3 已正式 VERIFIED；H4 bridge contract 也有 Win11 證據。
+因此 H3 已正式 `VERIFIED — OFFICIAL ACP WIN11 LOCAL ACTION`；H4 bridge contract 也有 Win11 證據。
 
-## H6 尚未宣稱完成的最後缺口
+## H6.1 upstream extension point 研究結果
 
-目前 H6 已有 OpenWorker-side dynamic gateway 與 H4 context producer，但 pinned ACP 本身沒有「client 動態註冊 tools」的 control plane。因此尚未完成：
+Pinned 官方 Harness 已確認有正式工具 extension seam：
 
 ```text
-真 official Harness model/tool loop
-→ actual Engineering-OS dynamic tool call
-→ consequential permission request
-→ OpenWorker approval
+ctx.tools.register(ToolDefinition)
+```
+
+`ToolDefinition.parameters` 本身就是 raw JSON Schema；因此 OS `/tools/mcp` 的 `inputSchema` 可以原樣成為 Harness tool parameters，不必轉成另一套工程 schema。
+
+官方工具 policy seam：
+
+```text
+tools/pre-execute
+→ allow / deny / ask
+→ user-approval
+→ ACP session/request_permission
+```
+
+所以 H6.1 不需要 fork ACP protocol。
+
+但 ACP permission request 仍只有 call-id。真正 consequential tool E2E 還需要一條 OpenWorker-owned side-channel：Harness plugin 在回 `ask` 之前，先把：
+
+```text
+callId
+exposed tool name
+arguments
+OS canonical annotations
+```
+
+送回 OpenWorker，先填入 `HarnessToolContextRegistry`；之後 ACP `session/request_permission(callId)` 才能安全被 H4 判斷。
+
+這條 side-channel 是 OpenWorker/Harness plugin integration，不修改 ACP wire contract。
+
+## 下一批 H6.1
+
+```text
+AI-Engineering-OS dynamic catalog
+→ official Harness local Cordis plugin
+→ ctx.tools.register(raw OS inputSchema)
+→ tools/pre-execute
+→ OpenWorker call-context side-channel
+→ H4 PermissionBridge
+→ ACP approval
 → real OS invoke
 → Harness tool result
 ```
 
-這需要下一批做 Harness plugin/tool adapter，而不是修改 ACP protocol 或把 OS schema複製進 Harness。
-
-## 下一批
-
-優先做：
-
-```text
-H6.1 Harness tool adapter/plugin
-→ 將 OS dynamic catalog 掛進 Harness tool runtime
-→ call-id 對齊 HarnessToolContextRegistry
-→ consequential permission E2E
-```
-
-之後進：
-
-```text
-H7 runtime jobs / interrupt / cancellation mapping
-H8 RC Golden Job Native vs Harness A/B
-```
+H6.1 完成後再進 H7 runtime jobs / interrupt mapping 與 H8 RC Golden Job Native vs Harness A/B。
