@@ -34,7 +34,7 @@ OpenWorker 工程版是 AI 工程顧問公司的 AI 員工與自然語言操作�
 - H10 Desktop packaging：`VERIFIED — OFFICIAL H3-H11 WIN11 GATE`
 - H11 Default-runtime decision：`VERIFIED — OFFICIAL H3-H11 WIN11 GATE`
 - Project Workspace Bootstrap / one-command Engineering Host：`VERIFIED — OFFICIAL H3-H11 WIN11 GATE`
-- ProjectRoot CLI product smoke：`IMPLEMENTED — CI IN PROGRESS`
+- ProjectRoot CLI product smoke：`VERIFIED — OFFICIAL WIN11 GATE`
 - E7 Media / Company Coworker：`NOT_STARTED`
 
 ## 正式權責鏈
@@ -74,55 +74,47 @@ deliverables / reports / evidence
 6. consequential publish/mutate 必須同時通過 OpenWorker approval 與 AI-Engineering-OS allow_* gate。
 7. NativeRuntime 不因 Harness 驗證完成而提前刪除；H8/H9 REAL A/B evidence 仍保留。
 
-## Official H3-H11 Win11 最終證據
+## Official H3-H11 + ProjectRoot CLI Win11 最終證據
 
-最新完成 run：
+### Harness / Workspace 主線
 
 ```text
-AI-Engineering-OS workflow: OpenWorker Harness H3-H11 Official Win11
 Run: 31783857135
 OpenWorker: 56265c07ea3b276bfcb8d930dbe6dad0151f15ef
 DeepSeek Harness: 47f943859bef60e4160492346772ded9b24f765a
 conclusion: success
 ```
 
-同一次 self-hosted Win11 run 已全部通過：
+此 run 已驗證 H1-H7、Project Workspace bootstrap/scope/Host/launch、H6.2 managed RC、H8-H11 deterministic regression、TypeScript、official Harness install、ACP、Cordis plugin 與 H6.2 deterministic consequential-tool E2E。
+
+### ProductRoot CLI 主線
 
 ```text
-H1-H7 runtime regressions
-Project Workspace bootstrap / scope / Host / production plugin URI / launch
-H6.2 managed RC Golden non-regression
-H8-H11 deterministic packaging/default policy regressions
-H2 TypeScript contracts
-pinned official DeepSeek Harness checkout/install
-ACP initialize + session/new smoke
-Cordis dynamic engineering tool plugin smoke
-H6.2 deterministic consequential-tool Golden E2E
+OpenWorker commit: d7fdff82b56e7a048d19a16041c9d134781d2d9e
+OpenWorker CI: 31788214072 — pytest success / gui-unit success
+AI-Engineering-OS official Win11: 31788465175 — success
 ```
 
-H8/H9 REAL evidence steps本次依設計 skipped，因為沒有 supplied real project/job IDs；這不等於 verifier code 未完成，也不把 deterministic evidence 假冒成 real hardware evidence。
+`31788465175` 明確包含：
+
+```text
+Project Workspace bootstrap, Host, and CLI product regressions — success
+Official ACP initialize and session-new smoke — success
+Official Harness Cordis Engineering tool plugin smoke — success
+H6.2 deterministic official Harness engineering tool Golden E2E — success
+```
+
+因此 `openworker-engineering` 真正 CLI composition root 已完成 Windows acceptance，不再只是 Host/unit contract。
 
 ## Windows 真機修正閉環
 
-### 1. Cordis plugin module specifier
+### Cordis / Node ESM file URL
 
-Windows Node ESM loader 不接受裸 `C:/...` module specifier。現在三層都統一使用 `Path.resolve().as_uri()`：
+Windows Node ESM 不接受裸 `C:/...` module specifier。official plugin smoke、H6.2 E2E、production EngineeringHarnessHost、official Cordis include 均已統一使用 `Path.resolve().as_uri()`。
 
-```text
-official plugin smoke
-H6.2 deterministic E2E
-production EngineeringHarnessHost
-```
+### loopback context ingress WinError 10053
 
-### 2. loopback context ingress WinError 10053
-
-Win11 run `31782095019` 暴露：無 Authorization 的 POST 在 request body 未被 drain 時，Windows 可把連線視為 WSAECONNABORTED / WinError 10053，而不是讓 client 穩定收到 401。
-
-`HarnessContextIngressServer` 現在在 auth reject 時只 drain bounded Content-Length body，再回傳 JSON error；維持 auth-before-parse 與 body-size 上限，不放寬 policy。此修正已包含於成功的 `56265c07...` official gate。
-
-### 3. H6.2 Cordis include
-
-H6.2 deterministic config 的 official Cordis include path 也改成 file URL，避免 Windows `c:` scheme 解讀問題。成功 run `31783857135` 已證實 include + plugin + agent loop 一起成立。
+舊 Win11 run `31782095019` 暴露 auth reject 時 unread request body 可能造成 WSAECONNABORTED / WinError 10053。現在 `HarnessContextIngressServer` 在拒絕未授權 request 時只 drain bounded Content-Length body，再回 JSON 401；仍維持 auth-before-parse、body-size limit 與 policy-field smuggling rejection。成功 run `31783857135` / `31788465175` 已驗證。
 
 ## Project Workspace / one-command Host
 
@@ -139,42 +131,39 @@ openworker-engineering CLI
 
 安全 contract：
 
-- cwd/workspace identity 必須與 AgentInformationPack 回報一致。
-- prompt 必須帶 `information_authority=go-tool-runtime` 與 `execution_authority=AI-Engineering-OS`。
-- Project 依 workspace deterministic reuse；Job 每次 run 新建。
-- packaged Harness capability 明確配置但不可用時 fail closed。
+- workspace identity 必須與 AgentInformationPack 一致。
+- bootstrap prompt 必須含 information / execution authority markers。
+- Project deterministic reuse；Job 每次 run 新建。
+- packaged Harness 明確配置但不可用時 fail closed。
 - Agent 不掃磁碟、不猜 Node/Harness/engine path。
-- publish capability 預設關閉，需 explicit enable；每個 consequential call 仍需 approval。
+- publish capability 預設關閉；consequential call 仍需 OpenWorker approval + AI-Engineering-OS authorization。
 
 ## ProductRoot CLI product smoke
 
-新增永久 regression：
+永久 regression：
 
 ```text
 tests/runtimes/test_engineering_cli_product_smoke.py
-OpenWorker commit: d7fdff82b56e7a048d19a16041c9d134781d2d9e
 ```
 
-此測試直接執行真正 `openworker-engineering` CLI composition root，使用 loopback authority contract servers 與既有 deterministic ACP fixture，驗證：
+直接執行真正 `openworker-engineering` CLI composition root，驗證：
 
 ```text
 TASK.md fallback
-→ AI-Engineering-OS Project create/reuse contract
+→ Project create/reuse contract
 → per-run Job create
 → canonical tool catalog discovery
 → go-tool-runtime /agent/start
 → authority prompt
 → managed Harness turn
-→ /agent/finish success
+→ go-tool-runtime /agent/finish success
 ```
 
-這個 smoke 不宣稱 REAL Publisher evidence；真實 `workspace.publish_artifact` ownership/SHA/path sandbox 已由 AI-Engineering-OS Workspace Artifact Publisher Win11 run `31780534951` 獨立驗證。
-
-目前 OpenWorker CI run `31788214072` 正在驗證 `d7fdff82...`；通過後會把此 test 加入 AI-Engineering-OS official Win11 gate。
+此 smoke 不冒充 REAL Publisher evidence。真實 `workspace.publish_artifact` ownership/SHA/path sandbox 已由 AI-Engineering-OS Workspace Artifact Publisher Win11 run `31780534951` 獨立驗證。
 
 ## H8 / H9 REAL evidence
 
-H8/H9 deterministic verifier code 與 workflow contract 已完成，但 real evidence 必須 supplied 真實 ID：
+H8/H9 deterministic verifier code 與 workflow contract 已完成；REAL evidence 仍需 supplied 真實 ID：
 
 ```text
 H8: 同機 NativeRuntime vs HarnessRuntime RC Golden project/job IDs
@@ -183,10 +172,11 @@ H9: 真實 ComfyX GPU job + non-empty MP4 artifact
 
 沒有真實 IDs 時保持 skipped，不生成假 evidence。
 
-## 下一批
+## 本階段結論
 
-1. 收 `31788214072` ProductRoot CLI smoke 的 Python CI 結果；失敗就沿真實 traceback 修。
-2. CI 綠後，把 `d7fdff82...` pin 到 AI-Engineering-OS official Win11，將 CLI product smoke 納入同一 gate。
-3. official Win11 CLI smoke 綠後，Project Workspace / Harness 主線代碼正式完成。
-4. H8/H9 REAL hardware evidence 作獨立驗證線，不阻塞 deterministic code release。
-5. 再進 E7 Media / Company Coworker，不另造第二套 Agent loop / Tool Registry / Artifact Registry。
+Project Workspace / go-tool-runtime / OpenWorker / official DeepSeek Harness / AI-Engineering-OS / Workspace Artifact Publisher 的代碼主線已完成並通過 Win11 acceptance。
+
+本階段沒有剩餘 production code blocker。後續工作分成兩條獨立線：
+
+1. H8/H9 REAL hardware evidence 補齊，不改變 deterministic code 已完成的狀態。
+2. 進 E7 Media / Company Coworker，沿用既有 authority/Host/Tool/Artifact 架構，不新增第二套 Agent loop / Tool Registry / Artifact Registry。
