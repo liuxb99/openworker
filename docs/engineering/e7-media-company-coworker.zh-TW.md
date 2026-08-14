@@ -2,21 +2,17 @@
 
 更新日期：2026-08-14
 
-## 目標
+## 目標與固定邊界
 
-E7 的目標不是再造一套 Agent 平台，而是讓 OpenWorker 的 Media Coworker / Company Coworker 可以把使用者工作轉成可保存、可交接、可驗證、可交付的產品流程，同時沿用既有 Runtime、Tool Registry、Scheduler、Connector、AI-Engineering-OS Job/Review/Delivery 與 Artifact Registry。
+E7 讓 OpenWorker 的 Media / Company Coworker 把工作轉成可保存、可交接、可執行、可驗證、可交付的產品流程，但不再造第二套平台。
 
 固定邊界：
 
-- 不新增第二套 Agent loop。
-- 不新增第二套 Tool Registry。
-- 不新增第二套 Scheduler。
-- 不新增第二套 Connector layer。
-- 不新增第二套 Artifact Registry。
-- NativeRuntime 仍是預設 runtime。
-- Harness 仍是 explicit opt-in。
-- 發送、發布、付款、購買、對外承諾等 consequential action 必須保留 approval gate。
-- 工程與媒體專業執行必須交給 AI-Engineering-OS / specialist engine，不讓 persona 自稱 canonical execution authority。
+- 不新增第二套 Agent loop / Tool Registry / Scheduler / Connector layer / Artifact Registry。
+- NativeRuntime 預設；Harness 只允許 explicit opt-in。
+- canonical engineering / media authority 固定由 AI-Engineering-OS control plane 與既有 specialist engine 負責。
+- send / publish / spend / purchase / commitment 必須保留既有 approval gate。
+- Persona 模組只做產品 contract、lineage、handoff 與 result projection，不直接偷跑外部副作用。
 
 ## E7.1 — Media / Company built-in personas
 
@@ -24,7 +20,7 @@ E7 的目標不是再造一套 Agent 平台，而是讓 OpenWorker 的 Media Cow
 
 核心：`coworker/personas/builtin/media.md`、`company.md`、`tests/test_e7_builtin_personas.py`。
 
-Media Coworker 負責媒體需求整理、grounding、腳本 / prompt / production plan、專業媒體能力交接、artifact QA 與 delivery package。Company Coworker 負責研究、提案、project coordination、engineering/media handoff、status update、delivery 與 follow-up。兩者都是 persona product surface，不包含第二套 tool/runtime implementation。
+Media Coworker 負責媒體需求、grounding、script/prompt/production plan、specialist handoff、artifact QA 與 delivery package；Company Coworker 負責 research、proposal、project coordination、engineering/media handoff、status、delivery 與 follow-up。
 
 ## E7.2 — Declarative Task Package
 
@@ -32,17 +28,9 @@ Media Coworker 負責媒體需求整理、grounding、腳本 / prompt / producti
 
 核心：`coworker/personas/task_package.py`、`tests/test_e7_task_packages.py`。
 
-主要 contract：
+Contract：`PersonaTaskPackage / WorkStep / PackageKind(media|company) / ActionClass(local|canonical|external)`。
 
-```text
-openworker.persona-task-package/v1
-PersonaTaskPackage
-WorkStep
-PackageKind: media | company
-ActionClass: local | canonical | external
-```
-
-安全 invariants：canonical step 不得把 OpenWorker 當下游 execution authority；external step 沒有 `requires_approval=True` 直接 fail closed；external send/publish 只有明確 target 才出現在 package；task package 只描述工作，不執行 tool、send、publish 或 scheduler。
+Fail-closed：canonical step 不得把 OpenWorker 當 execution authority；external step 必須 `requires_approval=True`；task package 只描述工作，不直接執行 tool/send/publish/scheduler。
 
 ## E7.3 — Persona-facing Product Contract
 
@@ -53,54 +41,33 @@ ActionClass: local | canonical | external
 產品鏈：
 
 ```text
-Media / Company persona session
+PersonaSession
 → PersonaTaskPackage
 → save to Project Workspace
 → canonical_handoffs()
 → external_approval_intents()
-→ AI-Engineering-OS / specialist execution
 → EvidenceRef
 → QA
 → delivery-ready envelope
 ```
 
-Task package 保存到：
+Task package 保存：
 
 ```text
 <ProjectRoot>/.openworker/persona-tasks/<persona>/<session_id>/<package_id>.json
 ```
 
-`canonical_handoffs()` 固定 `authority = AI-Engineering-OS`，並保留 `runtime_policy = NativeRuntime default; Harness explicit opt-in`。external action 只輸出 approval intent：`requires_approval=true / execution=not-performed`。Artifact/QA 直接復用 `coworker.engineering.digital_thread.EvidenceRef`、AI-Engineering-OS Artifact Registry 與 Workspace Artifact Publisher。
-
-Fail-closed：`delivery_ready=True` 必須先 QA passed；QA passed 必須至少有一個真實 artifact reference；Artifact evidence 必須有 checksum lineage；delivery envelope 固定 `external_delivery_performed=false`。
+canonical handoff 固定 `authority=AI-Engineering-OS`；external action 只保留 approval intent，`execution=not-performed`。Artifact 直接復用 AI-Engineering-OS Artifact Registry 與 `coworker.engineering.digital_thread.EvidenceRef`。
 
 ## E7.4 — Canonical Handoff Submission Adapter
 
-狀態：`IMPLEMENTED — CI / WIN11 VERIFICATION IN PROGRESS`
+狀態：`IMPLEMENTED / MAIN CI VERIFIED；WIN11 FOCUSED GATE PENDING`
 
-本批新增：
+核心：`coworker/personas/submission.py`、`tests/test_e7_submission.py`。
 
-```text
-coworker/personas/submission.py
-tests/test_e7_submission.py
-coworker/personas/__init__.py  公開 E7.4 API
-E7 focused Win11 workflow 擴充 E7.4 gate
-```
+`submit_product_plan()` 將 E7.3 plan 建立/顯式復用既有 AI-Engineering-OS canonical Job。Project ID 必須明確；Job reuse 必須 explicit，並驗證 project/persona/session/workspace/task-package lineage。
 
-### 1. PersonaProductPlan → canonical Job
-
-`submit_product_plan()` 現在把 E7.3 `PersonaProductPlan` 提交到既有 `EngineeringOSClient`。
-
-固定規則：
-
-```text
-Project ID 必須明確提供，不猜測
-沒有 existing_job_id → client.create_job(...)
-有 existing_job_id → client.get_job(...) + identity/metadata 驗證後才 reuse
-canonical authority = AI-Engineering-OS
-```
-
-新建 Job 會附上 lineage metadata：
+Job metadata 保存：
 
 ```text
 source = openworker-e7-persona
@@ -113,119 +80,172 @@ handoff_capabilities
 runtime_policy = NativeRuntime default; Harness explicit opt-in
 ```
 
-expected deliverables 直接由既有 canonical handoff 的 `expected_artifacts` 彙整，不建立第二份 deliverable schema。
+E7.4 不呼叫 `transition_job / publish_job / connector sender / scheduler create`。`collect_job_artifacts()` 只從 OS 回讀真實 Artifact，再透過既有 `os_artifact_ref()` 形成 evidence。`assess_delivery_readiness()` 要求 QA passed + 真實 artifact + canonical approval 全部成立，且仍固定 `publish_performed=false / external_send_performed=false`。
 
-### 2. Job reuse 必須 explicit + fail closed
+驗證：main CI `31790725031` 已 `pytest / gui-unit/typecheck / gui-e2e` 全部 success，因此 E7.4 可正式標 `MAIN CI VERIFIED`。
 
-E7.4 不自動搜尋「看起來像同一個」Job。只有呼叫者明確提供 `existing_job_id` 才 reuse，而且必須驗證：
+## E7.5 — Canonical Execution / Result Bridge
+
+狀態：`IMPLEMENTED — MAIN CI / WIN11 VERIFICATION IN PROGRESS`
+
+本批新增/修改：
 
 ```text
-job.project_id == requested project_id
-persona metadata 不衝突
-persona_session_id 不衝突
-workspace_id 不衝突
-task_package_path 不衝突
+coworker/personas/execution_bridge.py
+tests/test_e7_execution_bridge.py
+coworker/engineering/tools.py
+tests/test_engineering_tools.py
+coworker/personas/__init__.py
+.github/workflows/e7-media-company-personas-win11.yml
 ```
 
-任何 identity/lineage mismatch 都拋 `SubmissionContractError`，不靜默改綁。
+### 1. 不新增第二套 executor
 
-### 3. Submission 不等於執行 / 發布
-
-`submit_product_plan()` 只建立或復用 canonical Job。它刻意不呼叫：
+E7.5 沒有在 persona 目錄直接呼叫 AI-Engineering-OS private HTTP route，也沒有直接啟 subprocess。它只產生現有 Tool Registry 可執行的 `CanonicalToolCall` descriptor：
 
 ```text
-transition_job
-publish_job
-connector sender
-scheduler create
+openworker.persona-canonical-tool-call/v1
 ```
 
-所以 E7.4 不會在 persona 層形成第二套工程 executor。後續專業 flow 仍由 AI-Engineering-OS 現有 tool/job layer 與 specialist engine 執行；需要 Harness 時仍必須 explicit opt-in。
-
-### 4. 真實 Artifact → Existing EvidenceRef
-
-`collect_job_artifacts()` 只讀：
+Descriptor 固定輸出：
 
 ```text
-EngineeringOSClient.list_job_artifacts(job_id)
+authority = AI-Engineering-OS
+requires_approval = true|false
+execution = not-performed
 ```
 
-然後使用既有：
+所以真正執行仍經既有 OpenWorker Tool Registry / approval flow。
+
+### 2. RC-column managed flow 正式進既有 engineering tool facade
+
+原本 `EngineeringOSFlowClient.execute_rc_column_flow()` 已存在，但沒有掛進 `engineering_os_tools()`。
+
+本批新增既有 registry 內的工具：
 
 ```text
-coworker.engineering.digital_thread.os_artifact_ref(...)
+engineering_execute_rc_column_flow(job_id, column)
 ```
 
-轉成 EvidenceRef。缺 id/checksum/uri/media_type 等 canonical artifact 必要欄位時 fail closed，不生成假 artifact identity。
-
-### 5. QA + canonical approval → delivery readiness
-
-`assess_delivery_readiness()` 合併兩個獨立條件：
+它委派到：
 
 ```text
-Persona QA
-+
-AI-Engineering-OS approval_status(job_id)
+EngineeringOSFlowClient.execute_rc_column_flow(...)
+POST /api/v1/jobs/{job_id}/flows/rc-column
 ```
 
-只有以下全部成立才 `delivery_ready=True`：
+Tool metadata：
 
 ```text
-qa_passed == true
-至少一個真實 canonical ArtifactRef
-approval_status.approved == true
+category = engineering
+capabilities = write, engineering, job, flow
+requires_approval = true
 ```
 
-即使 ready，也只輸出：
+這不是第二套 flow implementation；business workflow 仍由 AI-Engineering-OS authoritative endpoint 負責。
+
+### 3. Persona submission → existing tool invocation
+
+`rc_column_tool_call()` 要求 `PersonaJobSubmission.handoff_capabilities` 包含 `engineering`，然後只建立：
 
 ```text
-openworker.persona-delivery-assessment/v1
+tool_name = engineering_execute_rc_column_flow
+arguments.job_id = submission.job_id
+arguments.column = caller input
+requires_approval = true
+```
+
+若 submission 沒有 engineering capability，直接 `UnsupportedCanonicalFlowError`。
+
+### 4. Canonical result snapshot
+
+`read_canonical_result()` 只從既有 control plane 回讀：
+
+```text
+get_job(job_id)
+list_job_artifacts(job_id)
+list_job_reviews(job_id)
+approval_status(job_id)
+```
+
+並建立：
+
+```text
+openworker.persona-canonical-result/v1
+```
+
+其中 Job/Artifact identity 直接使用既有 `os_job_ref()` / `os_artifact_ref()`。它會再次核對：
+
+```text
+job.id == PersonaJobSubmission.job_id
+job.project_id == PersonaJobSubmission.project_id
+persona/session/task_package lineage 不衝突
+review.job_id 不得跨 Job
+approval.approved 必須是真正 boolean
+```
+
+任何 evidence/lineage 不一致都 fail closed。
+
+Result snapshot 即使 approved，也固定：
+
+```text
 publish_performed = false
 external_send_performed = false
 ```
 
-因此「已通過 QA / 已被 canonical review 批准 / 已準備交付」不會被誤表示成「已發送或已發布」。真正 publish/send 仍走既有 approval + connector / AI-Engineering-OS publish gate。
+### 5. Media submit 缺口不偽造
 
-### 6. E7.4 regression
+目前 OpenWorker 已有 `ComfyXCLIClient.status/cancel()` 作為既有媒體長任務控制面，但在本 repo 尚未找到已註冊於 canonical Tool Registry 的 ComfyX `submit` tool，也沒有公開的 `EngineeringOSFlowClient.execute_media_*()`。
 
-`tests/test_e7_submission.py` 已鎖定：
-
-- 新建 canonical Job 必須保留 persona/session/workspace/task-package lineage。
-- Media handoff capabilities 必須進 canonical Job metadata。
-- 沒有 canonical handoff 的純 local Company package 不可提交成假的 engineering Job。
-- reuse 必須 explicit，且不同 project / session lineage 必須拒絕。
-- Artifact 必須從 AI-Engineering-OS 真實 artifact payload 轉成既有 EvidenceRef。
-- QA passed 但 canonical approval 未過 → `delivery_ready=false`。
-- QA + canonical approval 都過 → 才 `delivery_ready=true`。
-- QA passed 但零 artifact → fail closed。
-- E7.4 永遠不呼叫 `publish_job`。
-
-## 驗證證據
-
-上一批 E7.1～E7.3 所在 main CI：
+因此 E7.5 的 `media_submit_tool_call()` 目前刻意：
 
 ```text
-Run: 31790204795
-pytest:  success
-gui-unit/typecheck: success
-gui-e2e: success
+UnsupportedCanonicalFlowError
 ```
 
-因此 E7.1～E7.3 現可標 `MAIN CI VERIFIED`。
+而不是自行猜 endpoint 或直接 subprocess submit。這是明確的 fail-closed 缺口，不是假完成。
 
-Focused Win11：舊 run `31790166327` 在 E7.4 push 前仍長時間 `queued`，沒有被 self-hosted Windows runner 接單，因此不能算 VERIFIED。E7 workflow 使用 `cancel-in-progress: true`；後續 E7.4 push 會讓舊 queued run 被新 run 取代。最終只以最新包含 `tests/test_e7_submission.py` 的 focused Win11 run conclusion 作 E7.4 Win11 證據。
+### 6. Regression
 
-## 下一批 E7.5
+`tests/test_e7_execution_bridge.py` 已鎖定：
 
-E7.4 全綠後，下一批應做「canonical execution/result bridge」，但仍不建立第二套 executor：
+- RC-column descriptor 必須指向現有 tool facade。
+- canonical flow tool 必須保留 approval metadata。
+- 非 engineering submission 不可執行 engineering flow。
+- media submit 在真實 canonical tool 尚未接入前必須 fail closed。
+- canonical result 必須回讀真實 Job/Artifact/Review/approval identity。
+- session lineage mismatch、cross-job review、非 boolean approval 必須拒絕。
+- result snapshot 永遠不宣稱已 publish/send。
+
+`tests/test_engineering_tools.py` 同步驗證 `engineering_execute_rc_column_flow` 已進同一個既有 Tool Registry，且 `requires_approval=True`。
+
+## CI / Win11 驗證狀態
+
+已確認：
 
 ```text
-PersonaJobSubmission
-→ 使用既有 AI-Engineering-OS tool/facade 選擇 canonical flow
-→ existing runtime job/status/cancel
-→ specialist engine execution
-→ read canonical Job/Artifact/Review state
-→ EvidenceRef / QA / delivery assessment
+E7.1～E7.3 main CI: 31790204795 → ALL SUCCESS
+E7.4 main CI:       31790725031 → ALL SUCCESS
 ```
 
-E7.5 重點是把「已建立 canonical Job」接到既有 tool facade 的真正 flow invocation 與 job status，而不是在 persona 模組自己實作工程/媒體執行。外部 send/publish 仍留在既有 approval gate。
+E7.4 focused Win11 `31790673063` 在 E7.5 push 前仍停在 queued/pending，沒有 self-hosted Windows runner 接單，因此不能標 Win11 VERIFIED。E7 focused workflow 使用 `cancel-in-progress: true`，E7.5 push 後只以最新包含 `test_e7_execution_bridge.py` 的 run 為準。
+
+## 下一批 E7.6
+
+下一批直接補目前最明確的產品缺口：**Media canonical submit facade**。
+
+目標：
+
+```text
+Media PersonaJobSubmission
+→ existing ComfyX / AI-Engineering-OS submit surface
+→ OpenWorker existing Tool Registry tool
+→ approval metadata / NativeRuntime-Harness policy
+→ prompt/execution id 回寫 canonical Job lineage
+→ existing comfyx.job.status / job.cancel
+→ AI-Engineering-OS Artifact Registry
+→ E7.5 read_canonical_result()
+→ QA / delivery assessment
+```
+
+實作原則：先從 ComfyX / AI-Engineering-OS 現有真實 submit API/CLI contract 取得 authoritative schema，再做最薄 adapter；不自行設計另一套 media scheduler、job model 或 artifact registry。
