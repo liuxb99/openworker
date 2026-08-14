@@ -15,6 +15,10 @@ async def test_official_deepseek_harness_acp_initialize_and_new_session(tmp_path
     The Win11 verification workflow sets DSH_HARNESS_ROOT after checking out the
     exact upstream commit. A dummy DeepSeek key is sufficient because this smoke
     intentionally stops before session/prompt and therefore makes no model call.
+
+    Upstream's own zero-build source launcher sets TSX_TSCONFIG_PATH so tsx can
+    resolve @deepseek-ai/dsh-* workspace imports through the root tsconfig paths.
+    This smoke mirrors that contract instead of depending on a prebuilt lib tree.
     """
 
     raw_root = os.environ.get("DSH_HARNESS_ROOT", "").strip()
@@ -24,14 +28,17 @@ async def test_official_deepseek_harness_acp_initialize_and_new_session(tmp_path
     root = Path(raw_root).resolve()
     bin_script = root / "packages" / "examples" / "acp-demo" / "src" / "bin.ts"
     config_path = root / "examples" / "acp-agent" / "cordis.yml"
+    tsconfig_path = root / "tsconfig.json"
     assert bin_script.is_file(), bin_script
     assert config_path.is_file(), config_path
+    assert tsconfig_path.is_file(), tsconfig_path
 
     env = {
         "DEEPSEEK_API_KEY": os.environ.get("DEEPSEEK_API_KEY", "sk-dummy-for-boot"),
         "DSH_PERMISSION_MODE": "danger-full-access",
         "DSH_HOME": str(tmp_path / ".dsh"),
         "DSH_AGENTS_HOME": str(tmp_path / ".agents"),
+        "TSX_TSCONFIG_PATH": str(tsconfig_path),
     }
     command = (
         "node",
