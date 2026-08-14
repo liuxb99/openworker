@@ -1,12 +1,13 @@
-"""E7.5 bridge from persona submissions to existing canonical execution surfaces.
+"""E7.5/E7.6 bridge from persona submissions to existing canonical execution surfaces.
 
-This module does not create another executor or tool registry.  It validates persona Job
-identity, prepares calls for existing OpenWorker engineering tools, and reads canonical
+This module does not create another executor or tool registry. It validates persona Job
+identity, prepares calls for existing OpenWorker engineering/media tools, and reads canonical
 AI-Engineering-OS Job/Artifact/Review state back into one immutable result snapshot.
 
-Only flows that already have a public canonical OpenWorker tool may be selected here.  Media
-submit is intentionally unsupported until the existing ComfyX submit surface is registered in
-the canonical tool facade; E7 must not invent a private endpoint or subprocess shortcut.
+Media generation routes through the vetted ``engineering_generate_minimax_h3`` facade, which
+adapts ComfyX's authoritative ``comfyx.minimax_h3.generate`` ai-tool-protocol surface. E7 does
+not reproduce ComfyX workflow construction, runtime discovery, submission, polling, or artifact
+extraction.
 """
 from __future__ import annotations
 
@@ -19,7 +20,7 @@ from .submission import PersonaJobSubmission, SubmissionContractError
 
 
 class ExecutionBridgeError(SubmissionContractError):
-    """Raised when E7.5 cannot preserve canonical execution identity or authority."""
+    """Raised when E7 cannot preserve canonical execution identity or authority."""
 
 
 class UnsupportedCanonicalFlowError(ExecutionBridgeError):
@@ -132,15 +133,25 @@ def rc_column_tool_call(
     )
 
 
-def media_submit_tool_call(submission: PersonaJobSubmission, payload: Mapping[str, Any]) -> CanonicalToolCall:
-    """Fail closed until ComfyX submit exists in the canonical OpenWorker tool facade."""
+def media_submit_tool_call(
+    submission: PersonaJobSubmission,
+    payload: Mapping[str, Any],
+) -> CanonicalToolCall:
+    """Describe the vetted ComfyX MiniMax H3 facade call; execution stays in Tool Registry."""
 
     if "media" not in submission.handoff_capabilities:
         raise UnsupportedCanonicalFlowError("submission does not declare media capability")
     if not isinstance(payload, Mapping):
         raise ExecutionBridgeError("media payload must be a mapping")
-    raise UnsupportedCanonicalFlowError(
-        "canonical media submit tool is not registered; do not invent a private ComfyX endpoint"
+    prompt = payload.get("prompt")
+    if not isinstance(prompt, str) or not prompt.strip():
+        raise ExecutionBridgeError("media payload prompt must not be empty")
+    if payload.get("compile_only") is True:
+        raise ExecutionBridgeError("media submit cannot use compile_only=true")
+    return CanonicalToolCall(
+        tool_name="engineering_generate_minimax_h3",
+        arguments=dict(payload),
+        requires_approval=True,
     )
 
 
