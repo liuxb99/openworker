@@ -80,6 +80,10 @@ def run_rc_column_e2e(
     job_id = _required_text(job, "id", "created Job")
 
     flow: ManagedRCFlowResult = execute_managed_rc_column(client, job_id=job_id, column=column)
+    # The managed flow is authoritative for the post-execution Job state. Keeping
+    # the create_job() snapshot here would incorrectly report ``draft`` even when
+    # the real calculation/drawing/BIM path has transitioned the Job to review.
+    job = flow.job
     approval: dict[str, Any] | None = None
     delivery: dict[str, Any] | None = None
 
