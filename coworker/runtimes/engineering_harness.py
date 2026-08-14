@@ -55,6 +55,7 @@ class EngineeringHarnessRuntime(ManagedDeepSeekHarnessRuntime):
             job_registry=job_registry,
             os_jobs=os_jobs,
         )
+        self._permission_bridge_enabled = permission_handler is not None
         if permission_handler is not None:
             # H3 remains fail-closed by default. The engineering composition root is
             # the only layer allowed to replace that default with OpenWorker policy.
@@ -145,7 +146,7 @@ class EngineeringHarnessRuntime(ManagedDeepSeekHarnessRuntime):
         base = await super().health()
         capabilities = dict(base.get("capabilities") or {})
         capabilities["tool_runtime_bootstrap"] = True
-        capabilities["permission_bridge"] = self._client._on_permission is not self._client._deny_permission
+        capabilities["permission_bridge"] = self._permission_bridge_enabled
         base["capabilities"] = capabilities
         base["information_authority"] = "go-tool-runtime"
         base["execution_authority"] = "AI-Engineering-OS"
