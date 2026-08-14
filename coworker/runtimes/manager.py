@@ -1,14 +1,12 @@
-"""Runtime selection primitives.
-
-Only the native runtime is available in H1. The manager centralizes names and
-availability so later Harness work has one switch point instead of scattering
-string checks through server/session code.
-"""
+"""Runtime selection primitives and H11 default-runtime policy."""
 
 from __future__ import annotations
 
+import os
 from enum import Enum
-from typing import Optional
+from typing import Mapping, Optional
+
+from .harness_packaging import harness_launch_capability
 
 
 class RuntimeKind(str, Enum):
@@ -16,15 +14,16 @@ class RuntimeKind(str, Enum):
     HARNESS = "harness"
 
 
+# H11 decision: Native remains the product default until real same-machine H8
+# RC A/B and H9 GPU/MP4 evidence justify promotion. Harness is explicit opt-in.
 DEFAULT_RUNTIME = RuntimeKind.NATIVE
 
 
 class RuntimeUnavailableError(ValueError):
-    """Raised when a known runtime is requested before it is available."""
+    """Raised when a known runtime is requested but its deployment is unavailable."""
 
 
 def parse_runtime(value: Optional[str]) -> RuntimeKind:
-    """Parse a configured runtime name; missing values retain native default."""
     if value is None or not str(value).strip():
         return DEFAULT_RUNTIME
     try:
@@ -34,18 +33,34 @@ def parse_runtime(value: Optional[str]) -> RuntimeKind:
         raise ValueError(f"unknown agent runtime {value!r}; expected one of: {choices}") from exc
 
 
-def require_available(kind: RuntimeKind) -> RuntimeKind:
-    """Fail closed for runtimes not implemented in the current build."""
-    if kind is not RuntimeKind.NATIVE:
+def require_available(
+    kind: RuntimeKind,
+    *,
+    env: Mapping[str, str] | None = None,
+) -> RuntimeKind:
+    if kind is RuntimeKind.NATIVE:
+        return kind
+    env = os.environ if env is None else env
+    enabled = str(env.get("OPENWORKER_HARNESS_ENABLED", "")).strip().lower()
+    if enabled not in {"1", "true", "yes", "on"}:
         raise RuntimeUnavailableError(
-            f"agent runtime {kind.value!r} is not available in this build"
+            "agent runtime 'harness' is opt-in; set OPENWORKER_HARNESS_ENABLED=1 explicitly"
+        )
+    capability = harness_launch_capability(env)
+    if not capability.available:
+        raise RuntimeUnavailableError(
+            f"agent runtime 'harness' is unavailable: {capability.reason}"
         )
     return kind
 
 
-def select_runtime(value: Optional[str] = None) -> RuntimeKind:
-    """Resolve and validate the runtime selected for a session."""
-    return require_available(parse_runtime(value))
+def select_runtime(
+    value: Optional[str] = None,
+    *,
+    env: Mapping[str, str] | None = None,
+) -> RuntimeKind:
+    """Resolve runtime; missing remains Native, Harness requires explicit healthy deployment."""
+    return require_available(parse_runtime(value), env=env)
 
 
 __all__ = [
