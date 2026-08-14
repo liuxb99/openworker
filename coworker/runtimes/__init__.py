@@ -11,6 +11,7 @@ from .harness import (
 from .harness_permissions import (
     HarnessPermissionBridge,
     HarnessToolContext,
+    HarnessToolContextRegistry,
     ToolContextResolver,
 )
 from .manager import RuntimeKind, RuntimeUnavailableError, select_runtime
@@ -26,6 +27,7 @@ __all__ = [
     "HarnessProcessConfig",
     "HarnessRuntimeError",
     "HarnessToolContext",
+    "HarnessToolContextRegistry",
     "NativeRuntime",
     "RuntimeEvent",
     "RuntimeEventType",
