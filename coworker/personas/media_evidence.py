@@ -1,17 +1,15 @@
-"""E7.7 verified ComfyX result -> AI-Engineering-OS Artifact Registry sync.
+"""E7.7/E7.8 verified ComfyX result -> AI-Engineering-OS Artifact Registry sync.
 
 ComfyX remains the media execution authority and AI-Engineering-OS remains the durable
-Job/Artifact authority.  This module only reconciles one successful E7.6 result into the
-already-created canonical Job.  It never publishes, sends, creates another Job, or invents
-an artifact URI/checksum when ComfyX did not provide durable local evidence.
+Job/Artifact authority. This module reconciles one successful media result into the
+already-created canonical Job. It never publishes, sends, creates another Job, or invents
+an artifact URI/checksum when ComfyX did not provide durable evidence.
 """
 from __future__ import annotations
 
 import hashlib
-import json
 import mimetypes
 import os
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Protocol, Sequence
@@ -90,9 +88,6 @@ def _sha256_file(path: Path) -> str:
 
 
 def _artifact_uri(raw: Mapping[str, Any]) -> str:
-    # E7.7 intentionally accepts only an explicit durable URI/path.  Current ComfyX H3
-    # Artifact values expose filename/subfolder/type plus a /view URL; that URL is not a
-    # durable local Artifact Registry URI and must not be guessed into a filesystem path.
     value = raw.get("uri") or raw.get("path")
     return _required_text(value, "comfyx artifact uri/path")
 
@@ -134,12 +129,7 @@ def sync_comfyx_media_evidence(
     submission: PersonaJobSubmission,
     result: Mapping[str, Any],
 ) -> MediaEvidenceSyncResult:
-    """Register verified local ComfyX outputs under the existing canonical Job.
-
-    This is deliberately fail-closed: the E7.6 result must identify ComfyX's H3 tool,
-    contain prompt/request identity, and provide at least one artifact with an explicit
-    durable local URI/path.  MP4 bytes are validated before checksum registration.
-    """
+    """Register verified local ComfyX outputs under the existing canonical Job."""
 
     if "media" not in submission.handoff_capabilities:
         raise MediaEvidenceSyncError("submission does not declare media capability")
@@ -167,6 +157,15 @@ def sync_comfyx_media_evidence(
         path = _local_path(uri)
         if not path.is_file():
             raise MediaEvidenceSyncError(f"media artifact does not exist: {path}")
+        stat = path.stat()
+        declared_size = raw.get("size")
+        if declared_size is not None:
+            if not isinstance(declared_size, int) or declared_size <= 0:
+                raise MediaEvidenceSyncError("ComfyX artifact size must be a positive integer")
+            if declared_size != stat.st_size:
+                raise MediaEvidenceSyncError(
+                    f"ComfyX artifact size mismatch: declared={declared_size} local={stat.st_size}"
+                )
         media_type = _media_type(path, raw)
         if media_type in {"video/mp4", "application/mp4"}:
             try:
@@ -174,6 +173,11 @@ def sync_comfyx_media_evidence(
             except Exception as exc:
                 raise MediaEvidenceSyncError(f"invalid MP4 media artifact {path}: {exc}") from exc
         checksum = _sha256_file(path)
+        declared_sha = str(raw.get("sha256") or "").strip().lower()
+        if declared_sha and declared_sha != checksum.lower():
+            raise MediaEvidenceSyncError(
+                f"ComfyX artifact sha256 mismatch: declared={declared_sha} local={checksum}"
+            )
         dedupe_key = (str(path.resolve()), checksum)
         if dedupe_key in seen:
             continue
