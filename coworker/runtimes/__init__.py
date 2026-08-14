@@ -14,6 +14,12 @@ from .harness_permissions import (
     HarnessToolContextRegistry,
     ToolContextResolver,
 )
+from .harness_sessions import (
+    HarnessSessionBinding,
+    HarnessSessionCoordinator,
+    HarnessSessionResumeUnsupported,
+    HarnessSessionState,
+)
 from .manager import RuntimeKind, RuntimeUnavailableError, select_runtime
 from .native import NativeRuntime
 
@@ -26,6 +32,10 @@ __all__ = [
     "HarnessPermissionBridge",
     "HarnessProcessConfig",
     "HarnessRuntimeError",
+    "HarnessSessionBinding",
+    "HarnessSessionCoordinator",
+    "HarnessSessionResumeUnsupported",
+    "HarnessSessionState",
     "HarnessToolContext",
     "HarnessToolContextRegistry",
     "NativeRuntime",
