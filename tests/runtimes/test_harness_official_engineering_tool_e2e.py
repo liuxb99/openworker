@@ -252,7 +252,7 @@ def _write_config(path: Path, root: Path, replay: Path) -> None:
                   models:
                     - id: deepseek-v4-pro
           - id: openworker-engineering-tools
-            name: {_yaml(str(PLUGIN.resolve()))}
+            name: {_yaml(PLUGIN.resolve().as_uri())}
 """,
         encoding="utf-8",
     )
