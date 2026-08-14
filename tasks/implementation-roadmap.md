@@ -20,7 +20,7 @@ OpenWorker 工程版是 AI 工程顧問公司的 AI 員工與自然語言操作�
 - E6.3 OS-managed Calculation + Drawing + BIM RC Flow：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`
 - E6.4 Public RC Flow API + E2E Verification Harness：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`
 - H0 OpenWorker × DeepSeek Harness 架構研究/詳細設計：`IMPLEMENTED`
-- H1 AgentRuntime seam / NativeRuntime：`IMPLEMENTED — WAITING FOR FULL VERIFICATION`
+- H1 AgentRuntime seam / NativeRuntime：`VERIFIED — WIN11 LOCAL ACTION`
 - H2 Harness integration skeleton：`NOT_STARTED`
 - H3 DeepSeekHarnessRuntime sidecar adapter：`NOT_STARTED`
 - H4 Tool / Permission / Approval bridge：`NOT_STARTED`
@@ -143,24 +143,65 @@ H1 明確不做：
 - 不改 AI-Engineering-OS workflow。
 - 不把 Harness 當 ProviderClient。
 
-H1 驗證狀態：
+## H1 Win11 本機 Action 驗證
+
+本專案 Harness 主線以 Windows 11 self-hosted GitHub Actions 作為正式驗證，不以 GitHub-hosted Ubuntu 取代本機證據。
+
+候選版：
 
 ```text
-Git diff review: PASS（agent.py 僅 import + constructor switch）
-Permanent regression tests: ADDED
-GitHub Actions: BLOCKED / repository API currently reports 0 workflow runs
-Full pytest / GUI / E2E: NOT YET EXECUTED
-Status: IMPLEMENTED — WAITING FOR FULL VERIFICATION
+OpenWorker ref: c1d325d15ac15ba34bcd14b744ffc185ca497cb4
+AI-Engineering-OS workflow: openworker-win11-verify.yml
+Run: 31758376818
+Runner: DESKTOP-ODAQN0D-R002 / DESKTOP-ODAQN0D
+Windows: 10.0.26200.8655 (Windows 11)
+Python: 3.14.6
+compileall: PASS
+H1 runtime seam regression: 6 passed / 0 failed
+Full Python suite: 1247 passed / 12 failed / 2 skipped
+```
+
+H1 前基線：
+
+```text
+OpenWorker ref: 468d58104b4b6f3dfa69cbdf098d078c8cc74b05
+AI-Engineering-OS workflow: openworker-win11-baseline.yml
+Run: 31758614434
+Runner: DESKTOP-O87PJNR-R003 / DESKTOP-O87PJNR
+Windows: 10.0.26200.8655 (Windows 11)
+Python: 3.14.5
+compileall: PASS
+Full Python suite: 1241 passed / 12 failed / 2 skipped
+```
+
+差分結論：
+
+- H1 新增 6 個 permanent tests，全部通過。
+- H1 前後完整 Python suite 的失敗數都是 12，且失敗測試名稱逐項相同。
+- 候選版沒有新增 full-suite failure；passed 數正好增加 6。
+- 現存 12 個 failure 屬 H1 前既有 Win11/Python 3.14/NetworkService 測試基線，不得算成 H1 regression；仍需在獨立維護 Segment 修正。
+- 兩次 A/B 被不同 Win11 runner 接單，因此未宣稱「同一硬體」結果；後續 H8/H9 性能與行為 A/B 必須固定 machine label，禁止 runner 漂移。
+
+現存 Win11 baseline failure 類別包括：symlink privilege、Windows ACL/0600 語義、workspace rename file lock、PowerShell `pwd` 呈現、RelayHub/Slack timing、UI refresh timing，以及既有 engineering E2E `draft`/`review` fixture 狀態。這些在 H1 前基線已同樣存在。
+
+H1 狀態：
+
+```text
+Git diff review: PASS
+Permanent regression tests: PASS 6/6
+Win11 compileall: PASS
+Win11 full-suite differential regression: PASS（0 new failures）
+Status: VERIFIED — WIN11 LOCAL ACTION
 ```
 
 下一個 Harness Segment：H2，建立 `harness/` integration skeleton、pin policy、versioned IPC protocol contract、health/capability schema與 TypeScript permanent tests；H2 不啟用正式 Harness agent loop。
 
 ## 目前 P0
 
-1. E1～E6.4 尚待完整 checkout + dependencies 的 pytest / compileall / diff check。
-2. 真實 AI-Engineering-OS + Design Forge + EngSketch + AI-BIM-Forge + filesystem delivery E2E 尚未在目前執行環境實際跑通。
-3. 必須在部署機使用 `openworker-engineering-e2e --confirm-side-effects` 產生一次真實驗證證據，才可把 E6 系列升級為 `VERIFIED`。
-4. H1 必須補一次完整 repository CI / pytest 證據，才能由 `IMPLEMENTED — WAITING FOR FULL VERIFICATION` 升為 `VERIFIED`。
+1. E1～E6.4 尚待完整工程 runtime E2E 與 evidence 閉環；不能因 H1 已 VERIFIED 而升級 E 系列狀態。
+2. 真實 AI-Engineering-OS + Design Forge + EngSketch + AI-BIM-Forge + filesystem delivery E2E 尚需依工程線驗證規格補證據。
+3. OpenWorker Win11 full suite 現存 12 個 pre-H1 baseline failures，應另開維護 Segment 修復，不阻擋已證實零新增失敗的 H1。
+4. 後續 Harness A/B Action 必須固定 runner/machine label，避免兩台 Win11 runner 漂移造成性能比較失真。
 
 ## P1
 
@@ -196,8 +237,10 @@ Status: IMPLEMENTED — WAITING FOR FULL VERIFICATION
 - [x] Harness 在未實作前 fail-closed。
 - [x] 永久 regression tests 已加入。
 - [x] 無 Harness runtime dependency / sidecar 偷渡進 H1。
-- [ ] full pytest / GUI / E2E verification evidence。
+- [x] Windows 11 self-hosted Action compileall。
+- [x] H1 permanent tests 6/6。
+- [x] pre-H1 vs H1 full Python suite 差分：0 new failures。
 
 ## 下一階段
 
-Harness 主線先進 H2 integration skeleton；原 E6.5 Verification Evidence / CI 仍保留為工程線 P0，兩者不得互相覆蓋或改變 AI-Engineering-OS 的工程權威。
+Harness 主線進 H2 integration skeleton；原 E6.5 Verification Evidence / CI 仍保留為工程線 P0，兩者不得互相覆蓋或改變 AI-Engineering-OS 的工程權威。
