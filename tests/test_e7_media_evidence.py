@@ -47,20 +47,28 @@ class FakeWriter:
         }
 
 
-def _result(uri: str) -> dict:
+def _result(uri: str, *, size: int | None = None, sha256: str | None = None) -> dict:
+    artifact = {"uri": uri, "media_type": "video/mp4"}
+    if size is not None:
+        artifact["size"] = size
+    if sha256 is not None:
+        artifact["sha256"] = sha256
     return {
         "schema": "openworker.comfyx-h3-result/v1", "authority": "ComfyX",
         "tool_id": "comfyx.minimax_h3.generate", "request_id": "req-1",
-        "prompt_id": "prompt-123", "artifacts": [{"uri": uri, "media_type": "video/mp4"}],
+        "prompt_id": "prompt-123", "artifacts": [artifact],
     }
 
 
-def test_sync_registers_verified_mp4_under_existing_job(tmp_path):
+def test_sync_registers_verified_mp4_under_existing_job_and_cross_checks_comfyx_metadata(tmp_path):
     path = tmp_path / "h3.mp4"
     payload = _mp4(path)
+    checksum = hashlib.sha256(payload).hexdigest()
     writer = FakeWriter()
 
-    synced = sync_comfyx_media_evidence(writer, _submission(), _result(str(path)))
+    synced = sync_comfyx_media_evidence(
+        writer, _submission(), _result(str(path), size=len(payload), sha256=checksum)
+    )
 
     assert len(writer.calls) == 1
     call = writer.calls[0]
@@ -68,12 +76,30 @@ def test_sync_registers_verified_mp4_under_existing_job(tmp_path):
     assert call["job_id"] == "job-1"
     assert call["kind"] == "animation_video"
     assert call["media_type"] == "video/mp4"
-    assert call["checksum"] == hashlib.sha256(payload).hexdigest()
+    assert call["checksum"] == checksum
     assert call["source_run_id"] == "prompt-123"
     assert synced.prompt_id == "prompt-123"
     assert synced.artifacts[0].checksum == call["checksum"]
     assert synced.to_dict()["publish_performed"] is False
     assert synced.to_dict()["external_send_performed"] is False
+
+
+def test_sync_rejects_comfyx_sha256_mismatch_before_registry_mutation(tmp_path):
+    path = tmp_path / "h3.mp4"
+    _mp4(path)
+    writer = FakeWriter()
+    with pytest.raises(MediaEvidenceSyncError, match="sha256 mismatch"):
+        sync_comfyx_media_evidence(writer, _submission(), _result(str(path), sha256="0" * 64))
+    assert writer.calls == []
+
+
+def test_sync_rejects_comfyx_size_mismatch_before_registry_mutation(tmp_path):
+    path = tmp_path / "h3.mp4"
+    payload = _mp4(path)
+    writer = FakeWriter()
+    with pytest.raises(MediaEvidenceSyncError, match="size mismatch"):
+        sync_comfyx_media_evidence(writer, _submission(), _result(str(path), size=len(payload) + 1))
+    assert writer.calls == []
 
 
 def test_sync_deduplicates_identical_local_artifacts(tmp_path):
@@ -87,7 +113,7 @@ def test_sync_deduplicates_identical_local_artifacts(tmp_path):
     assert len(synced.artifacts) == 1
 
 
-def test_sync_rejects_current_comfyx_view_only_artifact_instead_of_guessing_path():
+def test_sync_rejects_legacy_comfyx_view_only_artifact_instead_of_guessing_path():
     writer = FakeWriter()
     result = {
         "authority": "ComfyX", "tool_id": "comfyx.minimax_h3.generate",
