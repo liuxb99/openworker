@@ -1,5 +1,6 @@
 from .base import AgentRuntime
 from .events import RuntimeEvent, RuntimeEventType
+from .engineering_harness import EngineeringHarnessRuntime
 from .harness import (
     ACP_PROTOCOL_VERSION,
     AcpProcessClient,
@@ -48,12 +49,18 @@ from .harness_sessions import (
 )
 from .manager import RuntimeKind, RuntimeUnavailableError, select_runtime
 from .native import NativeRuntime
+from .tool_runtime_bootstrap import (
+    ToolRuntimeBootstrap,
+    ToolRuntimeBootstrapClient,
+    ToolRuntimeBootstrapError,
+)
 
 __all__ = [
     "ACP_PROTOCOL_VERSION",
     "AcpProcessClient",
     "AgentRuntime",
     "DeepSeekHarnessRuntime",
+    "EngineeringHarnessRuntime",
     "EngineeringOSInvocationScope",
     "EngineeringOSJobClient",
     "EngineeringOSJobError",
@@ -90,5 +97,8 @@ __all__ = [
     "RuntimeKind",
     "RuntimeUnavailableError",
     "ToolContextResolver",
+    "ToolRuntimeBootstrap",
+    "ToolRuntimeBootstrapClient",
+    "ToolRuntimeBootstrapError",
     "select_runtime",
 ]
