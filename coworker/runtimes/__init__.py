@@ -8,6 +8,11 @@ from .harness import (
     HarnessProcessConfig,
     HarnessRuntimeError,
 )
+from .harness_permissions import (
+    HarnessPermissionBridge,
+    HarnessToolContext,
+    ToolContextResolver,
+)
 from .manager import RuntimeKind, RuntimeUnavailableError, select_runtime
 from .native import NativeRuntime
 
@@ -17,12 +22,15 @@ __all__ = [
     "AgentRuntime",
     "DeepSeekHarnessRuntime",
     "HarnessCapabilityError",
+    "HarnessPermissionBridge",
     "HarnessProcessConfig",
     "HarnessRuntimeError",
+    "HarnessToolContext",
     "NativeRuntime",
     "RuntimeEvent",
     "RuntimeEventType",
     "RuntimeKind",
     "RuntimeUnavailableError",
+    "ToolContextResolver",
     "select_runtime",
 ]
