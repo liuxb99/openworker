@@ -12,250 +12,199 @@ E7 讓 OpenWorker 的 Media / Company Coworker 把工作轉成可保存、可交
 - NativeRuntime 預設；Harness 只允許 explicit opt-in。
 - canonical engineering / media Job authority 固定由 AI-Engineering-OS control plane 管理；ComfyX 等 specialist engine 只擁有自己的專業執行契約。
 - send / publish / spend / purchase / commitment 必須保留既有 approval gate。
-- Persona 模組只做產品 contract、lineage、handoff 與 result projection，不直接偷跑外部副作用。
+- Persona 模組只做產品 contract、lineage、handoff、evidence sync 與 result projection，不直接偷跑外部副作用。
 
-## E7.1 — Media / Company built-in personas
-
-狀態：`IMPLEMENTED / MAIN CI VERIFIED；WIN11 FOCUSED GATE PENDING`
-
-核心：`coworker/personas/builtin/media.md`、`company.md`、`tests/test_e7_builtin_personas.py`。
-
-## E7.2 — Declarative Task Package
+## E7.1～E7.4
 
 狀態：`IMPLEMENTED / MAIN CI VERIFIED；WIN11 FOCUSED GATE PENDING`
 
-核心：`coworker/personas/task_package.py`、`tests/test_e7_task_packages.py`。
-
-Contract：`PersonaTaskPackage / WorkStep / PackageKind(media|company) / ActionClass(local|canonical|external)`。canonical step 不得把 OpenWorker 當 execution authority；external step 必須 `requires_approval=True`。
-
-## E7.3 — Persona-facing Product Contract
-
-狀態：`IMPLEMENTED / MAIN CI VERIFIED；WIN11 FOCUSED GATE PENDING`
-
-核心：`coworker/personas/product_contract.py`、`tests/test_e7_product_contract.py`。
-
-```text
-PersonaSession
-→ PersonaTaskPackage
-→ Project Workspace
-→ canonical_handoffs()
-→ external_approval_intents()
-→ EvidenceRef
-→ QA
-→ delivery-ready envelope
-```
-
-Artifact 直接復用 AI-Engineering-OS Artifact Registry 與 `coworker.engineering.digital_thread.EvidenceRef`。
-
-## E7.4 — Canonical Handoff Submission Adapter
-
-狀態：`IMPLEMENTED / MAIN CI VERIFIED；WIN11 FOCUSED GATE PENDING`
-
-核心：`coworker/personas/submission.py`、`tests/test_e7_submission.py`。
-
-`submit_product_plan()` 建立/顯式復用既有 AI-Engineering-OS canonical Job，保存 persona/session/workspace/task-package/runtime-policy lineage；不呼叫 publish、connector sender 或 scheduler。
-
-Main CI `31790725031`：`pytest / gui-unit/typecheck / gui-e2e` 全部 success。
+已完成 Media/Company built-in personas、declarative Task Package、Persona Product Contract、canonical AI-Engineering-OS Job submission/reuse 與 delivery assessment。E7.4 main CI `31790725031` 全綠。
 
 ## E7.5 — Canonical Execution / Result Bridge
 
-狀態：`IMPLEMENTED；MAIN CI REGRESSION 已修；最新整體 CI 隨 E7.6 再驗證；WIN11 FOCUSED GATE PENDING`
+狀態：`IMPLEMENTED / MAIN CI VERIFIED；WIN11 FOCUSED GATE PENDING`
 
-核心：
+Persona 只建立既有 Tool Registry 可執行的 `CanonicalToolCall` descriptor；RC-column 委派 AI-Engineering-OS authoritative flow。`read_canonical_result()` 只回讀 canonical Job/Artifact/Review/approval，任何 lineage 衝突 fail closed，且永遠不宣稱已 publish/send。
 
-```text
-coworker/personas/execution_bridge.py
-coworker/engineering/tools.py
-tests/test_e7_execution_bridge.py
-tests/test_engineering_tools.py
-```
-
-E7.5 不新增 executor。Persona 只建立既有 Tool Registry 可執行的 `CanonicalToolCall` descriptor；RC-column 仍委派 AI-Engineering-OS authoritative flow。
-
-`read_canonical_result()` 只回讀 canonical Job/Artifact/Review/approval，並透過既有 `os_job_ref()` / `os_artifact_ref()` 建 evidence。任何 job/project/persona/session/task-package/review identity 衝突都 fail closed；result 永遠不宣稱已 publish/send。
-
-先前 main CI `31791707602` 唯一失敗是舊 `test_engineering_persona_wiring.py` 的固定工具名單漏列 `engineering_execute_rc_column_flow`；實際 pytest 為 `1368 passed / 1 failed / 4 skipped`，GUI jobs success。該 wiring regression 已更新，不是 execution bridge 邏輯故障。
+E7.5 曾有一個舊 wiring 固定名單漏列新 tool 的 regression，已修正；最新 E7.6 main CI 已完整覆蓋並全綠。
 
 ## E7.6 — Authoritative Media Canonical Submit Facade
 
-狀態：`IMPLEMENTED — MAIN CI / WIN11 VERIFICATION IN PROGRESS`
+狀態：`IMPLEMENTED / MAIN CI VERIFIED；WIN11 FOCUSED GATE PENDING`
 
-本批新增/修改：
-
-```text
-coworker/engineering/media_tools.py
-coworker/catalog.py
-coworker/personas/execution_bridge.py
-tests/test_e7_media_facade.py
-tests/test_e7_execution_bridge.py
-tests/test_engineering_persona_wiring.py
-.github/workflows/e7-media-company-personas-win11.yml
-```
-
-### 1. Authoritative submit contract 已確認
-
-直接以 ComfyX repo 現有 `cmd/comfyx-tool/main.go` 為權威來源，不猜 HTTP endpoint、不新增 `comfyx-submit` 假 CLI。
-
-ComfyX 正式協議：
+權威來源固定為 ComfyX `cmd/comfyx-tool/main.go`：
 
 ```text
 protocol_version = ai-tool-protocol/1.0.0
 tool_id          = comfyx.minimax_h3.generate
 ```
 
-官方 tool 已自行負責：
+OpenWorker 的 `ComfyXToolClient` 只做 protocol adapter 與 fail-closed response validation；Desktop runtime discovery、MiniMax H3 五模式 prompt build、ComfyUI submission/poll、history 與 artifact extraction 全部仍由 ComfyX 負責。
+
+Media persona 經既有 `engineering_os` catalog capability 使用 `engineering_generate_minimax_h3`，沒有新增第二套 registry/scheduler。生成 tool `requires_approval=True`，結果保留 `prompt_id/history/artifacts` 且固定 `publish_performed=false / external_send_performed=false`。
+
+驗證：main CI `31793729770` 已 completed / success，`pytest + gui-unit/typecheck + gui-e2e` 全部 success。Focused Win11 `31793729801` 仍 queued，屬 self-hosted runner routing/availability 狀態，不是測試失敗。
+
+## E7.7 — ComfyX Result → Canonical Artifact/Evidence Sync
+
+狀態：`IMPLEMENTED — MAIN CI / WIN11 VERIFICATION IN PROGRESS；REAL COMFYX URI GAP IDENTIFIED`
+
+本批新增/修改：
 
 ```text
-Desktop-first runtime discovery
-→ live capability probe
-→ MiniMax H3 canonical prompt build
-→ ComfyUI submission
-→ wait/poll
-→ history
-→ artifact extraction
-→ prompt_id + artifacts + history
+coworker/personas/media_evidence.py
+tests/test_e7_media_evidence.py
+coworker/personas/__init__.py
+.github/workflows/e7-media-company-personas-win11.yml
 ```
 
-五模式由同一 tool 的真實參數決定：無 reference、first frame、last frame、first+last frame、Ref2VA reference assets。OpenWorker 不複製這些 workflow 規則。
+### 1. Canonical Artifact Registry sync 已建立
 
-### 2. 新增薄協議 adapter：ComfyXToolClient
-
-`coworker.engineering.media_tools.ComfyXToolClient` 只做：
+新增：
 
 ```text
-建立 ai-tool-protocol request JSON
-→ comfyx-tool execute <request.json>
-→ 驗證 protocol_version
-→ 驗證 request_id
-→ 驗證 tool_id
-→ 驗證 status == succeeded
-→ 驗證 data.prompt_id / mode / runtime / required_nodes
-→ 保留 history / artifacts / warnings
+sync_comfyx_media_evidence(writer, PersonaJobSubmission, ComfyX result)
 ```
 
-允許參數完全按 ComfyX authoritative H3 schema 白名單；未知參數直接拒絕。Media generation facade 明確拒絕 `compile_only=true`，避免把「只編譯驗證」誤報成已生成。
-
-回傳 envelope：
+它只接受 E7.6 的 authoritative specialist result：
 
 ```text
-openworker.comfyx-h3-result/v1
 authority = ComfyX
+tool_id = comfyx.minimax_h3.generate
+request_id = non-empty
+prompt_id = non-empty
+artifacts = non-empty array
+```
+
+然後先重新讀取 AI-Engineering-OS canonical Job，核對：
+
+```text
+job.id == submission.job_id
+job.project_id == submission.project_id
+persona lineage
+persona_session_id lineage
+task_package_path lineage
+```
+
+任何 identity 衝突都在 Artifact Registry mutation 前 fail closed。
+
+### 2. 真實本地 artifact 驗證後才登記
+
+E7.7 不相信副檔名。若 artifact 是 MP4：
+
+```text
+explicit durable local uri/path
+→ file exists
+→ existing inspect_mp4() ISO-BMFF validation
+→ SHA-256 streaming checksum
+→ EngineeringOSClient.register_artifact(...)
+```
+
+Canonical registration 固定綁定：
+
+```text
+project_id = PersonaJobSubmission.project_id
+job_id = PersonaJobSubmission.job_id
+kind = animation_video (MP4)
+media_type = video/mp4
+checksum = actual local SHA-256
+source_run_id = ComfyX prompt_id
+```
+
+因此 `prompt_id` 已能成為 specialist execution → canonical Artifact 的 durable lineage，而不是只停留在 OpenWorker 回傳 JSON。
+
+同一 local path + checksum 在單次 sync 中會去重；AI-Engineering-OS 回傳的 artifact 再透過既有 `os_artifact_ref()` 轉為 `EvidenceRef`。沒有新增 Artifact Registry。
+
+### 3. Result envelope
+
+成功 sync 後回傳：
+
+```text
+openworker.persona-media-evidence-sync/v1
+authority = AI-Engineering-OS
+media_authority = ComfyX
+submission
 prompt_id
-mode
-runtime
-required_nodes
-history
-artifacts
+request_id
+artifacts = canonical EvidenceRef[]
 publish_performed = false
 external_send_performed = false
 ```
 
-這裡的 `authority=ComfyX` 只代表 specialist execution result 的來源；canonical Project/Job/Artifact governance 仍由 AI-Engineering-OS 負責。
+所以 E7.7 仍然只是 evidence registration，不會 publish、send，也不建立第二個 Job。
 
-### 3. 不新增第二套 Tool Registry
+### 4. 找到一個真正的跨 repo 缺口：ComfyX artifact 尚未提供 durable local URI
 
-Media persona 原本就使用既有 `engineering_os` catalog capability。本批只把：
-
-```text
-engineering_generate_minimax_h3
-```
-
-加入 `_engineering_os()` 已有工具集合：
+檢查 ComfyX `internal/comfyui/artifact/artifact.go` 後確認，現在 H3 artifact contract 是：
 
 ```text
-engineering_os_tools()
-+ managed_engineering_tools()
-+ managed_media_tools()
+node_id
+kind
+filename
+subfolder
+type
+url = /view?filename=...&subfolder=...&type=...
 ```
 
-沒有新增 `media_registry`、`media_scheduler`、第二個 agent loop 或 connector layer。
+它沒有 local `uri/path`，也沒有 checksum。`/view?...` 是 ComfyUI runtime view URL，不等於 AI-Engineering-OS 可持久驗證的 local Artifact URI。
 
-Managed tool metadata：
+因此 E7.7 **刻意不猜** `ComfyUI/output/...`、不從 Desktop 安裝路徑反推、不把 `/view` 偽裝成本地檔案。現有真實 E7.6 H3 result 進 E7.7 時會 fail closed，直到 ComfyX authoritative result 補出 durable artifact location。
 
-```text
-category = engineering
-capabilities = write, engineering, media, video, generation
-requires_approval = true
-```
-
-生成完成仍不等於 publish/send。
-
-### 4. Persona media submission 現在能產生真實 canonical tool descriptor
-
-E7.5 原先的 `media_submit_tool_call()` 因未確認 authoritative submit surface 而 fail-closed；E7.6 查清 ComfyX contract 後，現在輸出：
-
-```text
-tool_name = engineering_generate_minimax_h3
-arguments = verified media payload
-requires_approval = true
-authority = AI-Engineering-OS
-execution = not-performed
-```
-
-`CanonicalToolCall` 仍只是既有 Tool Registry 的 invocation descriptor，persona 自己沒有直接 subprocess 執行權。
+這個 gap 很重要：如果在 OpenWorker 端猜 output path，兩台電腦、Desktop 安裝位置、custom output directory 或 remote runtime 都會讓 lineage/checksum 失真。
 
 ### 5. Regression coverage
 
-`tests/test_e7_media_facade.py` 鎖定：
+`tests/test_e7_media_evidence.py` 已鎖定：
 
-- request 必須使用 `ai-tool-protocol/1.0.0`。
-- tool id 必須為 `comfyx.minimax_h3.generate`。
-- prompt_id / mode / runtime / required_nodes / artifacts / history 必須保留。
-- unknown argument 在 subprocess 前就 fail closed。
-- `compile_only=true` 不可冒充 generation。
-- response protocol/request/tool identity mismatch 必須拒絕。
-- managed media tool 仍 `requires_approval=True`。
-- result 不得宣稱 publish/send。
+- 真實 local MP4 經 ISO-BMFF 驗證與 SHA-256 後才 register。
+- register 必須綁既有 project_id/job_id。
+- `source_run_id` 必須等於 ComfyX prompt_id。
+- identical local path + checksum 去重。
+- 只有 filename/subfolder `/view` 的 current ComfyX artifact 必須 fail closed，不猜路徑。
+- remote URL 不會被下載或當成本地 evidence。
+- truncated/non-MP4 在 registry mutation 前拒絕。
+- canonical Job session lineage mismatch 在 registry mutation 前拒絕。
+- 非 media submission 不可 sync media evidence。
+- sync result 永遠不宣稱 publish/send。
 
-`tests/test_e7_execution_bridge.py` 已改為要求 Media submission 指向真實 `engineering_generate_minimax_h3` facade；`tests/test_engineering_persona_wiring.py` 也鎖定它與既有 engineering tools 共用同一個 catalog expansion。
-
-### 6. Win11 focused gate
-
-`.github/workflows/e7-media-company-personas-win11.yml` 已加入：
-
-```text
-coworker/engineering/media_tools.py
-coworker/catalog.py
-tests/test_engineering_persona_wiring.py
-tests/test_e7_media_facade.py
-```
-
-並在 compile / pytest / smoke 三層檢查 Media descriptor、managed tool 與 approval metadata。
+Focused Win11 workflow 已納入 `media_evidence.py`、`test_e7_media_evidence.py` 與 smoke import。
 
 ## CI / Win11 驗證狀態
-
-截至本次文檔更新：
 
 ```text
 E7.1～E7.3 main CI: 31790204795 → ALL SUCCESS
 E7.4 main CI:       31790725031 → ALL SUCCESS
-E7.6 main CI:       31793729770 → IN PROGRESS
-E7.6 focused Win11: 31793729801 → QUEUED
+E7.6 main CI:       31793729770 → ALL SUCCESS
+E7.6 focused Win11: 31793729801 → QUEUED (runner not assigned)
+E7.7 main CI:       triggered by current commits; verification pending
+E7.7 focused Win11: triggered by current commits; verification pending
 ```
 
-Focused Win11 若只是 self-hosted runner 未接單，不視為代碼失敗；只在 job 真正執行後依測試 conclusion 判定。
+Queued self-hosted Windows job 不視為代碼失敗；只在 runner 真正接單後依 conclusion 判定。
 
-## 下一批 E7.7 — ComfyX Result → Canonical Artifact/Evidence Sync
+## 下一批 E7.8 — ComfyX Durable Artifact Location Contract
 
-E7.6 已打通真實 specialist submit facade，但 ComfyX 回傳的 `artifacts/history/prompt_id` 還不能直接取代 AI-Engineering-OS Artifact Registry。
+目前阻止「真實 H3 → canonical Artifact Registry」閉環的最小缺口已縮到 ComfyX artifact contract。
 
-下一批應補最薄的 canonical result sync：
+下一批應直接在 ComfyX domain authority 補：
 
 ```text
-PersonaJobSubmission.job_id
-+ ComfyXH3Result(prompt_id/history/artifacts)
-→ 驗證真實本地輸出 / checksum / media type
-→ existing EngineeringOSClient.register_artifact(...)
-→ canonical Job metadata / execution evidence lineage
-→ existing list_job_artifacts / reviews / approval
-→ E7.5 read_canonical_result()
-→ E7.4 assess_delivery_readiness()
+comfyx.minimax_h3.generate
+→ artifact extraction
+→ resolve output through authoritative ComfyUI runtime/output contract
+→ durable local uri/path when runtime is local
+→ optional size/checksum metadata
+→ preserve existing filename/subfolder/type/url
 ```
 
-原則：
+然後 OpenWorker E7.7 直接消費該 authoritative URI：
 
-- 不新增 Artifact Registry。
-- 不把 ComfyX artifact list 當成已完成的 canonical delivery。
-- prompt_id 必須綁回既有 PersonaJobSubmission / AI-Engineering-OS Job lineage。
-- 真實媒體檔必須非空、格式/校驗值可驗證後才登記。
-- publish/send 仍走既有 approval / connector 邊界。
+```text
+ComfyX durable artifact URI
+→ E7.7 local format/checksum verification
+→ AI-Engineering-OS register_artifact
+→ E7.5 read_canonical_result
+→ E7.4 assess_delivery_readiness
+```
+
+原則仍是：路徑解析屬於 ComfyX/runtime domain，不搬到 Persona；remote runtime 若沒有可驗證 durable URI，就保持 fail closed，不偽造本地 evidence。
