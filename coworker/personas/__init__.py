@@ -10,6 +10,30 @@ from __future__ import annotations
 
 from .manifest import PersonaManifest, ManifestError, parse_manifest, load_manifest_file
 from .registry import PersonaRegistry, PersonaState, DEFAULT_PERSONA_ID
+from .task_package import (
+    ActionClass,
+    PackageKind,
+    PersonaTaskPackage,
+    TaskPackageError,
+    WorkStep,
+    company_task_package,
+    media_task_package,
+)
+from .product_contract import (
+    CanonicalHandoff,
+    DeliveryEvidence,
+    ExternalApprovalIntent,
+    HandoffCapability,
+    PersonaProductPlan,
+    PersonaSession,
+    ProductContractError,
+    QAStatus,
+    build_product_plan,
+    canonical_handoffs,
+    delivery_evidence,
+    external_approval_intents,
+    save_task_package,
+)
 
 __all__ = [
     "PersonaManifest",
@@ -19,4 +43,24 @@ __all__ = [
     "PersonaRegistry",
     "PersonaState",
     "DEFAULT_PERSONA_ID",
+    "ActionClass",
+    "PackageKind",
+    "PersonaTaskPackage",
+    "TaskPackageError",
+    "WorkStep",
+    "company_task_package",
+    "media_task_package",
+    "CanonicalHandoff",
+    "DeliveryEvidence",
+    "ExternalApprovalIntent",
+    "HandoffCapability",
+    "PersonaProductPlan",
+    "PersonaSession",
+    "ProductContractError",
+    "QAStatus",
+    "build_product_plan",
+    "canonical_handoffs",
+    "delivery_evidence",
+    "external_approval_intents",
+    "save_task_package",
 ]
