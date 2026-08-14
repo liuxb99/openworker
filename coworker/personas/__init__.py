@@ -51,6 +51,12 @@ from .execution_bridge import (
     rc_column_tool_call,
     read_canonical_result,
 )
+from .media_evidence import (
+    MediaArtifactWriter,
+    MediaEvidenceSyncError,
+    MediaEvidenceSyncResult,
+    sync_comfyx_media_evidence,
+)
 
 __all__ = [
     "PersonaManifest",
@@ -93,4 +99,8 @@ __all__ = [
     "media_submit_tool_call",
     "rc_column_tool_call",
     "read_canonical_result",
+    "MediaArtifactWriter",
+    "MediaEvidenceSyncError",
+    "MediaEvidenceSyncResult",
+    "sync_comfyx_media_evidence",
 ]
