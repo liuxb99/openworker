@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import shlex
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping
@@ -36,9 +37,29 @@ def _candidate_roots(env: Mapping[str, str]) -> list[Path]:
     resource = env.get("OPENWORKER_RESOURCE_DIR", "").strip()
     if resource:
         candidates.append(Path(resource) / "harness")
+
+    # Tauri production layout places the PyInstaller onedir sidecar in
+    # <resources>/sidecar/openworker-server[.exe] and this integration directory
+    # in <resources>/harness.  Infer the sibling from sys.executable so the
+    # packaged server does not depend on a shell-provided environment variable.
+    try:
+        executable = Path(sys.executable).resolve()
+        candidates.append(executable.parent.parent / "harness")
+    except (OSError, RuntimeError):
+        pass
+
     package_root = Path(__file__).resolve().parents[2]
     candidates.append(package_root / "harness")
-    return candidates
+
+    # Preserve order while avoiding repeated filesystem probes.
+    unique: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = os.path.normcase(os.path.abspath(str(candidate)))
+        if key not in seen:
+            seen.add(key)
+            unique.append(candidate)
+    return unique
 
 
 def resolve_harness_layout(env: Mapping[str, str] | None = None) -> HarnessPackageLayout:
