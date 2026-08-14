@@ -17,6 +17,7 @@ from .engine import ApprovalOutcome, PermissionRequest
 from .events import EventType
 from .permissions import Mode
 from .runtimes.engineering_host import EngineeringHarnessHost
+from .runtimes.engineering_launch import packaged_process_config
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -77,8 +78,10 @@ async def _run(args: argparse.Namespace) -> int:
         raise SystemExit(f"Project Workspace does not exist: {workspace}")
     request = _resolve_request(workspace, list(args.request))
     approver = _approve_once if args.auto_approve else _interactive_approver
+    process_config = packaged_process_config(workspace)
     host = EngineeringHarnessHost(
         workspace=workspace,
+        process_config=process_config,
         engineering_os_base_url=args.engineering_os_url or None,
         tool_runtime_base_url=args.tool_runtime_url or None,
         mode=Mode.INTERACTIVE,
