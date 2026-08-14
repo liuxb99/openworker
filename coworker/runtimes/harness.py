@@ -98,6 +98,7 @@ class AcpProcessClient:
 
     @staticmethod
     async def _deny_permission(_params: dict[str, Any]) -> dict[str, Any]:
+        # H4 will route these requests through OpenWorker PermissionEngine.
         return {"outcome": {"outcome": "cancelled"}}
 
     @property
@@ -251,6 +252,8 @@ class AcpProcessClient:
             response = await self._on_permission(params)
             await self._send({"jsonrpc": "2.0", "id": frame["id"], "result": response})
             return
+        # Unknown server notifications are ignored for forward compatibility;
+        # unknown requests fail explicitly instead of hanging the Harness.
         if "id" in frame:
             await self._send(
                 {
@@ -296,23 +299,23 @@ class AcpProcessClient:
 
 
 class DeepSeekHarnessRuntime:
-    """H3 AgentRuntime backed by a real Harness ACP subprocess."""
+    """H3 AgentRuntime backed by a real Harness ACP subprocess.
+
+    The adapter intentionally exposes only the current ACP automation subset.
+    OpenWorker remains native-by-default until later governance/session/tool
+    bridges and A/B validation are completed.
+    """
 
     def __init__(
         self,
         *,
         process_config: HarnessProcessConfig | None = None,
         workspace: str | os.PathLike[str] | None = None,
-        permission_handler: PermissionHandler | None = None,
     ) -> None:
         self.workspace = Path(workspace or os.getcwd()).resolve()
         self.process_config = process_config or HarnessProcessConfig.from_env(cwd=self.workspace)
         self._messages: asyncio.Queue[str] = asyncio.Queue()
-        self._client = AcpProcessClient(
-            self.process_config,
-            on_update=self._on_update,
-            on_permission=permission_handler,
-        )
+        self._client = AcpProcessClient(self.process_config, on_update=self._on_update)
         self._session_id: str | None = None
         self._interrupt_task: asyncio.Task[None] | None = None
 
@@ -358,7 +361,10 @@ class DeepSeekHarnessRuntime:
                 )
             if stop_reason == "cancelled":
                 yield Event(EventType.INTERRUPTED, {"runtime": "harness"})
-            yield Event(EventType.TURN_END, {"runtime": "harness", "stop_reason": stop_reason})
+            yield Event(
+                EventType.TURN_END,
+                {"runtime": "harness", "stop_reason": stop_reason},
+            )
         except Exception as exc:
             yield Event(EventType.ERROR, {"runtime": "harness", "error": str(exc)})
             yield Event(EventType.TURN_END, {"runtime": "harness", "stop_reason": "error"})
@@ -388,6 +394,7 @@ class DeepSeekHarnessRuntime:
         raise HarnessCapabilityError("ACP runtime model switching is not available in H3")
 
     async def health(self) -> dict[str, Any]:
+        """Return process/transport health without pretending H4-H7 exist."""
         return {
             "runtime": "harness",
             "process_running": self._client.running,
@@ -398,7 +405,7 @@ class DeepSeekHarnessRuntime:
                 "text_prompt": True,
                 "cancel": True,
                 "committed_messages": True,
-                "permission_bridge": self._client._on_permission is not self._client._deny_permission,
+                "permission_bridge": False,
                 "resume": False,
                 "rich_events": False,
             },

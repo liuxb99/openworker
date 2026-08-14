@@ -1,8 +1,11 @@
 """Engineering Harness runtime composed from existing OpenWorker seams.
 
-H6 owns AI-Engineering-OS tool discovery/invocation. H7 adds only the missing
-information ingress: the first Harness turn is prefixed with the authoritative
-prompt returned by go-tool-runtime for the current Project Workspace.
+The unified H7 runtime keeps each authority separate:
+* go-tool-runtime owns Project Workspace information/bootstrap;
+* AI-Engineering-OS owns durable project/job/tool execution state;
+* ManagedDeepSeekHarnessRuntime owns per-turn runtime-job correlation/cancellation;
+* OpenWorker owns permission decisions;
+* DeepSeek Harness owns ACP/model execution.
 """
 
 from __future__ import annotations
@@ -13,7 +16,9 @@ from pathlib import Path
 from typing import Any, AsyncIterator, Optional
 
 from ..events import Event, EventType
-from .harness import DeepSeekHarnessRuntime, HarnessProcessConfig, PermissionHandler
+from .harness import HarnessProcessConfig, PermissionHandler
+from .harness_jobs import EngineeringOSJobClient, HarnessRuntimeJobRegistry
+from .harness_managed import ManagedDeepSeekHarnessRuntime
 from .tool_runtime_bootstrap import (
     ToolRuntimeBootstrap,
     ToolRuntimeBootstrapClient,
@@ -21,8 +26,8 @@ from .tool_runtime_bootstrap import (
 )
 
 
-class EngineeringHarnessRuntime(DeepSeekHarnessRuntime):
-    """DeepSeek Harness with one authoritative Project Workspace bootstrap."""
+class EngineeringHarnessRuntime(ManagedDeepSeekHarnessRuntime):
+    """Managed Harness runtime with authoritative Project Workspace bootstrap."""
 
     def __init__(
         self,
@@ -32,15 +37,32 @@ class EngineeringHarnessRuntime(DeepSeekHarnessRuntime):
         bootstrap_client: ToolRuntimeBootstrapClient | None = None,
         bootstrap_project: str = "",
         permission_handler: PermissionHandler | None = None,
+        job_registry: HarnessRuntimeJobRegistry | None = None,
+        os_jobs: EngineeringOSJobClient | None = None,
     ) -> None:
+        resolved_process = process_config or HarnessProcessConfig.from_env(cwd=workspace)
+        env = dict(resolved_process.env)
+        if os_jobs is None:
+            base_url = str(env.get("OPENWORKER_ENGINEERING_OS_BASE_URL") or "").strip()
+            if base_url:
+                os_jobs = EngineeringOSJobClient(
+                    base_url,
+                    token=str(env.get("OPENWORKER_ENGINEERING_OS_TOKEN") or "").strip() or None,
+                )
         super().__init__(
-            process_config=process_config,
+            process_config=resolved_process,
             workspace=workspace,
-            permission_handler=permission_handler,
+            job_registry=job_registry,
+            os_jobs=os_jobs,
         )
+        if permission_handler is not None:
+            # H3 remains fail-closed by default. The engineering composition root is
+            # the only layer allowed to replace that default with OpenWorker policy.
+            self._client._on_permission = permission_handler
         self._bootstrap_client = bootstrap_client or ToolRuntimeBootstrapClient.from_env()
         self._owns_bootstrap_client = bootstrap_client is None
         self._bootstrap_project = str(bootstrap_project or "").strip()
+        self._engineering_job_id = str(env.get("OPENWORKER_ENGINEERING_JOB_ID") or "").strip()
         self._bootstrap: ToolRuntimeBootstrap | None = None
         self._bootstrap_lock = asyncio.Lock()
         self._last_result = "success"
@@ -70,6 +92,19 @@ class EngineeringHarnessRuntime(DeepSeekHarnessRuntime):
             + "\n</CurrentUserRequest>"
         )
 
+    def _scoped_source(self, source: Optional[dict[str, Any]]) -> dict[str, Any]:
+        scoped = dict(source or {})
+        if self._bootstrap_project and self._engineering_job_id:
+            existing_project = scoped.get("project_id")
+            existing_job = scoped.get("engineering_job_id")
+            if existing_project not in (None, "", self._bootstrap_project):
+                raise ValueError("source.project_id conflicts with engineering host scope")
+            if existing_job not in (None, "", self._engineering_job_id):
+                raise ValueError("source.engineering_job_id conflicts with engineering host scope")
+            scoped["project_id"] = self._bootstrap_project
+            scoped["engineering_job_id"] = self._engineering_job_id
+        return scoped
+
     async def run(
         self,
         user_input: str | list,
@@ -78,7 +113,7 @@ class EngineeringHarnessRuntime(DeepSeekHarnessRuntime):
         display: Optional[str] = None,
     ) -> AsyncIterator[Event]:
         if not isinstance(user_input, str):
-            async for event in super().run(user_input, source=source, display=display):
+            async for event in super().run(user_input, source=self._scoped_source(source), display=display):
                 yield event
             return
         try:
@@ -93,7 +128,8 @@ class EngineeringHarnessRuntime(DeepSeekHarnessRuntime):
 
         saw_error = False
         stop_reason = ""
-        async for event in super().run(prompt, source=source, display=display):
+        scoped_source = self._scoped_source(source)
+        async for event in super().run(prompt, source=scoped_source, display=display):
             if event.type is EventType.ERROR:
                 saw_error = True
                 self._last_result = "failed"
@@ -109,10 +145,13 @@ class EngineeringHarnessRuntime(DeepSeekHarnessRuntime):
         base = await super().health()
         capabilities = dict(base.get("capabilities") or {})
         capabilities["tool_runtime_bootstrap"] = True
+        capabilities["permission_bridge"] = self._client._on_permission is not self._client._deny_permission
         base["capabilities"] = capabilities
         base["information_authority"] = "go-tool-runtime"
         base["execution_authority"] = "AI-Engineering-OS"
         base["bootstrap_session_created"] = self._bootstrap is not None
+        base["engineering_project_id"] = self._bootstrap_project or None
+        base["engineering_job_id"] = self._engineering_job_id or None
         return base
 
     async def aclose(self) -> None:
@@ -126,8 +165,6 @@ class EngineeringHarnessRuntime(DeepSeekHarnessRuntime):
                         result=self._last_result,
                     )
                 except ToolRuntimeBootstrapError:
-                    # Runtime shutdown must still release the Harness process. The
-                    # information-authority finish failure cannot justify leaking it.
                     pass
         finally:
             await super().aclose()
