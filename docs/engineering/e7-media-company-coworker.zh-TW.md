@@ -26,116 +26,62 @@ E7 讓 OpenWorker 的 Media / Company Coworker 把工作轉成可保存、可交
 
 Persona 只建立既有 Tool Registry 可執行的 `CanonicalToolCall` descriptor；RC-column 委派 AI-Engineering-OS authoritative flow。`read_canonical_result()` 只回讀 canonical Job/Artifact/Review/approval，任何 lineage 衝突 fail closed，且永遠不宣稱已 publish/send。
 
-E7.5 曾有一個舊 wiring 固定名單漏列新 tool 的 regression，已修正；最新 E7.6 main CI 已完整覆蓋並全綠。
-
 ## E7.6 — Authoritative Media Canonical Submit Facade
 
 狀態：`IMPLEMENTED / MAIN CI VERIFIED；WIN11 FOCUSED GATE PENDING`
 
-權威來源固定為 ComfyX `cmd/comfyx-tool/main.go`：
+權威入口固定為：
 
 ```text
 protocol_version = ai-tool-protocol/1.0.0
 tool_id          = comfyx.minimax_h3.generate
 ```
 
-OpenWorker 的 `ComfyXToolClient` 只做 protocol adapter 與 fail-closed response validation；Desktop runtime discovery、MiniMax H3 五模式 prompt build、ComfyUI submission/poll、history 與 artifact extraction 全部仍由 ComfyX 負責。
+OpenWorker 的 `ComfyXToolClient` 只做 protocol adapter；Desktop runtime discovery、MiniMax H3 五模式 prompt build、ComfyUI submission/poll、history 與 output extraction 都由 ComfyX 負責。Media persona 經既有 `engineering_os` catalog capability 使用 `engineering_generate_minimax_h3`，沒有新增第二套 registry/scheduler。
 
-Media persona 經既有 `engineering_os` catalog capability 使用 `engineering_generate_minimax_h3`，沒有新增第二套 registry/scheduler。生成 tool `requires_approval=True`，結果保留 `prompt_id/history/artifacts` 且固定 `publish_performed=false / external_send_performed=false`。
-
-驗證：main CI `31793729770` 已 completed / success，`pytest + gui-unit/typecheck + gui-e2e` 全部 success。Focused Win11 `31793729801` 仍 queued，屬 self-hosted runner routing/availability 狀態，不是測試失敗。
+Main CI `31793729770` 已 completed / success，`pytest + gui-unit/typecheck + gui-e2e` 全綠。
 
 ## E7.7 — ComfyX Result → Canonical Artifact/Evidence Sync
 
-狀態：`IMPLEMENTED — MAIN CI / WIN11 VERIFICATION IN PROGRESS；REAL COMFYX URI GAP IDENTIFIED`
+狀態：`IMPLEMENTED — MAIN CI RE-VERIFYING WITH E7.8；WIN11 FOCUSED GATE PENDING`
 
-本批新增/修改：
+核心：`coworker/personas/media_evidence.py`、`tests/test_e7_media_evidence.py`。
 
-```text
-coworker/personas/media_evidence.py
-tests/test_e7_media_evidence.py
-coworker/personas/__init__.py
-.github/workflows/e7-media-company-personas-win11.yml
-```
+`sync_comfyx_media_evidence()` 會先核對 AI-Engineering-OS canonical Job 的 project/persona/session/task-package lineage，然後才接受 ComfyX durable artifact。
 
-### 1. Canonical Artifact Registry sync 已建立
-
-新增：
+MP4 evidence 路線：
 
 ```text
-sync_comfyx_media_evidence(writer, PersonaJobSubmission, ComfyX result)
-```
-
-它只接受 E7.6 的 authoritative specialist result：
-
-```text
-authority = ComfyX
-tool_id = comfyx.minimax_h3.generate
-request_id = non-empty
-prompt_id = non-empty
-artifacts = non-empty array
-```
-
-然後先重新讀取 AI-Engineering-OS canonical Job，核對：
-
-```text
-job.id == submission.job_id
-job.project_id == submission.project_id
-persona lineage
-persona_session_id lineage
-task_package_path lineage
-```
-
-任何 identity 衝突都在 Artifact Registry mutation 前 fail closed。
-
-### 2. 真實本地 artifact 驗證後才登記
-
-E7.7 不相信副檔名。若 artifact 是 MP4：
-
-```text
-explicit durable local uri/path
+explicit local uri/path
 → file exists
-→ existing inspect_mp4() ISO-BMFF validation
+→ inspect_mp4() ISO-BMFF validation
 → SHA-256 streaming checksum
 → EngineeringOSClient.register_artifact(...)
+→ os_artifact_ref()
 ```
 
-Canonical registration 固定綁定：
+Canonical registration 固定：
 
 ```text
 project_id = PersonaJobSubmission.project_id
 job_id = PersonaJobSubmission.job_id
-kind = animation_video (MP4)
+kind = animation_video
 media_type = video/mp4
 checksum = actual local SHA-256
 source_run_id = ComfyX prompt_id
 ```
 
-因此 `prompt_id` 已能成為 specialist execution → canonical Artifact 的 durable lineage，而不是只停留在 OpenWorker 回傳 JSON。
+E7.8 後，E7.7 也會交叉驗證 ComfyX 宣告的 `size` 與 `sha256`；若 ComfyX metadata 與實際 materialized bytes 不一致，會在 Artifact Registry mutation 前 fail closed。
 
-同一 local path + checksum 在單次 sync 中會去重；AI-Engineering-OS 回傳的 artifact 再透過既有 `os_artifact_ref()` 轉為 `EvidenceRef`。沒有新增 Artifact Registry。
+## E7.8 — ComfyX Durable Artifact Location Contract
 
-### 3. Result envelope
+狀態：`IMPLEMENTED — COMFYX CI / OPENWORKER CI IN PROGRESS`
 
-成功 sync 後回傳：
+這批直接修改 domain authority `liuxb99/ComfyX`，沒有把 output-path 猜測搬進 Persona/OpenWorker。
 
-```text
-openworker.persona-media-evidence-sync/v1
-authority = AI-Engineering-OS
-media_authority = ComfyX
-submission
-prompt_id
-request_id
-artifacts = canonical EvidenceRef[]
-publish_performed = false
-external_send_performed = false
-```
+### 1. 不再猜 ComfyUI output directory
 
-所以 E7.7 仍然只是 evidence registration，不會 publish、send，也不建立第二個 Job。
-
-### 4. 找到一個真正的跨 repo 缺口：ComfyX artifact 尚未提供 durable local URI
-
-檢查 ComfyX `internal/comfyui/artifact/artifact.go` 後確認，現在 H3 artifact contract 是：
+原本 ComfyX `artifact.Extract()` 只提供：
 
 ```text
 node_id
@@ -146,65 +92,170 @@ type
 url = /view?filename=...&subfolder=...&type=...
 ```
 
-它沒有 local `uri/path`，也沒有 checksum。`/view?...` 是 ComfyUI runtime view URL，不等於 AI-Engineering-OS 可持久驗證的 local Artifact URI。
+這些值足以讓 ComfyUI 取回輸出，但不足以作為 AI-Engineering-OS durable Artifact evidence。
 
-因此 E7.7 **刻意不猜** `ComfyUI/output/...`、不從 Desktop 安裝路徑反推、不把 `/view` 偽裝成本地檔案。現有真實 E7.6 H3 result 進 E7.7 時會 fail closed，直到 ComfyX authoritative result 補出 durable artifact location。
+E7.8 沒有使用：
 
-這個 gap 很重要：如果在 OpenWorker 端猜 output path，兩台電腦、Desktop 安裝位置、custom output directory 或 remote runtime 都會讓 lineage/checksum 失真。
+```text
+<Desktop install>/output
+COMFYUI/output
+固定 D:\... 路徑
+```
 
-### 5. Regression coverage
+因為這些做法在 Desktop、自訂 output_dir、不同機器與 external runtime 都不可靠。
 
-`tests/test_e7_media_evidence.py` 已鎖定：
+### 2. 新增 ComfyX-owned materialization
 
-- 真實 local MP4 經 ISO-BMFF 驗證與 SHA-256 後才 register。
-- register 必須綁既有 project_id/job_id。
-- `source_run_id` 必須等於 ComfyX prompt_id。
-- identical local path + checksum 去重。
-- 只有 filename/subfolder `/view` 的 current ComfyX artifact 必須 fail closed，不猜路徑。
-- remote URL 不會被下載或當成本地 evidence。
-- truncated/non-MP4 在 registry mutation 前拒絕。
-- canonical Job session lineage mismatch 在 registry mutation 前拒絕。
-- 非 media submission 不可 sync media evidence。
-- sync result 永遠不宣稱 publish/send。
+新增：
 
-Focused Win11 workflow 已納入 `media_evidence.py`、`test_e7_media_evidence.py` 與 smoke import。
+```text
+internal/comfyui/artifact/materialize.go
+Materialize(ctx, baseURL, promptID, root, artifacts)
+```
+
+ComfyX 直接使用 authoritative artifact `/view?...` URL 把真實 bytes 複製到自己的 artifact cache：
+
+```text
+COMFYX_ARTIFACT_DIR
+或 <OS user cache>/ComfyX/artifacts
+或 temp fallback
+```
+
+結構：
+
+```text
+<artifact-root>/<prompt_id>/<node_id>/<kind>/<filename>
+```
+
+因此 durable location 是 **ComfyX 實際寫出的本地副本**，不是從 ComfyUI 安裝路徑反推。
+
+### 3. DurableArtifact contract
+
+H3 artifact 現在保留原始 ComfyUI identity，同時新增：
+
+```text
+uri
+size
+sha256
+media_type
+```
+
+完整概念：
+
+```text
+node_id / kind / filename / subfolder / type / url
++ uri / size / sha256 / media_type
+```
+
+Materialize 使用 streaming copy + streaming SHA-256；空輸出直接失敗。寫檔先進 `.tmp`，成功後 rename，避免把半寫 artifact 暴露成 durable evidence。Filename 使用 basename，禁止藉由 ComfyUI filename 逃出 ComfyX artifact root。
+
+### 4. `comfyx.minimax_h3.generate` 已接入 durable materialization
+
+`cmd/comfyx-tool/main.go` 現在流程：
+
+```text
+runner.Run()
+→ prompt_id + history
+→ artifact.Extract()
+→ artifact.Materialize(selected.BaseURL, prompt_id, ...)
+→ durable artifacts
+→ ai-tool-protocol response
+```
+
+若 `/view` 下載、materialization、空檔或 rename 任一步失敗，H3 tool 整體 fail closed，不會回報一份無法驗證的成功 artifact。
+
+Tool version 已提升至 `1.4.0`。
+
+### 5. ComfyX regression
+
+新增：
+
+```text
+internal/comfyui/artifact/materialize_test.go
+```
+
+鎖定：
+
+- `/view` 真實 bytes 必須寫入 durable URI。
+- size 必須等於實際 bytes。
+- sha256 必須等於實際 bytes。
+- media type 要保留/推導。
+- 空輸出拒絕。
+- artifact filename 的 `../` 不得造成 path traversal。
+
+另外新增 `.github/workflows/artifact-contract-ci.yml`：
+
+```text
+go test ./internal/comfyui/artifact -count=1 -v
+go test ./cmd/comfyx-tool -count=1
+```
+
+用來快速驗證 artifact contract 與 authoritative tool facade 的 compile contract；原有 G12/G15 self-hosted Windows H3 workflow 仍負責真實 GPU/Desktop 驗證。
+
+### 6. OpenWorker 已開始消費新 contract
+
+`coworker/personas/media_evidence.py` 現在除了重新計算本地 SHA-256，也會交叉檢查：
+
+```text
+ComfyX size == local stat().st_size
+ComfyX sha256 == OpenWorker recomputed SHA-256
+```
+
+任一不一致都不呼叫 `register_artifact()`。
+
+所以跨 repo evidence chain 現在是：
+
+```text
+ComfyUI actual output
+→ ComfyX /view
+→ ComfyX durable materialized copy
+→ uri + size + sha256 + media_type
+→ OpenWorker format/size/checksum re-validation
+→ AI-Engineering-OS register_artifact
+→ canonical EvidenceRef
+```
+
+這已消除 E7.7 原本最大的「真實 H3 output 沒有 authoritative local URI」缺口。
 
 ## CI / Win11 驗證狀態
 
 ```text
-E7.1～E7.3 main CI: 31790204795 → ALL SUCCESS
-E7.4 main CI:       31790725031 → ALL SUCCESS
+E7.1～E7.4 main CI: VERIFIED
 E7.6 main CI:       31793729770 → ALL SUCCESS
-E7.6 focused Win11: 31793729801 → QUEUED (runner not assigned)
-E7.7 main CI:       triggered by current commits; verification pending
-E7.7 focused Win11: triggered by current commits; verification pending
+E7.8 OpenWorker CI: 31794621931 → IN PROGRESS
+E7 focused Win11:   31794621999 → QUEUED
+ComfyX artifact CI: 31794670101 → QUEUED / STARTING
+ComfyX G12 H3:      31794558886 → QUEUED (self-hosted Windows)
+ComfyX G15 H3:      latest E7.8-triggered run queued (self-hosted Windows)
 ```
 
-Queued self-hosted Windows job 不視為代碼失敗；只在 runner 真正接單後依 conclusion 判定。
+Self-hosted Windows queued 只代表 runner 尚未接單，不視為代碼失敗。
 
-## 下一批 E7.8 — ComfyX Durable Artifact Location Contract
+## 下一批 E7.9 — Real Media End-to-End Closure
 
-目前阻止「真實 H3 → canonical Artifact Registry」閉環的最小缺口已縮到 ComfyX artifact contract。
-
-下一批應直接在 ComfyX domain authority 補：
+E7.8 已把 specialist output → durable local evidence 的 contract 補齊。下一批不應再增加抽象層，而是直接用真實 H3 跑一次完整產品閉環：
 
 ```text
-comfyx.minimax_h3.generate
-→ artifact extraction
-→ resolve output through authoritative ComfyUI runtime/output contract
-→ durable local uri/path when runtime is local
-→ optional size/checksum metadata
-→ preserve existing filename/subfolder/type/url
+Media PersonaTaskPackage
+→ PersonaProductPlan
+→ AI-Engineering-OS canonical Job
+→ media_submit_tool_call()
+→ engineering_generate_minimax_h3
+→ comfyx.minimax_h3.generate
+→ durable ComfyX artifact
+→ sync_comfyx_media_evidence()
+→ AI-Engineering-OS Artifact Registry
+→ read_canonical_result()
+→ QA / review / approval
+→ assess_delivery_readiness()
 ```
 
-然後 OpenWorker E7.7 直接消費該 authoritative URI：
+驗收重點：
 
-```text
-ComfyX durable artifact URI
-→ E7.7 local format/checksum verification
-→ AI-Engineering-OS register_artifact
-→ E7.5 read_canonical_result
-→ E7.4 assess_delivery_readiness
-```
-
-原則仍是：路徑解析屬於 ComfyX/runtime domain，不搬到 Persona；remote runtime 若沒有可驗證 durable URI，就保持 fail closed，不偽造本地 evidence。
+- 真實非空 MP4。
+- ComfyX sha256 與 OpenWorker 重算一致。
+- Artifact Registry checksum 一致。
+- `source_run_id == prompt_id`。
+- Job/persona/session/task-package lineage 不斷鏈。
+- 未經 approval 絕不 publish/send。
+- 真實生成與 evidence sync 成功後才把 E7 Media 主線標成 end-to-end closed。
