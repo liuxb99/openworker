@@ -1,6 +1,6 @@
 """Engineering Harness runtime composed from existing OpenWorker seams.
 
-H6 owns AI-Engineering-OS tool discovery/invocation.  H7 adds only the missing
+H6 owns AI-Engineering-OS tool discovery/invocation. H7 adds only the missing
 information ingress: the first Harness turn is prefixed with the authoritative
 prompt returned by go-tool-runtime for the current Project Workspace.
 """
@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, AsyncIterator, Optional
 
 from ..events import Event, EventType
-from .harness import DeepSeekHarnessRuntime, HarnessProcessConfig
+from .harness import DeepSeekHarnessRuntime, HarnessProcessConfig, PermissionHandler
 from .tool_runtime_bootstrap import (
     ToolRuntimeBootstrap,
     ToolRuntimeBootstrapClient,
@@ -31,8 +31,13 @@ class EngineeringHarnessRuntime(DeepSeekHarnessRuntime):
         workspace: str | os.PathLike[str] | None = None,
         bootstrap_client: ToolRuntimeBootstrapClient | None = None,
         bootstrap_project: str = "",
+        permission_handler: PermissionHandler | None = None,
     ) -> None:
-        super().__init__(process_config=process_config, workspace=workspace)
+        super().__init__(
+            process_config=process_config,
+            workspace=workspace,
+            permission_handler=permission_handler,
+        )
         self._bootstrap_client = bootstrap_client or ToolRuntimeBootstrapClient.from_env()
         self._owns_bootstrap_client = bootstrap_client is None
         self._bootstrap_project = str(bootstrap_project or "").strip()
@@ -81,9 +86,9 @@ class EngineeringHarnessRuntime(DeepSeekHarnessRuntime):
         except ToolRuntimeBootstrapError as exc:
             self._last_result = "failed"
             self._last_summary = f"go-tool-runtime bootstrap failed: {exc}"
-            yield Event(EventType.TURN_START, {"runtime":"harness", "source":source, "display":display})
-            yield Event(EventType.ERROR, {"runtime":"harness", "error":str(exc), "authority":"go-tool-runtime"})
-            yield Event(EventType.TURN_END, {"runtime":"harness", "stop_reason":"bootstrap_error"})
+            yield Event(EventType.TURN_START, {"runtime": "harness", "source": source, "display": display})
+            yield Event(EventType.ERROR, {"runtime": "harness", "error": str(exc), "authority": "go-tool-runtime"})
+            yield Event(EventType.TURN_END, {"runtime": "harness", "stop_reason": "bootstrap_error"})
             return
 
         saw_error = False
@@ -121,9 +126,8 @@ class EngineeringHarnessRuntime(DeepSeekHarnessRuntime):
                         result=self._last_result,
                     )
                 except ToolRuntimeBootstrapError:
-                    # Runtime shutdown must still release the Harness process.  The
-                    # information-authority finish failure is observable during normal
-                    # execution via the client; it cannot justify leaking a subprocess.
+                    # Runtime shutdown must still release the Harness process. The
+                    # information-authority finish failure cannot justify leaking it.
                     pass
         finally:
             await super().aclose()
