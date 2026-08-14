@@ -30,18 +30,27 @@ class HarnessLaunchCapability:
 
 
 def _candidate_roots(env: Mapping[str, str]) -> list[Path]:
-    candidates: list[Path] = []
+    """Return authoritative Harness asset roots in precedence order.
+
+    Explicit packaging paths are fail-closed contracts: once a caller supplies an
+    asset or resource directory we must not silently fall back to a development
+    checkout.  Implicit executable/repository discovery is only for environments
+    that did not configure a packaged location.
+    """
     override = env.get("OPENWORKER_HARNESS_ASSET_DIR", "").strip()
     if override:
-        candidates.append(Path(override))
+        return [Path(override)]
+
     resource = env.get("OPENWORKER_RESOURCE_DIR", "").strip()
     if resource:
-        candidates.append(Path(resource) / "harness")
+        return [Path(resource) / "harness"]
+
+    candidates: list[Path] = []
 
     # Tauri production layout places the PyInstaller onedir sidecar in
     # <resources>/sidecar/openworker-server[.exe] and this integration directory
-    # in <resources>/harness.  Infer the sibling from sys.executable so the
-    # packaged server does not depend on a shell-provided environment variable.
+    # in <resources>/harness. Infer the sibling from sys.executable when no
+    # explicit packaged location was supplied.
     try:
         executable = Path(sys.executable).resolve()
         candidates.append(executable.parent.parent / "harness")
