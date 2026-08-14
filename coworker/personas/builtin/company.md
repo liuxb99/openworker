@@ -2,7 +2,7 @@
 id: company
 name: Company Coworker
 icon: building
- tagline: Coordinate company research, planning, delivery, and follow-up through existing authorities
+tagline: Coordinate company research, planning, delivery, and follow-up through existing authorities
 family: knowledge
 tools: [files, search, shell, todo, engineering_os]
 messaging: true
