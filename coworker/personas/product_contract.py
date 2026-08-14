@@ -50,11 +50,18 @@ def _segment(value: str, field_name: str) -> str:
 class PersonaSession:
     """Identity needed to bind a task package to one existing OpenWorker session/workspace."""
 
-    persona: PackageKind
+    persona: PackageKind | str
     session_id: str
     workspace_id: str
 
     def __post_init__(self) -> None:
+        persona = self.persona
+        if not isinstance(persona, PackageKind):
+            try:
+                persona = PackageKind(str(persona).strip().lower())
+            except ValueError as exc:
+                raise ProductContractError("persona must be media or company") from exc
+        object.__setattr__(self, "persona", persona)
         object.__setattr__(self, "session_id", _segment(self.session_id, "session_id"))
         object.__setattr__(self, "workspace_id", _segment(self.workspace_id, "workspace_id"))
 
