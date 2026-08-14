@@ -42,6 +42,15 @@ from .submission import (
     collect_job_artifacts,
     submit_product_plan,
 )
+from .execution_bridge import (
+    CanonicalResultSnapshot,
+    CanonicalToolCall,
+    ExecutionBridgeError,
+    UnsupportedCanonicalFlowError,
+    media_submit_tool_call,
+    rc_column_tool_call,
+    read_canonical_result,
+)
 
 __all__ = [
     "PersonaManifest",
@@ -77,4 +86,11 @@ __all__ = [
     "assess_delivery_readiness",
     "collect_job_artifacts",
     "submit_product_plan",
+    "CanonicalResultSnapshot",
+    "CanonicalToolCall",
+    "ExecutionBridgeError",
+    "UnsupportedCanonicalFlowError",
+    "media_submit_tool_call",
+    "rc_column_tool_call",
+    "read_canonical_result",
 ]
