@@ -8,6 +8,11 @@ from .harness import (
     HarnessProcessConfig,
     HarnessRuntimeError,
 )
+from .harness_context_ingress import (
+    HarnessContextIngressAddress,
+    HarnessContextIngressError,
+    HarnessContextIngressServer,
+)
 from .harness_engineering_tools import (
     EngineeringOSInvocationScope,
     EngineeringOSTool,
@@ -46,6 +51,9 @@ __all__ = [
     "EngineeringOSToolInvocationError",
     "EngineeringOSToolMetadata",
     "HarnessCapabilityError",
+    "HarnessContextIngressAddress",
+    "HarnessContextIngressError",
+    "HarnessContextIngressServer",
     "HarnessEngineeringToolGateway",
     "HarnessPermissionBridge",
     "HarnessProcessConfig",
