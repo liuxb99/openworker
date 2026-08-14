@@ -8,6 +8,16 @@ from .harness import (
     HarnessProcessConfig,
     HarnessRuntimeError,
 )
+from .harness_engineering_tools import (
+    EngineeringOSInvocationScope,
+    EngineeringOSTool,
+    EngineeringOSToolClient,
+    EngineeringOSToolDiscoveryError,
+    EngineeringOSToolError,
+    EngineeringOSToolInvocationError,
+    EngineeringOSToolMetadata,
+    HarnessEngineeringToolGateway,
+)
 from .harness_permissions import (
     HarnessPermissionBridge,
     HarnessToolContext,
@@ -28,7 +38,15 @@ __all__ = [
     "AcpProcessClient",
     "AgentRuntime",
     "DeepSeekHarnessRuntime",
+    "EngineeringOSInvocationScope",
+    "EngineeringOSTool",
+    "EngineeringOSToolClient",
+    "EngineeringOSToolDiscoveryError",
+    "EngineeringOSToolError",
+    "EngineeringOSToolInvocationError",
+    "EngineeringOSToolMetadata",
     "HarnessCapabilityError",
+    "HarnessEngineeringToolGateway",
     "HarnessPermissionBridge",
     "HarnessProcessConfig",
     "HarnessRuntimeError",
