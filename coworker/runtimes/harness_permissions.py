@@ -2,14 +2,14 @@
 
 Official ACP rc.5 permission requests expose only sessionId + toolCallId. They do
 not carry the tool name or arguments needed by PermissionEngine. H4 therefore
-requires an OpenWorker-owned resolver that maps the Harness call id back to the
-canonical tool context. Missing context fails closed.
+requires an OpenWorker-owned registry/resolver that maps the Harness call id back
+to canonical tool context. Missing or ambiguous context fails closed.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any, Callable, Optional
 
 from ..engine import ApprovalOutcome, Approver, PermissionRequest
 from ..permissions import PermissionEngine
@@ -26,6 +26,38 @@ class HarnessToolContext:
 
 
 ToolContextResolver = Callable[[str], Optional[HarnessToolContext]]
+
+
+class HarnessToolContextRegistry:
+    """Process-local authoritative map from Harness call id to tool context.
+
+    H6 will populate this registry from the OpenWorker tool gateway before a
+    consequential Harness call can reach ACP approval. Duplicate call ids are
+    rejected rather than silently replacing a live operation's policy context.
+    """
+
+    def __init__(self) -> None:
+        self._contexts: dict[str, HarnessToolContext] = {}
+
+    def register(self, context: HarnessToolContext) -> None:
+        call_id = context.tool_call_id.strip()
+        if not call_id:
+            raise ValueError("Harness tool call id must not be empty")
+        if call_id in self._contexts:
+            raise ValueError(f"Harness tool call id already registered: {call_id}")
+        self._contexts[call_id] = context
+
+    def resolve(self, call_id: str) -> Optional[HarnessToolContext]:
+        return self._contexts.get(call_id)
+
+    def discard(self, call_id: str) -> Optional[HarnessToolContext]:
+        return self._contexts.pop(call_id, None)
+
+    def clear(self) -> None:
+        self._contexts.clear()
+
+    def __len__(self) -> int:
+        return len(self._contexts)
 
 
 class HarnessPermissionBridge:
@@ -102,5 +134,6 @@ class HarnessPermissionBridge:
 __all__ = [
     "HarnessPermissionBridge",
     "HarnessToolContext",
+    "HarnessToolContextRegistry",
     "ToolContextResolver",
 ]
