@@ -259,7 +259,7 @@ class EngineeringHarnessHost:
         plugin_row = (
             "\n\n# OpenWorker engineering authority plugin.\n"
             "- id: openworker-engineering-tools\n"
-            f"  name: {_yaml_string(str(plugin))}\n"
+            f"  name: {_yaml_string(plugin.as_uri())}\n"
         )
         config.write_text(base + plugin_row, encoding="utf-8")
         env = {
