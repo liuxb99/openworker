@@ -85,6 +85,31 @@ class HarnessContextIngressServer:
                 self.end_headers()
                 self.wfile.write(raw)
 
+            def _content_length(self) -> int:
+                value = self.headers.get("Content-Length")
+                try:
+                    return int(value or "0")
+                except ValueError:
+                    return -1
+
+            def _discard_bounded_body(self) -> None:
+                """Drain a small rejected request body before closing the socket.
+
+                Windows can surface an unread request body as WSAECONNABORTED/
+                WinError 10053 to the client even after the handler wrote a valid
+                HTTP error response. Draining only bounded Content-Length bytes
+                preserves auth-before-parse while making rejection deterministic.
+                """
+
+                remaining = self._content_length()
+                if remaining <= 0 or remaining > owner.max_body_bytes:
+                    return
+                while remaining:
+                    chunk = self.rfile.read(min(remaining, 64 * 1024))
+                    if not chunk:
+                        return
+                    remaining -= len(chunk)
+
             def _authorized(self) -> bool:
                 header = self.headers.get("Authorization", "")
                 prefix = "Bearer "
@@ -102,13 +127,10 @@ class HarnessContextIngressServer:
                     self._json(HTTPStatus.NOT_FOUND, {"error": "not_found"})
                     return
                 if not self._authorized():
+                    self._discard_bounded_body()
                     self._json(HTTPStatus.UNAUTHORIZED, {"error": "unauthorized"})
                     return
-                length_header = self.headers.get("Content-Length")
-                try:
-                    length = int(length_header or "0")
-                except ValueError:
-                    length = -1
+                length = self._content_length()
                 if length < 0 or length > owner.max_body_bytes:
                     self._json(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, {"error": "body_too_large"})
                     return
@@ -160,13 +182,10 @@ class HarnessContextIngressServer:
                     self._json(HTTPStatus.NOT_FOUND, {"error": "not_found"})
                     return
                 if not self._authorized():
+                    self._discard_bounded_body()
                     self._json(HTTPStatus.UNAUTHORIZED, {"error": "unauthorized"})
                     return
-                length_header = self.headers.get("Content-Length")
-                try:
-                    length = int(length_header or "0")
-                except ValueError:
-                    length = -1
+                length = self._content_length()
                 if length < 0 or length > 4096:
                     self._json(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, {"error": "body_too_large"})
                     return
