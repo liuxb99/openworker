@@ -35,7 +35,7 @@ OpenWorker 工程版是 AI 工程顧問公司的 AI 員工與自然語言操作�
 - H11 Default-runtime decision：`VERIFIED — OFFICIAL H3-H11 WIN11 GATE`
 - Project Workspace Bootstrap / one-command Engineering Host：`VERIFIED — OFFICIAL H3-H11 WIN11 GATE`
 - ProjectRoot CLI product smoke：`VERIFIED — OFFICIAL WIN11 GATE`
-- E7 Media / Company Coworker：`NOT_STARTED`
+- E7 Media / Company Coworker：`IN PROGRESS — E7.1 BUILTIN PERSONAS IMPLEMENTED / PYTHON VERIFIED；WIN11 FOCUSED GATE PENDING`
 
 ## 正式權責鏈
 
@@ -45,19 +45,15 @@ ProjectRoot
 ├─ TASK.md
 └─ inputs/
         ↓
-openworker-engineering
+OpenWorker persona / product surface
         ↓
-EngineeringHarnessHost
+NativeRuntime（產品預設）或 explicit Harness opt-in
         ↓
-go-tool-runtime /agent/start
-        ↓
-AgentInformationPack
-        ↓
-ManagedDeepSeekHarnessRuntime
-        ↓
-OpenWorker PermissionEngine
+go-tool-runtime information/context（Harness engineering path）
         ↓
 AI-Engineering-OS canonical tools
+        ↓
+professional domain engines
         ↓
 Artifact Registry / Workspace Artifact Publisher
         ↓
@@ -67,12 +63,12 @@ deliverables / reports / evidence
 固定原則：
 
 1. go-tool-runtime 只負責 information/context，不執行工程 mutation。
-2. OpenWorker 負責產品 lifecycle、permission、runtime jobs、Harness composition，不建立第二套 Tool Registry。
+2. OpenWorker 負責產品 lifecycle、permission、runtime jobs、persona 與 Harness composition，不建立第二套 Tool Registry。
 3. DeepSeek Harness 負責 agent loop / ACP，不是工程 schema authority。
 4. AI-Engineering-OS 是 canonical tool / job / artifact / delivery authority。
 5. 專業 Engine 仍是 domain authority。
 6. consequential publish/mutate 必須同時通過 OpenWorker approval 與 AI-Engineering-OS allow_* gate。
-7. NativeRuntime 不因 Harness 驗證完成而提前刪除；H8/H9 REAL A/B evidence 仍保留。
+7. H11 維持 NativeRuntime 為產品預設；Harness 仍須 explicit opt-in，直到 H8/H9 REAL evidence 支持改變 default policy。
 
 ## Official H3-H11 + ProjectRoot CLI Win11 最終證據
 
@@ -85,8 +81,6 @@ DeepSeek Harness: 47f943859bef60e4160492346772ded9b24f765a
 conclusion: success
 ```
 
-此 run 已驗證 H1-H7、Project Workspace bootstrap/scope/Host/launch、H6.2 managed RC、H8-H11 deterministic regression、TypeScript、official Harness install、ACP、Cordis plugin 與 H6.2 deterministic consequential-tool E2E。
-
 ### ProductRoot CLI 主線
 
 ```text
@@ -95,26 +89,12 @@ OpenWorker CI: 31788214072 — pytest success / gui-unit success
 AI-Engineering-OS official Win11: 31788465175 — success
 ```
 
-`31788465175` 明確包含：
-
-```text
-Project Workspace bootstrap, Host, and CLI product regressions — success
-Official ACP initialize and session-new smoke — success
-Official Harness Cordis Engineering tool plugin smoke — success
-H6.2 deterministic official Harness engineering tool Golden E2E — success
-```
-
-因此 `openworker-engineering` 真正 CLI composition root 已完成 Windows acceptance，不再只是 Host/unit contract。
+`31788465175` 已通過 Project Workspace bootstrap/Host/CLI product regression、ACP、Cordis plugin 與 H6.2 deterministic official E2E。
 
 ## Windows 真機修正閉環
 
-### Cordis / Node ESM file URL
-
-Windows Node ESM 不接受裸 `C:/...` module specifier。official plugin smoke、H6.2 E2E、production EngineeringHarnessHost、official Cordis include 均已統一使用 `Path.resolve().as_uri()`。
-
-### loopback context ingress WinError 10053
-
-舊 Win11 run `31782095019` 暴露 auth reject 時 unread request body 可能造成 WSAECONNABORTED / WinError 10053。現在 `HarnessContextIngressServer` 在拒絕未授權 request 時只 drain bounded Content-Length body，再回 JSON 401；仍維持 auth-before-parse、body-size limit 與 policy-field smuggling rejection。成功 run `31783857135` / `31788465175` 已驗證。
+- Cordis / Node ESM：official plugin smoke、H6.2 E2E、production EngineeringHarnessHost、official Cordis include 均使用 `Path.resolve().as_uri()`。
+- loopback context ingress：auth reject 時只 drain bounded Content-Length body，再回 JSON 401；維持 auth-before-parse、body-size limit 與 policy-field smuggling rejection。`31783857135` / `31788465175` 已驗證。
 
 ## Project Workspace / one-command Host
 
@@ -129,54 +109,103 @@ packaged_process_config
 openworker-engineering CLI
 ```
 
-安全 contract：
+安全 contract：workspace identity 必須與 AgentInformationPack 一致；Project deterministic reuse、Job 每次 run 新建；Agent 不掃磁碟、不猜 Node/Harness/engine path；publish capability 預設關閉；consequential call 仍需 OpenWorker approval + AI-Engineering-OS authorization。
 
-- workspace identity 必須與 AgentInformationPack 一致。
-- bootstrap prompt 必須含 information / execution authority markers。
-- Project deterministic reuse；Job 每次 run 新建。
-- packaged Harness 明確配置但不可用時 fail closed。
-- Agent 不掃磁碟、不猜 Node/Harness/engine path。
-- publish capability 預設關閉；consequential call 仍需 OpenWorker approval + AI-Engineering-OS authorization。
+## E7 Media / Company Coworker
 
-## ProductRoot CLI product smoke
+### E7.1 — Built-in persona product surfaces
 
-永久 regression：
+本批已新增：
 
 ```text
-tests/runtimes/test_engineering_cli_product_smoke.py
+coworker/personas/builtin/media.md
+coworker/personas/builtin/company.md
+tests/test_e7_builtin_personas.py
+.github/workflows/e7-media-company-personas-win11.yml
 ```
 
-直接執行真正 `openworker-engineering` CLI composition root，驗證：
+Media Coworker 定位：研究、腳本、prompt、圖片/影片/音訊、ComfyX/其他 specialist media workflow、artifact QA 與 delivery package 的協調層。
+
+Company Coworker 定位：機會研究、proposal、project kickoff、engineering/media coordination、status brief、client update、delivery checklist 與 follow-up 的跨職能協調層。
+
+兩者都只復用既有：
 
 ```text
-TASK.md fallback
-→ Project create/reuse contract
-→ per-run Job create
-→ canonical tool catalog discovery
-→ go-tool-runtime /agent/start
-→ authority prompt
-→ managed Harness turn
-→ go-tool-runtime /agent/finish success
+PersonaRegistry
+OpenWorker Native/Harness runtime policy
+connectors / messaging / scheduler
+engineering_os facade
+AI-Engineering-OS canonical tools
+Workspace Artifact Publisher
+professional engines
 ```
 
-此 smoke 不冒充 REAL Publisher evidence。真實 `workspace.publish_artifact` ownership/SHA/path sandbox 已由 AI-Engineering-OS Workspace Artifact Publisher Win11 run `31780534951` 獨立驗證。
+不得：
+
+```text
+新增第二套 agent loop
+auto-copy static tool registry
+掃描任意磁碟猜工具路徑
+把 draft 當成已發送/已發布
+未經 approval 自動發送、發布、購買、付款或承諾
+假造 image/video/upload/delivery artifact
+```
+
+E7 persona registry regression 已驗證：Media/Company 都是 builtin、knowledge/deliverable workspace、messaging/connectors enabled，並包含 `engineering_os` vetted capability。
+
+Python CI：
+
+```text
+OpenWorker run: 31789065761
+pytest: completed / success
+gui-unit/typecheck: completed / success
+```
+
+Focused Win11：
+
+```text
+Workflow: E7 Media Company Personas Win11
+Run: 31789065928
+status: queued / waiting for self-hosted Windows runner
+```
+
+在 `31789065928` 全綠前 E7.1 不提前標 Win11 VERIFIED。
+
+### H11 runtime boundary 對 E7 的影響
+
+E7 不強制 Harness。H11 policy 保持：
+
+```text
+DEFAULT_RUNTIME = NativeRuntime
+Harness = explicit opt-in + packaged launch capability required
+```
+
+所以 Media / Company Coworker 在一般產品使用中走既有 NativeRuntime；需要 Harness 且部署已 opt-in 時才走已驗證 Harness path。專業工程/媒體能力仍由 `engineering_os` / AI-Engineering-OS 動態調用，不在 persona 內複製工具實作。
+
+### E7.2 — 下一批
+
+下一批不是造新 runtime，而是補「產品任務包」：
+
+```text
+Media task package
+→ brief / inputs
+→ production plan / prompt pack
+→ canonical media execution request
+→ ArtifactRef / QA / delivery package
+
+Company task package
+→ request / evidence
+→ research / proposal / work package
+→ engineering/media handoff when needed
+→ delivery/follow-up plan
+```
+
+並把 scheduler/connectors 的既有行為接入 persona-level product contract：draft 與 external send/publish 嚴格分離，所有 consequential action 繼續沿既有 approval boundary。
 
 ## H8 / H9 REAL evidence
 
-H8/H9 deterministic verifier code 與 workflow contract 已完成；REAL evidence 仍需 supplied 真實 ID：
-
-```text
-H8: 同機 NativeRuntime vs HarnessRuntime RC Golden project/job IDs
-H9: 真實 ComfyX GPU job + non-empty MP4 artifact
-```
-
-沒有真實 IDs 時保持 skipped，不生成假 evidence。
+H8/H9 deterministic verifier code 與 workflow contract 已完成；REAL evidence 仍需 supplied 真實 ID。沒有真實 IDs 時保持 skipped，不生成假 evidence。
 
 ## 本階段結論
 
-Project Workspace / go-tool-runtime / OpenWorker / official DeepSeek Harness / AI-Engineering-OS / Workspace Artifact Publisher 的代碼主線已完成並通過 Win11 acceptance。
-
-本階段沒有剩餘 production code blocker。後續工作分成兩條獨立線：
-
-1. H8/H9 REAL hardware evidence 補齊，不改變 deterministic code 已完成的狀態。
-2. 進 E7 Media / Company Coworker，沿用既有 authority/Host/Tool/Artifact 架構，不新增第二套 Agent loop / Tool Registry / Artifact Registry。
+Project Workspace / go-tool-runtime / OpenWorker / official DeepSeek Harness / AI-Engineering-OS / Workspace Artifact Publisher 的代碼主線已完成並通過 Win11 acceptance。E7 已正式開始，第一批 persona 產品入口已實作並通過 Python regression；下一步是 Win11 focused gate + E7.2 任務包，而不是重寫底層 runtime。
