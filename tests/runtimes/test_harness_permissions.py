@@ -1,19 +1,33 @@
 from __future__ import annotations
 
+import asyncio
+import sys
 from pathlib import Path
 
 import pytest
 
 from coworker.engine import ApprovalOutcome
 from coworker.permissions import Mode, PermissionEngine
+from coworker.runtimes.harness import AcpProcessClient, HarnessProcessConfig
 from coworker.runtimes.harness_permissions import (
     HarnessPermissionBridge,
     HarnessToolContext,
 )
 
+FIXTURE = Path(__file__).parent / "fixtures" / "mock_acp_server.py"
+
 
 def _params(call_id: str = "call-1") -> dict:
     return {"sessionId": "session-1", "toolCall": {"toolCallId": call_id}}
+
+
+def _config(tmp_path: Path) -> HarnessProcessConfig:
+    return HarnessProcessConfig(
+        command=(sys.executable, str(FIXTURE)),
+        cwd=tmp_path,
+        startup_timeout_s=5.0,
+        request_timeout_s=5.0,
+    )
 
 
 @pytest.mark.asyncio
@@ -116,3 +130,35 @@ async def test_denied_approval_maps_to_reject_once(tmp_path: Path) -> None:
     assert await bridge(_params()) == {
         "outcome": {"outcome": "selected", "optionId": "reject-once"}
     }
+
+
+@pytest.mark.asyncio
+async def test_acp_wire_permission_request_reaches_openworker_bridge(tmp_path: Path) -> None:
+    """Prove the real subprocess JSON-RPC request reaches existing OpenWorker approval."""
+    seen = []
+
+    async def approver(request):
+        seen.append(request)
+        return ApprovalOutcome.ONCE
+
+    context = HarnessToolContext("call-1", "run_shell", {"command": "git status"})
+    bridge = HarnessPermissionBridge(
+        permissions=PermissionEngine(tmp_path, mode=Mode.INTERACTIVE),
+        approver=approver,
+        resolve_context=lambda call_id: context if call_id == context.tool_call_id else None,
+    )
+    client = AcpProcessClient(_config(tmp_path), on_permission=bridge)
+    try:
+        await client.start()
+        session_id = await client.new_session(tmp_path)
+        result = await client.request("mock/request-permission", {"sessionId": session_id})
+        assert result == {"ok": True}
+        for _ in range(100):
+            if seen:
+                break
+            await asyncio.sleep(0.01)
+        assert len(seen) == 1
+        assert seen[0].tool_name == "run_shell"
+        assert seen[0].tool_call_id == "call-1"
+    finally:
+        await client.close()
