@@ -1,6 +1,6 @@
 # OpenWorker Harness Integration
 
-狀態：H2 `VERIFIED — WIN11 LOCAL ACTION`；H3 process adapter `IMPLEMENTED — WIN11 VERIFICATION RUNNING`。
+狀態：H2 `VERIFIED — WIN11 LOCAL ACTION`；H3 process adapter `IMPLEMENTED — OFFICIAL ACP WIN11 ACTION QUEUED`。
 
 這個目錄是 OpenWorker 對 DeepSeek Harness 的整合層，不是 DeepSeek Harness upstream 的 vendor copy，也不是第二套 OpenWorker UI。
 
@@ -90,6 +90,42 @@ ACP 收到 `session/request_permission` 時，H3 **fail closed** 回 `cancelled`
 
 H3 只建立 fresh session，並在 runtime instance 內重用該 session。`retry()`、`resume()`、steering、runtime model switch 會顯式丟 `HarnessCapabilityError`，不做假相容。 durable resume/replay 留到 H5。
 
+## H3 官方互通 smoke
+
+新增：
+
+```text
+tests/runtimes/test_harness_official_acp_smoke.py
+```
+
+此測試不使用 mock ACP server，而是由 Win11 Action checkout exact upstream commit，安裝官方 workspace，然後由 OpenWorker Python `AcpProcessClient` 啟動：
+
+```text
+node --import tsx
+packages/examples/acp-demo/src/bin.ts
+--config examples/acp-agent/cordis.yml
+```
+
+並依官方 zero-build source launcher 設：
+
+```text
+TSX_TSCONFIG_PATH=<deepseek-harness>/tsconfig.json
+```
+
+驗證流程：
+
+```text
+OpenWorker Python client
+→ official DeepSeek Harness process
+→ initialize
+→ protocol version negotiation
+→ session/new
+→ official Harness session/agent factory
+→ graceful shutdown
+```
+
+不送 prompt，因此不發生真模型 API 呼叫；`DEEPSEEK_API_KEY` 只使用 dummy boot value。
+
 ## 驗證
 
 H2 TypeScript contract：
@@ -100,23 +136,27 @@ npm install
 npm test
 ```
 
-H3 Python ACP process regression：
+H3 deterministic Python ACP process regression：
 
 ```cmd
 python -m pytest tests/runtimes/test_harness_runtime.py -q
 ```
 
-H3 permanent tests 不是 mock function call，而是啟動一個真子進程，以 stdin/stdout NDJSON JSON-RPC 驗證：
+H3 official interoperability smoke：
 
-```text
-spawn
-→ initialize
-→ session/new
-→ session/prompt
-→ session/update committed assistant text
-→ OpenWorker Event mapping
-→ session/cancel
-→ graceful shutdown
+```cmd
+set DSH_HARNESS_ROOT=<pinned deepseek-harness checkout>
+python -m pytest tests/runtimes/test_harness_official_acp_smoke.py -q -rs
 ```
 
-同時保留 H1 runtime seam 與 H2 TypeScript contract regression。正式 Windows 11 self-hosted Action Run `31767195843` 已觸發；文件在 run 完成前不宣稱 H3 已 VERIFIED。
+專用 Windows 11 self-hosted workflow：
+
+```text
+AI-Engineering-OS/.github/workflows/openworker-harness-h3-official-win11.yml
+Run: 31767728540
+runs-on: [self-hosted, Windows, X64]
+OpenWorker ref: 1870dfbf87dd598c361f5b63b7fdaa158adcef52
+Harness ref: 47f943859bef60e4160492346772ded9b24f765a
+```
+
+該 workflow 只在自身修改或手動 dispatch 時觸發，不再被 AI-Engineering-OS 的其他 main push 反覆取消。Run `31767728540` 已建立，目前 queued；在它完成前不宣稱 H3 已 VERIFIED。
