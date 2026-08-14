@@ -236,7 +236,7 @@ def _write_config(path: Path, root: Path, replay: Path) -> None:
 - id: base
   name: '@deepseek-ai/cordis-plugin-include'
   config:
-    path: {_yaml(str(official))}
+    path: {_yaml(official.resolve().as_uri())}
     patches:
       - id: llm-deepseek
         name: '@deepseek-ai/dsh-llm-deepseek'
