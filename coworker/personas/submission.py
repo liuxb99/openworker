@@ -207,7 +207,10 @@ def collect_job_artifacts(
     """Read real canonical artifacts and map them into the existing Digital Thread identity."""
 
     job_id = _required_text(job_id, "job_id")
-    return tuple(os_artifact_ref(item) for item in client.list_job_artifacts(job_id))
+    try:
+        return tuple(os_artifact_ref(item) for item in client.list_job_artifacts(job_id))
+    except (ValueError, TypeError) as exc:
+        raise SubmissionContractError(f"invalid canonical artifact evidence: {exc}") from exc
 
 
 def assess_delivery_readiness(
@@ -221,7 +224,7 @@ def assess_delivery_readiness(
 
     ``delivery_ready`` is true only when QA passed, at least one real artifact exists, and
     AI-Engineering-OS reports the current Job approved.  A passed QA with zero artifacts fails
-    closed through ``delivery_evidence`` rather than manufacturing evidence.
+    closed rather than manufacturing evidence.
     """
 
     job_id = _required_text(job_id, "job_id")
@@ -229,12 +232,15 @@ def assess_delivery_readiness(
     approval = client.approval_status(job_id)
     approved = approval.get("approved") is True
     status = QAStatus.PASSED if qa_passed else QAStatus.FAILED
-    evidence = delivery_evidence(
-        artifacts,
-        qa_status=status,
-        qa_notes=qa_notes,
-        delivery_ready=bool(qa_passed and artifacts and approved),
-    )
+    try:
+        evidence = delivery_evidence(
+            artifacts,
+            qa_status=status,
+            qa_notes=qa_notes,
+            delivery_ready=bool(qa_passed and artifacts and approved),
+        )
+    except ProductContractError as exc:
+        raise SubmissionContractError(str(exc)) from exc
     return PersonaDeliveryAssessment(
         job_id=job_id,
         approved=approved,
