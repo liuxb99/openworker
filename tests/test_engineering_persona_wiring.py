@@ -39,6 +39,7 @@ def test_catalog_expands_engineering_control_plane_and_governance_tools_without_
         "engineering_list_deliveries",
         "engineering_publish_job",
         "engineering_run_rc_column_flow",
+        "engineering_generate_minimax_h3",
     ]
 
 
