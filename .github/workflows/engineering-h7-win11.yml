@@ -1,0 +1,50 @@
+name: Engineering H7 Tool Runtime Bootstrap Win11
+
+on:
+  push:
+    branches:
+      - engineering-h7-tool-runtime-bootstrap
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openworker-engineering-h7-win11
+  cancel-in-progress: true
+
+jobs:
+  h7-bootstrap:
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: cmd
+    steps:
+      - name: Runner identity
+        run: |
+          echo machine=%COMPUTERNAME%
+          ver
+          python --version
+          git --version
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install focused runtime dependencies
+        run: |
+          python -m pip install --disable-pip-version-check -e ".[dev]"
+
+      - name: Compile H7 runtime modules
+        run: |
+          python -m py_compile coworker\runtimes\tool_runtime_bootstrap.py coworker\runtimes\engineering_scope.py coworker\runtimes\engineering_harness.py coworker\runtimes\engineering_host.py coworker\runtimes\harness.py coworker\engineering_cli.py
+
+      - name: H7 authority bootstrap and host tests
+        run: python -m pytest -q tests\runtimes\test_tool_runtime_bootstrap.py tests\runtimes\test_engineering_scope.py tests\runtimes\test_engineering_harness_bootstrap.py tests\runtimes\test_engineering_host.py
+
+      - name: Harness non-regression tests
+        run: python -m pytest -q tests\runtimes\test_runtime_seam.py tests\runtimes\test_harness_runtime.py tests\runtimes\test_harness_engineering_tools.py tests\runtimes\test_harness_context_ingress.py
+
+      - name: One-command CLI entrypoint smoke
+        run: |
+          openworker-engineering --help
