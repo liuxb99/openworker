@@ -3,14 +3,14 @@ name: Engineering H11 Workspace Bootstrap Win11
 on:
   push:
     branches:
-      - engineering-h11-workspace-bootstrap
+      - engineering-h11-workspace-bootstrap-verify
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: openworker-engineering-h11-workspace-bootstrap-win11
+  group: openworker-engineering-h11-workspace-bootstrap-verify-win11
   cancel-in-progress: true
 
 jobs:
