@@ -81,9 +81,24 @@ def test_rc_column_descriptor_rejects_non_engineering_submission():
         rc_column_tool_call(_submission(capability="media"), {"component_id": "C1"})
 
 
-def test_media_submit_fails_closed_until_real_canonical_tool_exists():
-    with pytest.raises(UnsupportedCanonicalFlowError, match="not registered"):
-        media_submit_tool_call(_submission(capability="media"), {"prompt": "video"})
+def test_media_submit_descriptor_targets_vetted_comfyx_facade_and_preserves_approval_gate():
+    call = media_submit_tool_call(
+        _submission(capability="media"),
+        {"prompt": "cinematic bridge", "modelMode": "FL2VA", "durationSeconds": 6},
+    )
+    data = call.to_dict()
+    assert data["tool_name"] == "engineering_generate_minimax_h3"
+    assert data["arguments"]["prompt"] == "cinematic bridge"
+    assert data["requires_approval"] is True
+    assert data["authority"] == "AI-Engineering-OS"
+    assert data["execution"] == "not-performed"
+
+
+def test_media_submit_rejects_non_media_submission_and_compile_only():
+    with pytest.raises(UnsupportedCanonicalFlowError, match="media capability"):
+        media_submit_tool_call(_submission(), {"prompt": "video"})
+    with pytest.raises(ExecutionBridgeError, match="compile_only"):
+        media_submit_tool_call(_submission(capability="media"), {"prompt": "video", "compile_only": True})
 
 
 def test_result_snapshot_reads_existing_job_artifact_review_and_approval_identity():
