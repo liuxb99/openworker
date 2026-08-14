@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import shutil
-import socket
 import threading
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -111,12 +110,6 @@ async def test_official_harness_loads_openworker_dynamic_tool_plugin(tmp_path: P
 # OpenWorker H6.1 local plugin inserted by interoperability smoke.
 - id: openworker-engineering-tools
   name: {_yaml_string(str(PLUGIN.resolve()))}
-  config:
-    engineeringOsBaseUrl: {_yaml_string(fake_os.base_url)}
-    contextIngressUrl: "http://127.0.0.1:9"
-    contextIngressToken: "smoke-only-token"
-    projectId: "project-smoke"
-    jobId: "job-smoke"
 """
         config.write_text(base + plugin_row, encoding="utf-8")
 
@@ -127,6 +120,11 @@ async def test_official_harness_loads_openworker_dynamic_tool_plugin(tmp_path: P
             "DSH_AGENTS_HOME": str(tmp_path / ".agents"),
             "DSH_SNAPSHOT_SESSIONS_ROOT": str(tmp_path / ".sessions"),
             "TSX_TSCONFIG_PATH": str(root_tsconfig),
+            "OPENWORKER_ENGINEERING_OS_BASE_URL": fake_os.base_url,
+            "OPENWORKER_HARNESS_CONTEXT_URL": "http://127.0.0.1:9",
+            "OPENWORKER_HARNESS_CONTEXT_TOKEN": "smoke-only-token",
+            "OPENWORKER_ENGINEERING_PROJECT_ID": "project-smoke",
+            "OPENWORKER_ENGINEERING_JOB_ID": "job-smoke",
         }
         client = AcpProcessClient(
             HarnessProcessConfig(
