@@ -86,6 +86,13 @@ def _yaml_string(value: str) -> str:
     return '"' + value.replace("\\", "/").replace('"', '\\"') + '"'
 
 
+def _plugin_module_specifier(path: Path) -> str:
+    # Cordis ultimately forwards this value to Node's ESM loader. POSIX absolute
+    # paths work as path-like specifiers, but on Windows `C:/...` is parsed as
+    # an unsupported `c:` URL scheme. A file URI is portable on both platforms.
+    return path.resolve().as_uri()
+
+
 @pytest.mark.asyncio
 async def test_official_harness_loads_openworker_dynamic_tool_plugin(tmp_path: Path) -> None:
     root = _harness_root()
@@ -109,7 +116,7 @@ async def test_official_harness_loads_openworker_dynamic_tool_plugin(tmp_path: P
 
 # OpenWorker H6.1 local plugin inserted by interoperability smoke.
 - id: openworker-engineering-tools
-  name: {_yaml_string(str(PLUGIN.resolve()))}
+  name: {_yaml_string(_plugin_module_specifier(PLUGIN))}
 """
         config.write_text(base + plugin_row, encoding="utf-8")
 
