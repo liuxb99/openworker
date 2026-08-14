@@ -38,7 +38,7 @@ jobs:
         run: python -m compileall -q coworker tests\runtimes tests\test_engineering_runtime_ab.py tests\test_engineering_comfyx_long_job.py
 
       - name: Workspace information authority tests
-        run: python -m pytest -q tests\runtimes\test_tool_runtime_bootstrap.py tests\runtimes\test_engineering_scope.py tests\runtimes\test_engineering_harness_bootstrap.py tests\runtimes\test_engineering_host.py
+        run: python -m pytest -q tests\runtimes\test_tool_runtime_bootstrap.py tests\runtimes\test_engineering_scope.py tests\runtimes\test_engineering_harness_bootstrap.py tests\runtimes\test_engineering_host.py tests\runtimes\test_engineering_launch.py
 
       - name: Managed Harness governance tests
         run: python -m pytest -q tests\runtimes\test_harness_jobs.py tests\runtimes\test_harness_managed.py tests\runtimes\test_harness_permissions.py tests\runtimes\test_harness_engineering_tools.py tests\runtimes\test_harness_context_ingress.py
