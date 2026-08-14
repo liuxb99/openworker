@@ -1,0 +1,48 @@
+name: E7 Media Company Personas Win11
+
+on:
+  push:
+    branches:
+      - engineering-h11-workspace-bootstrap
+    paths:
+      - 'coworker/personas/builtin/media.md'
+      - 'coworker/personas/builtin/company.md'
+      - 'coworker/personas/**'
+      - 'tests/test_e7_builtin_personas.py'
+      - '.github/workflows/e7-media-company-personas-win11.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openworker-e7-media-company-personas-win11
+  cancel-in-progress: true
+
+jobs:
+  e7-personas:
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: cmd
+    steps:
+      - name: Runner identity
+        run: |
+          echo machine=%COMPUTERNAME%
+          python --version
+          git --version
+
+      - uses: actions/checkout@v4
+
+      - name: Install OpenWorker
+        run: python -m pip install -e ".[dev]"
+
+      - name: Compile persona runtime
+        run: python -m compileall -q coworker\personas tests\test_e7_builtin_personas.py
+
+      - name: E7 builtin persona contracts
+        run: python -m pytest tests\test_e7_builtin_personas.py -q
+
+      - name: Registry smoke
+        run: python -c "from coworker.personas.registry import PersonaRegistry; r=PersonaRegistry(); assert r.get('media') is not None; assert r.get('company') is not None; print('media/company personas loaded')"
