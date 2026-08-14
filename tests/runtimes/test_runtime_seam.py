@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import pytest
 
+from coworker.agent import build_engine
+from coworker.agents import chat_agent
 from coworker.engine import TurnEngine
 from coworker.events import Event, EventType
+from coworker.providers import ModelCapabilities, ProviderClient
 from coworker.runtimes import (
     AgentRuntime,
     NativeRuntime,
@@ -13,6 +16,14 @@ from coworker.runtimes import (
     RuntimeUnavailableError,
     select_runtime,
 )
+
+
+class _NoopProvider(ProviderClient):
+    def complete(self, *, model, messages, tools=None, **settings):
+        raise AssertionError("runtime construction must not call the model")
+
+    def capabilities(self, model):
+        return ModelCapabilities()
 
 
 def test_native_runtime_preserves_turn_engine_contract() -> None:
@@ -27,6 +38,11 @@ def test_native_runtime_preserves_turn_engine_contract() -> None:
     ):
         assert hasattr(NativeRuntime, method)
         assert hasattr(AgentRuntime, method)
+
+
+def test_build_engine_constructs_native_runtime() -> None:
+    engine = build_engine(agent=chat_agent(), provider=_NoopProvider())
+    assert isinstance(engine, NativeRuntime)
 
 
 def test_runtime_events_reuse_existing_openworker_contract() -> None:
