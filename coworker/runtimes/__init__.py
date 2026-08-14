@@ -1,6 +1,13 @@
 from .base import AgentRuntime
-from .events import RuntimeEvent, RuntimeEventType
 from .engineering_harness import EngineeringHarnessRuntime
+from .engineering_host import EngineeringHarnessHost
+from .engineering_scope import (
+    EngineeringOSScopeClient,
+    EngineeringScope,
+    EngineeringScopeError,
+    workspace_project_code,
+)
+from .events import RuntimeEvent, RuntimeEventType
 from .harness import (
     ACP_PROTOCOL_VERSION,
     AcpProcessClient,
@@ -49,8 +56,12 @@ __all__ = [
     "AcpProcessClient",
     "AgentRuntime",
     "DeepSeekHarnessRuntime",
+    "EngineeringHarnessHost",
     "EngineeringHarnessRuntime",
     "EngineeringOSInvocationScope",
+    "EngineeringOSScopeClient",
+    "EngineeringScope",
+    "EngineeringScopeError",
     "EngineeringOSTool",
     "EngineeringOSToolClient",
     "EngineeringOSToolDiscoveryError",
@@ -81,4 +92,5 @@ __all__ = [
     "ToolRuntimeBootstrapClient",
     "ToolRuntimeBootstrapError",
     "select_runtime",
+    "workspace_project_code",
 ]
