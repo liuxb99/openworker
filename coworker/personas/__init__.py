@@ -34,6 +34,14 @@ from .product_contract import (
     external_approval_intents,
     save_task_package,
 )
+from .submission import (
+    PersonaDeliveryAssessment,
+    PersonaJobSubmission,
+    SubmissionContractError,
+    assess_delivery_readiness,
+    collect_job_artifacts,
+    submit_product_plan,
+)
 
 __all__ = [
     "PersonaManifest",
@@ -63,4 +71,10 @@ __all__ = [
     "delivery_evidence",
     "external_approval_intents",
     "save_task_package",
+    "PersonaDeliveryAssessment",
+    "PersonaJobSubmission",
+    "SubmissionContractError",
+    "assess_delivery_readiness",
+    "collect_job_artifacts",
+    "submit_product_plan",
 ]
