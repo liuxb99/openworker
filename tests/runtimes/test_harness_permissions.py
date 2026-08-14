@@ -12,6 +12,7 @@ from coworker.runtimes.harness import AcpProcessClient, HarnessProcessConfig
 from coworker.runtimes.harness_permissions import (
     HarnessPermissionBridge,
     HarnessToolContext,
+    HarnessToolContextRegistry,
 )
 
 FIXTURE = Path(__file__).parent / "fixtures" / "mock_acp_server.py"
@@ -28,6 +29,19 @@ def _config(tmp_path: Path) -> HarnessProcessConfig:
         startup_timeout_s=5.0,
         request_timeout_s=5.0,
     )
+
+
+def test_tool_context_registry_is_authoritative_and_rejects_duplicate_ids() -> None:
+    registry = HarnessToolContextRegistry()
+    context = HarnessToolContext("call-1", "read_file", {"path": "README.md"})
+    registry.register(context)
+    assert registry.resolve("call-1") is context
+    assert len(registry) == 1
+    with pytest.raises(ValueError, match="already registered"):
+        registry.register(context)
+    assert registry.discard("call-1") is context
+    assert registry.resolve("call-1") is None
+    assert len(registry) == 0
 
 
 @pytest.mark.asyncio
@@ -141,11 +155,12 @@ async def test_acp_wire_permission_request_reaches_openworker_bridge(tmp_path: P
         seen.append(request)
         return ApprovalOutcome.ONCE
 
-    context = HarnessToolContext("call-1", "run_shell", {"command": "git status"})
+    registry = HarnessToolContextRegistry()
+    registry.register(HarnessToolContext("call-1", "run_shell", {"command": "git status"}))
     bridge = HarnessPermissionBridge(
         permissions=PermissionEngine(tmp_path, mode=Mode.INTERACTIVE),
         approver=approver,
-        resolve_context=lambda call_id: context if call_id == context.tool_call_id else None,
+        resolve_context=registry.resolve,
     )
     client = AcpProcessClient(_config(tmp_path), on_permission=bridge)
     try:
