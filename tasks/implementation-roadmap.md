@@ -24,15 +24,16 @@ OpenWorker 工程版是 AI 工程顧問公司的 AI 員工與自然語言操作�
 - H2 Harness integration skeleton / ACP-first contract：`VERIFIED — WIN11 LOCAL ACTION`
 - H3 DeepSeekHarnessRuntime sidecar adapter：`VERIFIED — OFFICIAL ACP WIN11 LOCAL ACTION`
 - H4 Tool / Permission / Approval bridge：`VERIFIED — WIN11 BRIDGE CONTRACT；H6 CONTEXT PRODUCER IMPLEMENTED`
-- H5 Session / Resume bridge：`IMPLEMENTED — SESSION OWNERSHIP BOUNDARY；COMBINED WIN11 REGRESSION PASS`
-- H6 AI-Engineering-OS dynamic tools：`IMPLEMENTED — DYNAMIC TOOL GATEWAY；COMBINED WIN11 REGRESSION PASS`
-- H6.1 Harness Cordis tool adapter + context ingress：`IMPLEMENTED — OFFICIAL PLUGIN SMOKE QUEUED`
-- H6.2 Official Harness consequential-tool Golden E2E：`IMPLEMENTED — DETERMINISTIC WIN11 ACTION QUEUED`
-- H7 Runtime jobs / interrupt mapping：`NOT_STARTED`
-- H8 RC Golden Job Native vs Harness A/B：`NOT_STARTED`
-- H9 ComfyX long-running job validation：`NOT_STARTED`
-- H10 Desktop packaging：`NOT_STARTED`
-- H11 Default-runtime decision：`NOT_STARTED`
+- H5 Session / Resume bridge：`IMPLEMENTED — SESSION OWNERSHIP BOUNDARY；COMBINED REGRESSION PASS`
+- H6 AI-Engineering-OS dynamic tools：`IMPLEMENTED — DYNAMIC TOOL GATEWAY；COMBINED REGRESSION PASS`
+- H6.1 Harness Cordis tool adapter + context ingress：`IMPLEMENTED — WINDOWS FILE-URL FIX INCLUDED；OFFICIAL GATE RUNNING`
+- H6.2 Official Harness consequential-tool Golden E2E：`IMPLEMENTED — WINDOWS FILE-URL FIX INCLUDED；OFFICIAL GATE RUNNING`
+- H7 Runtime jobs / interrupt mapping：`IMPLEMENTED — MANAGED JOB/CANCEL REGRESSION PASS；WAITING FOR OFFICIAL WIN11 GATE`
+- H8 RC Golden Job Native vs Harness A/B：`IMPLEMENTED — DETERMINISTIC VERIFY CLI/TESTS；REAL SAME-MACHINE EVIDENCE OPTIONAL INPUT PENDING`
+- H9 ComfyX long-running job validation：`IMPLEMENTED — LONG-JOB VERIFY CLI/TESTS；REAL GPU JOB EVIDENCE OPTIONAL INPUT PENDING`
+- H10 Desktop packaging：`IMPLEMENTED — PACKAGED HARNESS CAPABILITY/LAUNCH CONTRACT；WAITING FOR OFFICIAL WIN11 GATE`
+- H11 Default-runtime decision：`IMPLEMENTED — DEFAULT POLICY + PROJECT WORKSPACE HOST；WAITING FOR OFFICIAL WIN11 GATE`
+- Project Workspace Bootstrap / one-command Engineering Host：`IMPLEMENTED — FOCUSED CONTRACT PASS；OFFICIAL WIN11 GATE ADDED`
 - E7 Media / Company Coworker：`NOT_STARTED`
 
 ## H0-H11 主線權責
@@ -42,9 +43,11 @@ OpenWorker Product Layer
         ↓
 AgentRuntime seam
    ├─ NativeRuntime → existing TurnEngine
-   └─ DeepSeekHarnessRuntime → dsh ACP / plugin runtime
+   └─ EngineeringHarnessRuntime → ManagedDeepSeekHarnessRuntime
         ↓
 OpenWorker Tool / Permission Gateway
+        ↓
+go-tool-runtime information/context authority
         ↓
 AI-Engineering-OS canonical agent API
         ↓
@@ -55,11 +58,62 @@ Design Forge / EngSketch / BIM / Bridge / Terrain / ComfyX / ...
 
 1. OpenWorker 是產品/員工層：UX、connectors、scheduler、memory、approval、finished-work delivery。
 2. DeepSeek Harness 是可替換 agent runtime，不是工程 schema authority。
-3. AI-Engineering-OS 是工程 Tool/Recipe/Job/Artifact/Review/Digital Thread authority。
-4. 不把 Harness 塞進 ProviderClient；它擁有 agent loop/session/jobs/runtime lifecycle。
-5. NativeRuntime 不提前刪除，直到 H8/H9 真實 A/B 完成。
-6. PermissionEngine 初期仍由 OpenWorker 掌權。
-7. 不修改 ACP wire 來偷塞 OpenWorker 私有欄位；缺口用正式 Cordis/plugin seam 補。
+3. go-tool-runtime 是 Project Workspace 的 Information / Context Authority；OpenWorker 不自行掃磁碟猜工具或環境。
+4. AI-Engineering-OS 是工程 Tool/Recipe/Job/Artifact/Review/Digital Thread authority。
+5. 不把 Harness 塞進 ProviderClient；它擁有 agent loop/session/jobs/runtime lifecycle。
+6. NativeRuntime 不提前刪除，直到 H8/H9 真實 A/B 完成。
+7. PermissionEngine 仍由 OpenWorker 掌權；publish/mutate 同時受 OpenWorker approval 與 AI-Engineering-OS allow_* safety gate 保護。
+8. 不修改 ACP wire 來偷塞 OpenWorker 私有欄位；缺口用正式 Cordis/plugin seam 補。
+
+## Project Workspace / one-command Host
+
+本批已把「使用者只給一個 cwd」正式接進 Harness 主線，而不是另造 agent loop。
+
+```text
+cwd / ProjectRoot
+→ go-tool-runtime /agent/start
+→ AgentInformationPack + authority prompt
+→ AI-Engineering-OS Project deterministic reuse
+→ 每次 Host 執行建立新 Job
+→ dynamic canonical tool discovery
+→ OpenWorker PermissionBridge
+→ ManagedDeepSeekHarnessRuntime
+→ Workspace Artifact Publisher
+→ deliverables / reports / evidence
+```
+
+主要檔案/測試：
+
+```text
+coworker/runtimes/tool_runtime_bootstrap.py
+coworker/runtimes/engineering_harness_bootstrap.py
+coworker/runtimes/engineering_scope.py
+coworker/runtimes/engineering_host.py
+coworker/runtimes/engineering_launch.py
+tests/runtimes/test_tool_runtime_bootstrap.py
+tests/runtimes/test_engineering_harness_bootstrap.py
+tests/runtimes/test_engineering_scope.py
+tests/runtimes/test_engineering_host.py
+tests/runtimes/test_engineering_launch.py
+```
+
+安全/責任邊界：
+
+- `ToolRuntimeBootstrapClient` 必須驗證 workspace identity 與 `information_authority=go-tool-runtime` / `execution_authority=AI-Engineering-OS` markers；不符就 fail closed。
+- Project 使用 workspace identity deterministic reuse；Job 每次 Host 執行新建，避免 lineage 混線。
+- packaged desktop 優先使用 H10 明確 Harness launch capability；若明確 configured command 壞掉則 fail closed；只有未配置 packaged command 時才允許 development fallback。
+- Agent 不需要知道 Node/Harness、AI-Engineering-OS 或專業 Engine 的實際安裝路徑。
+
+Focused contract 證據：
+
+```text
+OpenWorker run: 31775667217
+focused-contract job: completed / success
+涵蓋：Workspace information authority、managed Harness governance、H8-H11 non-regression、CLI import smoke
+self-hosted Win11 job: waiting for runner
+```
+
+AI-Engineering-OS 已把上述 Workspace regression 正式加入 `OpenWorker Harness H3-H11 Official Win11`；最新 official gate 會以真正 pinned OpenWorker H11 product SHA 驗證，不再依賴 frozen verification branch。
 
 ## H3 已驗證
 
@@ -103,7 +157,7 @@ OpenWorker ConversationStore = durable product source of truth
 Harness ACP session          = connection/process-local runtime context
 ```
 
-Pinned ACP 尚無 load/list/resume/delete/fork，因此禁止用 prompt replay 假裝 durable resume。H5 tests 已隨 H6 combined Win11 regression 通過；最終 VERIFIED 等目前 H6.2 official gate 收斂後統一記錄。
+Pinned ACP 尚無 load/list/resume/delete/fork，因此禁止用 prompt replay 假裝 durable resume。H5 tests 已隨 combined regression 通過；最終 VERIFIED 等 official H3-H11 Win11 gate 收斂後統一記錄。
 
 ## H6 Dynamic Engineering Tools
 
@@ -127,83 +181,80 @@ tests/runtimes/test_harness_engineering_tools.py
 docs/engineering/deepseek-harness-h6-progress.zh-TW.md
 ```
 
-H6 Run `31772297067` 已取得 self-hosted Win11 runner，且 H1/H3/H4/H5/H6 Python regression 與 H2 contract 已 PASS；該舊 Run 的 official checkout 仍執行中，最終證據由更新後 H6.2 gate 接手。
+## H6.1 / H6.2 Windows Cordis 修正
 
-## H6.1 Official Cordis Tool Plugin
+官方 Cordis plugin 的 `name` 最終交給 Node ESM loader。Windows `C:/...` 會被當成未知 `c:` URL scheme，因此 plugin module 必須使用 `Path.resolve().as_uri()` 形成 `file:///C:/...`。
 
-官方 extension point已確認：
+最新工程分支：
 
 ```text
-ctx.tools.register(ToolDefinition)
-tools/pre-execute → allow / deny / ask
+engineering-h11-workspace-bootstrap
+OpenWorker HEAD: 7dbe94de654c2b761d8d64dea5025ea38aef2092
+51352c5b...：official plugin smoke 改 file URL
+7dbe94de...：H6.2 deterministic E2E config 同步改 file URL
 ```
 
-新增：
+這兩個修正都保留既有 Cordis/plugin authority，不修改 DeepSeek Harness upstream。
+
+## H7 Runtime Jobs / Interrupt
+
+已完成 managed Harness runtime job lifecycle 與 cancellation mapping：
 
 ```text
-harness/upstream-plugin/openworker-engineering-tools.ts
-coworker/runtimes/harness_context_ingress.py
-tests/runtimes/test_harness_context_ingress.py
-tests/runtimes/test_harness_official_tool_plugin_smoke.py
-docs/engineering/deepseek-harness-h6-1-progress.zh-TW.md
-```
-
-安全規則：Cordis plugin 只把 `callId + exposed name + arguments` 送到 loopback side-channel；canonical id / side-effect / approval metadata 由 OpenWorker 自己重新查 AI-Engineering-OS catalog，不信任 plugin 自報 policy facts。
-
-## H6.2 Deterministic Consequential Tool Golden E2E
-
-官方 Harness 內建 `@deepseek-ai/dsh-llm-replay`，因此不用付費模型即可讓真正 agent loop產生 deterministic tool-call。
-
-新增：
-
-```text
-tests/runtimes/test_harness_official_engineering_tool_e2e.py
-docs/engineering/deepseek-harness-h6-2-progress.zh-TW.md
-```
-
-Golden chain：
-
-```text
-ACP prompt
-→ official dsh-llm-replay
-→ tool-call budget__calculate({amount:42})
-→ official ToolRuntime
-→ OpenWorker Cordis plugin
-→ tools/pre-execute
-→ localhost context ingress
-→ H4 PermissionBridge / PermissionEngine / approver
-→ ACP allow-once
-→ canonical OS invoke
-→ ToolResult
-→ second replay model call
-→ committed DONE
-→ end_turn
-```
-
-最新 Win11 Action：
-
-```text
-Run: 31772905006
-OpenWorker: 5e386d8ab01a139cca749582f3ad9eb83def96ee
-DeepSeek Harness: 47f943859bef60e4160492346772ded9b24f765a
-status: queued
-runs-on: [self-hosted, Windows, X64]
-```
-
-在 Run 全綠前 H6.1/H6.2 都只標 IMPLEMENTED，不提前宣稱 VERIFIED。
-
-## 下一批 H7
-
-H6.2 全綠後進：
-
-```text
-Harness/OS long-running job identity
-→ OpenWorker job UX
-→ status polling / progress
+Harness turn
+→ OpenWorker runtime job identity
+→ status/progress
 → request_interrupt
-→ Harness session/cancel
-→ AI-Engineering-OS job cancel
-→ terminal state / artifact evidence
+→ ACP/session cancellation first
+→ AI-Engineering-OS job cancellation when scoped
+→ terminal state
 ```
 
-之後 H8 用同一台固定 runner 做 RC Golden Job NativeRuntime vs HarnessRuntime A/B，H9 再做 ComfyX 長任務。
+H7 不是第二套 OS Job Registry；AI-Engineering-OS Job 仍是工程 execution identity，OpenWorker runtime job 只服務 UI/agent runtime lifecycle。
+
+## H8 / H9 Verification
+
+H8 已具備 NativeRuntime vs HarnessRuntime RC Golden compare CLI/tests；H9 已具備 ComfyX long-running job / non-empty MP4 evidence verifier。正式 workflow 將真實 project/job IDs 設為 `workflow_dispatch` optional inputs；沒有 supplied IDs 時不假造 REAL evidence。
+
+因此目前正確狀態是「code implemented，deterministic contracts ready；REAL same-machine/GPU evidence 仍需獨立 supplied job」。
+
+## H10 / H11
+
+H10 已完成 packaged Harness capability / desktop resource contract。H11 已完成 runtime default policy 與 Project Workspace Engineering Host composition。one-command CLI 優先採 packaged capability，避免把 Node/Harness path 暴露給 Agent。
+
+## 最新官方 Win11 Gate
+
+AI-Engineering-OS workflow：
+
+```text
+.github/workflows/openworker-harness-h3-official-win11.yml
+```
+
+已正式增加：
+
+```text
+Project Workspace bootstrap and one-command host regressions
+```
+
+同一條 official gate 現在必須同時通過：
+
+```text
+H1-H7 runtime regressions
+Project Workspace bootstrap / scope / host / launch
+H6.2 managed RC non-regression
+H8-H11 packaging/default policy
+H2 TypeScript contracts
+pinned official DeepSeek Harness
+ACP smoke
+Cordis plugin smoke
+H6.2 deterministic official tool Golden E2E
+```
+
+最新 AI-Engineering-OS run：`31781354830`，目前等待 self-hosted Win11 runner。只有這條最新 official gate 全綠，才把 H5-H7/H10-H11 由 IMPLEMENTED 升成 VERIFIED。
+
+## 下一批
+
+1. 追 `31781354830` 到 Win11 runner 接單；有 failure 就沿真實 log 修，不繞過。
+2. official gate 全綠後，校正 H5/H6.1/H6.2/H7/H10/H11 為 VERIFIED，保留 H8/H9 REAL hardware evidence 與 deterministic code verification 的區別。
+3. 把 Project Workspace contract 回寫 AI-Engineering-OS：`AGENTS.md` 是唯一 tiny bootstrap usage guide；動態 information 來自 go-tool-runtime，不在專案內複製 tool registry。
+4. 接 E7 前先跑一次真正 `openworker-engineering` 從 ProjectRoot 啟動、透過 Workspace Artifact Publisher 交付成果的 product-level smoke。
