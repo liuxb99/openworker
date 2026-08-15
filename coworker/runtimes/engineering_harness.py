@@ -64,6 +64,7 @@ class EngineeringHarnessRuntime(ManagedDeepSeekHarnessRuntime):
         self._bootstrap_project = str(bootstrap_project or "").strip()
         self._engineering_job_id = str(env.get("OPENWORKER_ENGINEERING_JOB_ID") or "").strip()
         self._bootstrap: ToolRuntimeBootstrap | None = initial_bootstrap
+        self._bootstrap_injected = False
         self._bootstrap_lock = asyncio.Lock()
         self._last_result = "success"
         self._last_summary = "OpenWorker engineering Harness session closed"
@@ -85,6 +86,7 @@ class EngineeringHarnessRuntime(ManagedDeepSeekHarnessRuntime):
                         agent="openworker-harness",
                     )
         assert self._bootstrap is not None
+        self._bootstrap_injected = True
         return (
             self._bootstrap.prompt.rstrip()
             + "\n\n<CurrentUserRequest>\n"
@@ -117,12 +119,7 @@ class EngineeringHarnessRuntime(ManagedDeepSeekHarnessRuntime):
                 yield event
             return
         try:
-            prompt = await self._bootstrap_prompt(user_input) if self._bootstrap is None else (
-                self._bootstrap.prompt.rstrip()
-                + "\n\n<CurrentUserRequest>\n"
-                + user_input
-                + "\n</CurrentUserRequest>"
-            )
+            prompt = await self._bootstrap_prompt(user_input) if not self._bootstrap_injected else user_input
         except ToolRuntimeBootstrapError as exc:
             self._last_result = "failed"
             self._last_summary = f"go-tool-runtime bootstrap failed: {exc}"
