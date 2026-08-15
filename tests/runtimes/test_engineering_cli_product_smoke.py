@@ -208,7 +208,10 @@ def test_openworker_engineering_cli_closes_projectroot_product_lifecycle(
     start = next(body for path, body in runtime_seen if path == "/agent/start")
     finish = next(body for path, body in runtime_seen if path == "/agent/finish")
     assert start["workspace_root"] == str(tmp_path.resolve())
-    assert start["project"] == "prj-product-smoke"
+    # go-tool preflight happens before the OS Project exists. Its project key is
+    # therefore the stable workspace identity, not the later OS project id.
+    assert start["project"] == tmp_path.name
+    assert start["project"] != "prj-product-smoke"
     assert start["goal"] == "Build the Project Workspace deliverable."
     assert finish["session_id"] == "session-product-smoke"
     assert finish["result"] == "success"
