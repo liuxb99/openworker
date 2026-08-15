@@ -1,9 +1,4 @@
-"""H7 managed DeepSeek Harness runtime with explicit runtime/engineering job state.
-
-This subclass preserves the H3 ACP adapter while adding the H7 cancellation
-contract.  Runtime execution is stopped through ACP first; only after the ACP
-turn reports interruption do we transition the correlated Engineering-OS job.
-"""
+"""H7 managed DeepSeek Harness runtime with explicit runtime/engineering job state."""
 from __future__ import annotations
 
 import os
@@ -23,20 +18,10 @@ from .harness_jobs import (
 class ManagedDeepSeekHarnessRuntime(DeepSeekHarnessRuntime):
     """Harness runtime with one process-local job record per OpenWorker turn."""
 
-    def __init__(
-        self,
-        *,
-        process_config: HarnessProcessConfig | None = None,
-        workspace: str | os.PathLike[str] | None = None,
-        job_registry: HarnessRuntimeJobRegistry | None = None,
-        os_jobs: EngineeringOSJobClient | None = None,
-    ) -> None:
+    def __init__(self, *, process_config: HarnessProcessConfig | None = None, workspace: str | os.PathLike[str] | None = None, job_registry: HarnessRuntimeJobRegistry | None = None, os_jobs: EngineeringOSJobClient | None = None) -> None:
         super().__init__(process_config=process_config, workspace=workspace)
         self.job_registry = job_registry or HarnessRuntimeJobRegistry()
-        self.job_cancellation = HarnessJobCancellationCoordinator(
-            self.job_registry,
-            os_jobs=os_jobs,
-        )
+        self.job_cancellation = HarnessJobCancellationCoordinator(self.job_registry, os_jobs=os_jobs)
         self._current_runtime_job_id: str | None = None
 
     @staticmethod
@@ -52,27 +37,13 @@ class ManagedDeepSeekHarnessRuntime(DeepSeekHarnessRuntime):
         os_job_id = os_job_id.strip() if isinstance(os_job_id, str) else None
         project_id = project_id.strip() if isinstance(project_id, str) else None
         if bool(os_job_id) != bool(project_id):
-            raise HarnessJobError(
-                "source.engineering_job_id and source.project_id must be supplied together"
-            )
+            raise HarnessJobError("source.engineering_job_id and source.project_id must be supplied together")
         return os_job_id or None, project_id or None
 
-    async def run(
-        self,
-        user_input: str | list,
-        *,
-        source: Optional[dict[str, Any]] = None,
-        display: Optional[str] = None,
-    ) -> AsyncIterator[Event]:
-        # Resolve the actual ACP session before creating the runtime job record;
-        # this keeps H5's ephemeral ACP identity distinct from durable OS ids.
+    async def run(self, user_input: str | list, *, source: Optional[dict[str, Any]] = None, display: Optional[str] = None) -> AsyncIterator[Event]:
         session_id = await self._ensure_session()
         os_job_id, project_id = self._engineering_scope(source)
-        binding = self.job_registry.begin(
-            session_id=session_id,
-            os_job_id=os_job_id,
-            project_id=project_id,
-        )
+        binding = self.job_registry.begin(session_id=session_id, os_job_id=os_job_id, project_id=project_id)
         self._current_runtime_job_id = binding.runtime_job_id
         interrupted = False
         terminal_emitted = False
@@ -80,78 +51,36 @@ class ManagedDeepSeekHarnessRuntime(DeepSeekHarnessRuntime):
             async for event in super().run(user_input, source=source, display=display):
                 if event.type is EventType.TURN_START:
                     data = dict(event.data)
-                    data.update(
-                        {
-                            "runtime_job_id": binding.runtime_job_id,
-                            "engineering_job_id": os_job_id,
-                        }
-                    )
+                    data.update({"session_id": session_id, "runtime_job_id": binding.runtime_job_id, "engineering_job_id": os_job_id, "project_id": project_id})
                     yield Event(event.type, data)
                     continue
-
                 if event.type is EventType.INTERRUPTED:
                     interrupted = True
-                    final = await self.job_cancellation.cancel_after_runtime_stop(
-                        binding.runtime_job_id
-                    )
+                    final = await self.job_cancellation.cancel_after_runtime_stop(binding.runtime_job_id)
                     data = dict(event.data)
-                    data.update(
-                        {
-                            "runtime_job_id": binding.runtime_job_id,
-                            "runtime_job_state": final.state.value,
-                            "engineering_job_id": os_job_id,
-                            "job_detail": final.detail,
-                        }
-                    )
+                    data.update({"session_id": session_id, "runtime_job_id": binding.runtime_job_id, "runtime_job_state": final.state.value, "engineering_job_id": os_job_id, "project_id": project_id, "job_detail": final.detail})
                     yield Event(event.type, data)
                     continue
-
                 if event.type is EventType.TURN_END:
                     terminal_emitted = True
                     current = self.job_registry.get(binding.runtime_job_id)
-                    if not interrupted and current.state in {
-                        HarnessRuntimeJobState.RUNNING,
-                        HarnessRuntimeJobState.STOPPING,
-                    }:
-                        if event.data.get("stop_reason") == "error":
-                            current = self.job_registry.fail(
-                                binding.runtime_job_id,
-                                "Harness turn ended with error",
-                            )
-                        else:
-                            current = self.job_registry.finish(binding.runtime_job_id)
+                    if not interrupted and current.state in {HarnessRuntimeJobState.RUNNING, HarnessRuntimeJobState.STOPPING}:
+                        current = self.job_registry.fail(binding.runtime_job_id, "Harness turn ended with error") if event.data.get("stop_reason") == "error" else self.job_registry.finish(binding.runtime_job_id)
                     data = dict(event.data)
-                    data.update(
-                        {
-                            "runtime_job_id": binding.runtime_job_id,
-                            "runtime_job_state": current.state.value,
-                            "engineering_job_id": os_job_id,
-                            "job_detail": current.detail,
-                        }
-                    )
+                    data.update({"session_id": session_id, "runtime_job_id": binding.runtime_job_id, "runtime_job_state": current.state.value, "engineering_job_id": os_job_id, "project_id": project_id, "job_detail": current.detail})
                     yield Event(event.type, data)
                     continue
-
                 yield event
         except Exception as exc:
             current = self.job_registry.get(binding.runtime_job_id)
-            if current.state in {
-                HarnessRuntimeJobState.RUNNING,
-                HarnessRuntimeJobState.STOPPING,
-            }:
+            if current.state in {HarnessRuntimeJobState.RUNNING, HarnessRuntimeJobState.STOPPING}:
                 self.job_registry.fail(binding.runtime_job_id, str(exc))
             raise
         finally:
-            # A consumer that stops iterating before TURN_END must not leave a
-            # fake running record.  We do not mutate the durable OS job here;
-            # only an acknowledged interrupt may request durable cancellation.
             if not terminal_emitted:
                 current = self.job_registry.get(binding.runtime_job_id)
                 if current.state is HarnessRuntimeJobState.RUNNING:
-                    self.job_registry.fail(
-                        binding.runtime_job_id,
-                        "OpenWorker stopped consuming the Harness turn before terminal event",
-                    )
+                    self.job_registry.fail(binding.runtime_job_id, "OpenWorker stopped consuming the Harness turn before terminal event")
             self._current_runtime_job_id = None
 
     def request_interrupt(self) -> None:
@@ -160,21 +89,14 @@ class ManagedDeepSeekHarnessRuntime(DeepSeekHarnessRuntime):
             current = self.job_registry.get(runtime_job_id)
             if current.state is HarnessRuntimeJobState.RUNNING:
                 self.job_registry.mark_stopping(runtime_job_id)
-        # The ACP cancellation is deliberately first.  Durable OS cancellation
-        # is performed only when run() later observes the ACP interrupted event.
         super().request_interrupt()
 
     async def health(self) -> dict[str, Any]:
         result = await super().health()
         capabilities = dict(result.get("capabilities", {}))
-        capabilities.update(
-            {
-                "runtime_job_tracking": True,
-                "engineering_job_cancellation": self.job_cancellation.os_jobs is not None,
-                "cancel_order": "acp-stop-then-os-transition",
-            }
-        )
+        capabilities.update({"runtime_job_tracking": True, "engineering_job_cancellation": self.job_cancellation.os_jobs is not None, "cancel_order": "acp-stop-then-os-transition"})
         result["capabilities"] = capabilities
+        result["session_id"] = self._session_id
         result["current_runtime_job_id"] = self._current_runtime_job_id
         return result
 
