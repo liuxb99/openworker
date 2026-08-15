@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -46,7 +47,14 @@ class JobBindingStore:
 
     @staticmethod
     def current_host() -> str:
-        return str(os.environ.get("COMPUTERNAME") or os.environ.get("HOSTNAME") or "").strip()
+        for value in (os.environ.get("COMPUTERNAME"), os.environ.get("HOSTNAME")):
+            normalized = str(value or "").strip()
+            if normalized:
+                return normalized
+        try:
+            return str(socket.gethostname() or "").strip()
+        except OSError:
+            return ""
 
     def load(self) -> JobBinding | None:
         if not self.path.exists():
