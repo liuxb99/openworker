@@ -48,6 +48,17 @@ from .harness_sessions import (
     HarnessSessionState,
 )
 from .manager import RuntimeKind, RuntimeUnavailableError, select_runtime
+from .mission_guard import (
+    DriftAssessment,
+    DriftDecision,
+    FailureGuidanceRequest,
+    MissionAction,
+    MissionCheckpoint,
+    MissionContract,
+    MissionDriftGuard,
+    MissionGuardError,
+    MissionStore,
+)
 from .native import NativeRuntime
 from .tool_runtime_bootstrap import (
     ToolRuntimeBootstrap,
@@ -60,6 +71,8 @@ __all__ = [
     "AcpProcessClient",
     "AgentRuntime",
     "DeepSeekHarnessRuntime",
+    "DriftAssessment",
+    "DriftDecision",
     "EngineeringHarnessRuntime",
     "EngineeringOSInvocationScope",
     "EngineeringOSJobClient",
@@ -71,6 +84,7 @@ __all__ = [
     "EngineeringOSToolError",
     "EngineeringOSToolInvocationError",
     "EngineeringOSToolMetadata",
+    "FailureGuidanceRequest",
     "HarnessCapabilityError",
     "HarnessContextIngressAddress",
     "HarnessContextIngressError",
@@ -91,6 +105,12 @@ __all__ = [
     "HarnessToolContext",
     "HarnessToolContextRegistry",
     "ManagedDeepSeekHarnessRuntime",
+    "MissionAction",
+    "MissionCheckpoint",
+    "MissionContract",
+    "MissionDriftGuard",
+    "MissionGuardError",
+    "MissionStore",
     "NativeRuntime",
     "RuntimeEvent",
     "RuntimeEventType",
