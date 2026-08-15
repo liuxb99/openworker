@@ -1,19 +1,15 @@
 """Durable OpenWorker project/job knowledge for model-facing status questions.
 
-This is deliberately separate from go-tool-runtime.  go-tool-runtime remains the
-information authority for *tool* discovery/usage/readiness.  OpenWorker owns the
-continuity of *work*: what this project/job is, what was done, current stage,
-blockers, decisions, evidence, and next actions.
-
-The store is workspace-local and append-only.  It can be updated after each
-meaningful work step and queried later by any model without replaying GitHub
-Actions logs or guessing from repository state.
+This is deliberately separate from go-tool-runtime. go-tool-runtime remains the
+information authority for tool discovery/usage/readiness. OpenWorker owns the
+continuity of work: what this project/job is, what was done, current stage,
+blockers, decisions, runtime evidence, artifacts, and next actions.
 """
-
 from __future__ import annotations
 
 import json
 import os
+import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -45,6 +41,14 @@ class ProjectKnowledgeEvent:
     decisions: tuple[str, ...] = ()
     next_actions: tuple[str, ...] = ()
     details: dict[str, Any] = field(default_factory=dict)
+    event_id: str = ""
+    runtime: str = ""
+    session_id: str = ""
+    runtime_job_id: str = ""
+    execution_id: str = ""
+    prompt_id: str = ""
+    artifact_refs: tuple[str, ...] = ()
+    artifact_disposition: str = ""
 
 
 @dataclass(frozen=True)
@@ -67,6 +71,14 @@ class ProjectKnowledgeSnapshot:
     decisions: tuple[str, ...] = ()
     next_actions: tuple[str, ...] = ()
     evidence: tuple[str, ...] = ()
+    latest_runtime: str = ""
+    latest_session_id: str = ""
+    latest_runtime_job_id: str = ""
+    latest_execution_id: str = ""
+    latest_prompt_id: str = ""
+    accepted_artifacts: tuple[str, ...] = ()
+    rejected_artifacts: tuple[str, ...] = ()
+    latest_event_id: str = ""
     event_count: int = 0
 
 
@@ -79,7 +91,7 @@ class ProjectKnowledgeAnswer:
 
 
 class ProjectKnowledgeStore:
-    """Append-only project continuity journal under `.openworker`."""
+    """Single append-only project continuity authority under `.openworker`."""
 
     def __init__(self, workspace: str | os.PathLike[str]) -> None:
         self.workspace = Path(workspace).expanduser().resolve()
@@ -105,10 +117,8 @@ class ProjectKnowledgeStore:
                 continue
             try:
                 raw = json.loads(line)
-                raw["evidence"] = tuple(raw.get("evidence", ()))
-                raw["blockers"] = tuple(raw.get("blockers", ()))
-                raw["decisions"] = tuple(raw.get("decisions", ()))
-                raw["next_actions"] = tuple(raw.get("next_actions", ()))
+                for key in ("evidence", "blockers", "decisions", "next_actions", "artifact_refs"):
+                    raw[key] = tuple(raw.get(key, ()))
                 event = ProjectKnowledgeEvent(**raw)
             except (ValueError, TypeError) as exc:
                 raise ProjectKnowledgeError(f"invalid project knowledge event at line {number}: {exc}") from exc
@@ -131,6 +141,13 @@ class ProjectKnowledgeStore:
         decisions: Iterable[str] = (),
         next_actions: Iterable[str] = (),
         details: dict[str, Any] | None = None,
+        runtime: str = "",
+        session_id: str = "",
+        runtime_job_id: str = "",
+        execution_id: str = "",
+        prompt_id: str = "",
+        artifact_refs: Iterable[str] = (),
+        artifact_disposition: str = "",
     ) -> ProjectKnowledgeEvent:
         binding = self._binding()
         normalized_summary = str(summary or "").strip()
@@ -154,6 +171,14 @@ class ProjectKnowledgeStore:
             decisions=tuple(str(v).strip() for v in decisions if str(v).strip()),
             next_actions=tuple(str(v).strip() for v in next_actions if str(v).strip()),
             details=dict(details or {}),
+            event_id=str(uuid.uuid4()),
+            runtime=str(runtime or "").strip(),
+            session_id=str(session_id or "").strip(),
+            runtime_job_id=str(runtime_job_id or "").strip(),
+            execution_id=str(execution_id or "").strip(),
+            prompt_id=str(prompt_id or "").strip(),
+            artifact_refs=tuple(str(v).strip() for v in artifact_refs if str(v).strip()),
+            artifact_disposition=str(artifact_disposition or "").strip().lower(),
         )
         self.root.mkdir(parents=True, exist_ok=True)
         with self.events_path.open("a", encoding="utf-8", newline="\n") as handle:
@@ -167,12 +192,32 @@ class ProjectKnowledgeStore:
         checkpoint = MissionStore(self.workspace).load_checkpoint()
         latest = events[-1] if events else None
 
+        def latest_value(attr: str) -> str:
+            for event in reversed(events):
+                value = str(getattr(event, attr, "") or "").strip()
+                if value:
+                    return value
+            return ""
+
         def latest_nonempty(attr: str) -> tuple[str, ...]:
             for event in reversed(events):
                 value = getattr(event, attr)
                 if value:
                     return value
             return ()
+
+        accepted: list[str] = []
+        rejected: list[str] = []
+        for event in events:
+            target = accepted if event.artifact_disposition == "accepted" else rejected if event.artifact_disposition == "rejected" else None
+            if target is not None:
+                for ref in event.artifact_refs:
+                    if ref not in target:
+                        target.append(ref)
+
+        blockers = checkpoint.unresolved_blockers if checkpoint and checkpoint.unresolved_blockers else latest_nonempty("blockers")
+        if latest and latest.kind in {"accepted", "repaired", "progress", "completed"} and not latest.blockers:
+            blockers = ()
 
         return ProjectKnowledgeSnapshot(
             schema_version="openworker.project-knowledge-snapshot.v1",
@@ -189,22 +234,25 @@ class ProjectKnowledgeStore:
             current_owner=(checkpoint.current_owner if checkpoint else (latest.owner if latest else "")),
             current_capability=(checkpoint.current_capability if checkpoint else (latest.capability_id if latest else "")),
             latest_summary=(latest.summary if latest else ""),
-            blockers=(checkpoint.unresolved_blockers if checkpoint and checkpoint.unresolved_blockers else latest_nonempty("blockers")),
+            blockers=blockers,
             decisions=latest_nonempty("decisions"),
-            next_actions=(
-                (checkpoint.next_intended_action,)
-                if checkpoint and checkpoint.next_intended_action
-                else latest_nonempty("next_actions")
-            ),
+            next_actions=((checkpoint.next_intended_action,) if checkpoint and checkpoint.next_intended_action else latest_nonempty("next_actions")),
             evidence=latest_nonempty("evidence"),
+            latest_runtime=latest_value("runtime"),
+            latest_session_id=latest_value("session_id"),
+            latest_runtime_job_id=latest_value("runtime_job_id"),
+            latest_execution_id=latest_value("execution_id"),
+            latest_prompt_id=latest_value("prompt_id"),
+            accepted_artifacts=tuple(accepted),
+            rejected_artifacts=tuple(rejected),
+            latest_event_id=(latest.event_id if latest else ""),
             event_count=len(events),
         )
 
     @staticmethod
     def _terms(question: str) -> set[str]:
         text = str(question or "").casefold()
-        separators = "，。！？；：、,.!?;:()[]{}<>/\\|\n\r\t"
-        for ch in separators:
+        for ch in "，。！？；：、,.!?;:()[]{}<>/\\|\n\r\t":
             text = text.replace(ch, " ")
         return {term for term in text.split() if len(term) >= 2}
 
@@ -217,35 +265,30 @@ class ProjectKnowledgeStore:
         terms = self._terms(normalized)
 
         def score(event: ProjectKnowledgeEvent) -> int:
-            haystack = " ".join(
-                [
-                    event.kind,
-                    event.stage,
-                    event.summary,
-                    event.status,
-                    event.owner,
-                    event.capability_id,
-                    *event.evidence,
-                    *event.blockers,
-                    *event.decisions,
-                    *event.next_actions,
-                    json.dumps(event.details, ensure_ascii=False, sort_keys=True),
-                ]
-            ).casefold()
+            haystack = " ".join([
+                event.kind, event.stage, event.summary, event.status, event.owner, event.capability_id,
+                event.runtime, event.session_id, event.runtime_job_id, event.execution_id, event.prompt_id,
+                *event.artifact_refs, *event.evidence, *event.blockers, *event.decisions, *event.next_actions,
+                json.dumps(event.details, ensure_ascii=False, sort_keys=True),
+            ]).casefold()
             return sum(1 for term in terms if term in haystack)
 
         ranked = sorted(enumerate(events), key=lambda pair: (score(pair[1]), pair[0]), reverse=True)
         matched = tuple(event for _, event in ranked if score(event) > 0)[: max(1, limit)]
         if not matched:
-            matched = tuple(events[-max(1, limit) :][::-1])
+            matched = tuple(events[-max(1, limit):][::-1])
 
         q = normalized.casefold()
-        if any(token in q for token in ("做到哪", "進度", "进度", "目前", "現在", "现在", "status")):
-            answer = self._status_answer(snapshot)
+        if "prompt" in q:
+            answer = f"最新 prompt_id：{snapshot.latest_prompt_id or '尚無'}。"
+        elif "harness" in q or "runtime" in q or "session" in q:
+            answer = f"runtime={snapshot.latest_runtime or '尚無'}；session_id={snapshot.latest_session_id or '尚無'}；runtime_job_id={snapshot.latest_runtime_job_id or '尚無'}。"
         elif any(token in q for token in ("卡", "問題", "问题", "失敗", "失败", "blocker", "error")):
             answer = self._blocker_answer(snapshot, matched)
         elif any(token in q for token in ("下一步", "接下來", "接下来", "next")):
             answer = self._next_answer(snapshot)
+        elif any(token in q for token in ("做到哪", "進度", "进度", "目前", "現在", "现在", "status")):
+            answer = self._status_answer(snapshot)
         elif any(token in q for token in ("做了什麼", "做了什么", "完成", "history", "歷史", "历史")):
             answer = self._history_answer(snapshot, matched)
         else:
@@ -254,18 +297,12 @@ class ProjectKnowledgeStore:
 
     @staticmethod
     def _status_answer(snapshot: ProjectKnowledgeSnapshot) -> str:
-        parts = [
-            f"project={snapshot.project_code} ({snapshot.project_id})",
-            f"job={snapshot.job_code} ({snapshot.job_id})",
-            f"stage={snapshot.current_stage or 'unknown'}",
-            f"status={snapshot.current_status or 'unknown'}",
-        ]
-        if snapshot.latest_summary:
-            parts.append(f"latest={snapshot.latest_summary}")
-        if snapshot.blockers:
-            parts.append("blockers=" + " | ".join(snapshot.blockers))
-        if snapshot.next_actions:
-            parts.append("next=" + " | ".join(snapshot.next_actions))
+        parts = [f"project={snapshot.project_code} ({snapshot.project_id})", f"job={snapshot.job_code} ({snapshot.job_id})", f"stage={snapshot.current_stage or 'unknown'}", f"status={snapshot.current_status or 'unknown'}"]
+        if snapshot.latest_summary: parts.append(f"latest={snapshot.latest_summary}")
+        if snapshot.latest_runtime_job_id: parts.append(f"runtime_job_id={snapshot.latest_runtime_job_id}")
+        if snapshot.latest_prompt_id: parts.append(f"prompt_id={snapshot.latest_prompt_id}")
+        if snapshot.blockers: parts.append("blockers=" + " | ".join(snapshot.blockers))
+        if snapshot.next_actions: parts.append("next=" + " | ".join(snapshot.next_actions))
         return "; ".join(parts)
 
     @staticmethod
@@ -273,8 +310,7 @@ class ProjectKnowledgeStore:
         blockers = list(snapshot.blockers)
         for event in events:
             for blocker in event.blockers:
-                if blocker not in blockers:
-                    blockers.append(blocker)
+                if blocker not in blockers: blockers.append(blocker)
         return "目前沒有已記錄 blocker。" if not blockers else "目前 blocker：" + "；".join(blockers)
 
     @staticmethod
@@ -283,22 +319,13 @@ class ProjectKnowledgeStore:
 
     @staticmethod
     def _history_answer(snapshot: ProjectKnowledgeSnapshot, events: tuple[ProjectKnowledgeEvent, ...]) -> str:
-        if not events:
-            return "目前沒有已記錄的工作歷史。"
+        if not events: return "目前沒有已記錄的工作歷史。"
         return "；".join(f"#{event.sequence} {event.stage}: {event.summary}" for event in reversed(events))
 
     @staticmethod
     def _detail_answer(snapshot: ProjectKnowledgeSnapshot, events: tuple[ProjectKnowledgeEvent, ...]) -> str:
-        if not events:
-            return ProjectKnowledgeStore._status_answer(snapshot)
-        details = "；".join(f"#{event.sequence} {event.summary}" for event in events)
-        return ProjectKnowledgeStore._status_answer(snapshot) + "；相關記錄：" + details
+        if not events: return ProjectKnowledgeStore._status_answer(snapshot)
+        return ProjectKnowledgeStore._status_answer(snapshot) + "；相關記錄：" + "；".join(f"#{event.sequence} {event.summary}" for event in events)
 
 
-__all__ = [
-    "ProjectKnowledgeAnswer",
-    "ProjectKnowledgeError",
-    "ProjectKnowledgeEvent",
-    "ProjectKnowledgeSnapshot",
-    "ProjectKnowledgeStore",
-]
+__all__ = ["ProjectKnowledgeAnswer", "ProjectKnowledgeError", "ProjectKnowledgeEvent", "ProjectKnowledgeSnapshot", "ProjectKnowledgeStore"]
