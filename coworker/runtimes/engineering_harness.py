@@ -36,6 +36,7 @@ class EngineeringHarnessRuntime(ManagedDeepSeekHarnessRuntime):
         workspace: str | os.PathLike[str] | None = None,
         bootstrap_client: ToolRuntimeBootstrapClient | None = None,
         bootstrap_project: str = "",
+        initial_bootstrap: ToolRuntimeBootstrap | None = None,
         permission_handler: PermissionHandler | None = None,
         job_registry: HarnessRuntimeJobRegistry | None = None,
         os_jobs: EngineeringOSJobClient | None = None,
@@ -57,14 +58,12 @@ class EngineeringHarnessRuntime(ManagedDeepSeekHarnessRuntime):
         )
         self._permission_bridge_enabled = permission_handler is not None
         if permission_handler is not None:
-            # H3 remains fail-closed by default. The engineering composition root is
-            # the only layer allowed to replace that default with OpenWorker policy.
             self._client._on_permission = permission_handler
         self._bootstrap_client = bootstrap_client or ToolRuntimeBootstrapClient.from_env()
         self._owns_bootstrap_client = bootstrap_client is None
         self._bootstrap_project = str(bootstrap_project or "").strip()
         self._engineering_job_id = str(env.get("OPENWORKER_ENGINEERING_JOB_ID") or "").strip()
-        self._bootstrap: ToolRuntimeBootstrap | None = None
+        self._bootstrap: ToolRuntimeBootstrap | None = initial_bootstrap
         self._bootstrap_lock = asyncio.Lock()
         self._last_result = "success"
         self._last_summary = "OpenWorker engineering Harness session closed"
@@ -118,7 +117,12 @@ class EngineeringHarnessRuntime(ManagedDeepSeekHarnessRuntime):
                 yield event
             return
         try:
-            prompt = await self._bootstrap_prompt(user_input) if self._bootstrap is None else user_input
+            prompt = await self._bootstrap_prompt(user_input) if self._bootstrap is None else (
+                self._bootstrap.prompt.rstrip()
+                + "\n\n<CurrentUserRequest>\n"
+                + user_input
+                + "\n</CurrentUserRequest>"
+            )
         except ToolRuntimeBootstrapError as exc:
             self._last_result = "failed"
             self._last_summary = f"go-tool-runtime bootstrap failed: {exc}"
@@ -146,6 +150,7 @@ class EngineeringHarnessRuntime(ManagedDeepSeekHarnessRuntime):
         base = await super().health()
         capabilities = dict(base.get("capabilities") or {})
         capabilities["tool_runtime_bootstrap"] = True
+        capabilities["tool_runtime_repeat_query"] = True
         capabilities["permission_bridge"] = self._permission_bridge_enabled
         base["capabilities"] = capabilities
         base["information_authority"] = "go-tool-runtime"
