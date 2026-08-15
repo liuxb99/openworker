@@ -225,7 +225,83 @@ OpenWorker 可以回答：
 
 而不是只回答一份脫離 Action 的 agent session 狀態。
 
-## 8. 完成標準
+## 8. 2026-08-15 本批實作進度
+
+### 已實作
+
+1. **Project Knowledge 單一權威已收斂**
+   - 正式實作固定為 `coworker/runtimes/project_knowledge.py`。
+   - 刪除重複的 `coworker/project_knowledge.py` 與 `project_query_cli_v2.py`，避免兩套 ledger/CLI 漂移。
+   - append-only event 現在具有穩定 `event_id`。
+
+2. **Harness runtime evidence 已加強**
+   - `ManagedDeepSeekHarnessRuntime` 的 TURN_START / TURN_END / INTERRUPTED 現在會帶出 `session_id`、`runtime_job_id`、`engineering_job_id`、`project_id`。
+   - health 也會回報真實 `session_id`，不再只提供 `session_created=true`。
+
+3. **Project Knowledge 已能保存 Harness 與 artifact provenance**
+   - runtime
+   - session_id
+   - runtime_job_id
+   - execution_id
+   - prompt_id
+   - artifact_refs
+   - artifact_disposition=accepted/rejected
+   - accepted/rejected artifact snapshot
+
+4. **Self-hosted Action Harness 模式已加入 fail-closed allowlist**
+   - `openworker-engineering --action-mode`
+   - 必須至少提供一個精確 `--allow-tool`。
+   - `--action-mode` 禁止與 unrestricted `--auto-approve` 同時使用。
+   - 未列入 allowlist 的 consequential tool 一律 `DENY`。
+   - 不提供 unrestricted shell recovery。
+
+5. **Harness event → Project Work Ledger 已接入**
+   - TURN_START → dispatch event
+   - TOOL_STARTED / TOOL_FINISHED → tool events
+   - ERROR → failure/blocker
+   - INTERRUPTED → interrupted
+   - TURN_END → completed/failure
+
+6. **永久測試已新增**
+   - exact tool allowlist
+   - shell/相似名稱拒絕
+   - Action mode 無 allowlist fail-closed
+   - Action mode + unrestricted auto approve fail-closed
+   - Project ledger append-only
+   - Harness session/runtime job query
+   - stale artifact rejected / current artifact accepted
+
+### CI 狀態
+
+最新 push `6d15a35bc42bbdb849064af31c7f08e0c376f37e` 已自動觸發：
+
+- CI run `31874306103`
+- Engineering H11 Workspace Bootstrap Win11 run `31874306131`
+
+建立本進度記錄時兩者仍為 queued/pending，因此本批目前只能標記 **IMPLEMENTED / VERIFYING**，不能標記 VERIFIED。
+
+### 尚未完成
+
+1. REAL V4 workflow 尚未建立。
+2. Case 0002 尚未由 self-hosted Action 內的 DeepSeek Harness primary path 重跑。
+3. Mission Guard 尚未插到每一個 consequential engineering tool call 前做 action-level gate。
+4. GitHub run/job/runner identity 尚未自動寫入每一個 Project Knowledge event。
+5. go-tool failure re-query → legal retry 尚未與 Harness Action path 完整串通。
+6. Final REAL evidence 還沒有證明 `Action → Harness → OS tool → Studio → ComfyX → H3 artifact` 全鏈。
+
+## 9. 下一批
+
+下一批按此順序執行：
+
+1. 等本批 CI terminal，先修任何 regression。
+2. 將 Mission Guard 接到 Action Harness consequential tool approval/gateway。
+3. 將 GITHUB_RUN_ID / GITHUB_JOB / RUNNER_NAME / COMPUTERNAME 自動寫入 ledger details/evidence。
+4. 建立 AI-Engineering-OS `Case 0002 REAL V4 Harness` workflow。
+5. V4 只允許所需 OS engineering tools，不允許 shell 兜底。
+6. 在固定 ODAQ runner 真跑一次 DeepSeek Harness ACP + Case 0002。
+7. 依 REAL failure 修 owning layer，再更新本文檔。
+
+## 10. 完成標準
 
 只有 REAL V4 evidence 同時存在以下鏈才可關閉缺口：
 
