@@ -79,7 +79,7 @@ def _os_transport(seen: list[tuple[str, str, dict | None]]) -> httpx.MockTranspo
     return httpx.MockTransport(handler)
 
 
-def _runtime_transport(root: Path, seen: list[tuple[str, dict]]) -> httpx.MockTransport:
+def _runtime_transport(root: Path, seen: list[tuple[str,dict]]) -> httpx.MockTransport:
     def handler(request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content) if request.content else {}
         seen.append((request.url.path, body))
@@ -148,7 +148,11 @@ async def test_host_composes_scope_bootstrap_tools_ingress_and_harness(tmp_path:
         assert "information_authority=go-tool-runtime" in message.data["content"]
         assert "build deliverables" in message.data["content"]
         start = next(body for path,body in rt_seen if path == "/agent/start")
-        assert start["project"] == "prj-host"
+        # go-tool is consulted before AI-Engineering-OS creates its project, so
+        # the information session uses the stable workspace identity rather than
+        # an OS project id that does not exist yet.
+        assert start["project"] == tmp_path.name
+        assert start["project"] != "prj-host"
         assert start["workspace_root"] == str(tmp_path.resolve())
     finally:
         await host.aclose()
