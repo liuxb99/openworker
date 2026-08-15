@@ -4,107 +4,231 @@
 - 狀態：IMPLEMENTING
 - 優先級：P0
 
-## 1. 問題
+## 1. 關鍵架構修正
 
-OpenWorker 已有 EngineeringHarnessHost / EngineeringHarnessRuntime / ManagedDeepSeekHarnessRuntime / DeepSeek Harness ACP 正式能力，但案例 0002 現行 REAL V3 仍由 Python driver 直接呼叫 EngineeringOSMediaClient，沒有讓 DeepSeek Harness 成為主要 agent runtime。
+本專案的正式執行邊界不是「Agent 直接在本機自由操作」。
 
-因此目前雖然使用了 OpenWorker 的 JobBinding、go-tool bootstrap 與 engineering client，但不能證明「大模型 → OpenWorker → DeepSeek Harness → OS tools → Studio → ComfyX → REAL artifact」完整閉環。
+**GitHub self-hosted Action 才是正式的本機執行容器與安全邊界。**
 
-## 2. 正式權威鏈
+OpenWorker + DeepSeek Harness 的定位是：在固定 self-hosted Action 內提供大模型推理、決策、工具選擇、進度判斷與恢復能力；所有真正會產生副作用的本機操作，仍必須經由 Action 內已啟動、已註冊、可審計的工具鏈執行。
+
+因此不能把 DeepSeek Harness 理解成另一個可任意 shell 操作本機的 agent。
+
+正確模型是：
+
+`GitHub self-hosted Action = 執行容器 / 路由 / 固定主機 / 環境 / 審計邊界`
+
+`OpenWorker = 任務狀態、Job binding、Mission Guard、Permission、Project Knowledge`
+
+`DeepSeek Harness = Action 內的大模型推理 / ACP runtime`
+
+`go-tool-runtime = 工具知識與使用規則權威`
+
+`AI-Engineering-OS / Studio / ComfyX = Action 內允許被調用的正式工具`
+
+## 2. 現行問題
+
+OpenWorker 已有 EngineeringHarnessHost / EngineeringHarnessRuntime / ManagedDeepSeekHarnessRuntime / DeepSeek Harness ACP 正式能力，但案例 0002 現行 REAL V3 在 self-hosted Action 裡仍由 Python driver 直接呼叫 EngineeringOSMediaClient，沒有讓 DeepSeek Harness 成為 Action 內的主要推理 runtime。
+
+所以現在雖然 Action、本機服務、JobBinding、go-tool bootstrap 都存在，但 Action 裡的「大腦」仍是 deterministic Python orchestration，而不是 DeepSeek Harness。
+
+這不能證明完整的：
+
+`使用者要求 → GitHub Action → OpenWorker → DeepSeek Harness → 受控工具 → REAL artifact`
+
+## 3. 正式權威鏈
 
 固定為：
 
 使用者要求
+→ GitHub workflow dispatch / trigger
+→ Windows self-hosted Action 路由到固定 host
+→ 建立固定 workspace / action lock / evidence root
+→ 啟動 go-tool-runtime / OS / Studio / ComfyX / ComfyUI
 → OpenWorker EngineeringHarnessHost
 → go-tool-runtime information preflight/query
 → OpenWorker fixed host/workspace/job binding
 → DeepSeek Harness ACP session
 → Harness engineering tool gateway
-→ OpenWorker permission + Mission Guard
-→ AI-Engineering-OS Project/Job/tool execution
+→ OpenWorker Permission + Mission Guard
+→ 只允許調用 Action 內註冊的 AI-Engineering-OS tools
+→ OS Project/Job/tool execution
 → Comfyx-Studio story/Bible/shot/Director/ProductionQueue
 → ComfyX / ComfyUI / H3 REAL generation
 → evidence/QC/Final Assembly
 → OS Artifact Registry / Review / Delivery
 → OpenWorker Project Work Ledger
+→ Action terminal
 
-## 3. V3 的具體缺口
+**任何本機副作用都不得繞過 self-hosted Action 邊界。**
 
-### GAP-HARNESS-0002-01 — Harness 被 Case driver 繞過
+## 4. V3 的具體缺口
 
-現行 `case0002_openworker_source_to_film.py` 自己完成 go-tool bootstrap、OS Job、source-to-film dispatch 與 terminal wait。它應降級為 deterministic regression/fallback，不再作為「OpenWorker agent REAL」的主要入口。
+### GAP-HARNESS-0002-01 — Harness 被 Action 內的 Case driver 繞過
+
+現行 `case0002_openworker_source_to_film.py` 在 Action 裡自行完成 go-tool bootstrap、OS Job、source-to-film dispatch 與 terminal wait。
+
+它應降級為 deterministic regression/fallback，不再作為 OpenWorker AI 推理的 primary path。
 
 ### GAP-HARNESS-0002-02 — 缺 Harness runtime evidence
 
-REAL evidence 至少必須保存：
+REAL Action evidence 至少必須保存：
 
+- github_run_id / job_id
+- actual runner name
+- assigned_host / workspace
 - runtime=engineering-harness
 - ACP session_id
 - Harness runtime_job_id
 - Engineering OS project_id/job_id
-- assigned_host/workspace
 - go-tool session_id
 - Harness tool call/evidence refs
 - Studio queue_id
 - ComfyX execution_id/prompt_id
 - final artifact provenance
 
-### GAP-HARNESS-0002-03 — Runtime 預設與 formal workflow 不一致
+這些 evidence 必須能證明 Harness 是在該次 self-hosted Action 內運行，而不是 Action 外部代理直接操作本機。
 
-`RuntimeKind` 目前 Native 是產品預設；正式 Case 0002 必須明確走 EngineeringHarnessHost，而不能依賴隱式 default runtime。
+### GAP-HARNESS-0002-03 — Runtime 預設與 formal Action 不一致
+
+`RuntimeKind` 目前 Native 是產品預設。正式 Case 0002 workflow 必須在 Action 裡明確啟動 EngineeringHarnessHost，不能依賴隱式 default runtime。
 
 ### GAP-HARNESS-0002-04 — Harness 啟動環境沒有被 formal Action 驗證
 
-Formal Action 必須 fail-closed 驗證 DeepSeek Harness root、Node、Cordis config/plugin、ACP initialize/session/new/session/prompt 與 engineering tool ingress。
+Formal Action 必須 fail-closed 驗證：
 
-### GAP-HARNESS-0002-05 — Project Knowledge 尚未記錄 Harness 事件
+- DeepSeek Harness root
+- Node runtime
+- Cordis config/plugin
+- ACP initialize
+- session/new
+- session/prompt
+- engineering tool ingress
+- OS tool manifest
 
-Project Work Ledger 必須記錄 Harness session/runtime job/tool call/failure/repair/terminal，否則 OpenWorker 回答「做到哪了」仍缺少真正 agent runtime 歷史。
+如果其中任一項不存在，Action 必須失敗，不得自動退回 agent 直接 shell 操作本機。
 
-## 4. 修復策略
+### GAP-HARNESS-0002-05 — Project Knowledge 尚未記錄 Action + Harness 事件
+
+Project Work Ledger 必須同時保存：
+
+- GitHub run/job
+- runner/host/workspace
+- Harness session/runtime job
+- OS Job
+- tool call
+- failure/repair/retry
+- prompt/artifact/QC
+- terminal
+
+這樣 OpenWorker 回答「專案做到哪」時，才知道是哪一次正式 Action 做出的結果。
+
+### GAP-HARNESS-0002-06 — 必須禁止 Harness 直接繞過正式工具
+
+DeepSeek Harness 不得因為有本機程序能力就直接：
+
+- 任意修改其他 repo
+- 任意啟動未註冊程序
+- 直接調 ComfyUI private endpoint 繞過 ComfyX contract
+- 直接修改 OS/Studio DB
+- 任意換 host/workspace/job
+- 使用未經 go-tool / OS manifest 宣告的工具
+
+需要副作用時，只能透過 Action 內的正式 engineering tool gateway。
+
+## 5. 修復策略
 
 ### P0-A OpenWorker
 
-1. 增加 Case/automation 可用的 non-interactive EngineeringHarnessHost 執行入口。
-2. 保留 PermissionEngine；Action 模式只允許明確 allowlisted engineering capabilities 自動批准。
-3. Harness runtime event 追加到 ProjectKnowledgeStore。
-4. TURN_START/TURN_END/ERROR/INTERRUPTED/tool evidence 都寫 ledger。
-5. Mission Guard 在 consequential tool call 前比對 project/job/host/workspace/stage。
+1. 增加適合 self-hosted Action 的 non-interactive EngineeringHarnessHost runner。
+2. Runner 必須要求現有 JobBinding，或在 Action 內由正式 OS scope 建立後立即固定。
+3. 保留 PermissionEngine；Action 模式只允許明確 allowlisted engineering capabilities 自動批准。
+4. Mission Guard 在 consequential tool call 前比對 project/job/host/workspace/stage。
+5. Harness runtime event 追加到 ProjectKnowledgeStore。
+6. TURN_START/TURN_END/ERROR/INTERRUPTED/tool evidence 都寫 ledger。
+7. OpenWorker 不提供 unrestricted local shell 作為 Case 0002 recovery path。
 
-### P0-B AI-Engineering-OS Case 0002
+### P0-B GitHub self-hosted Action
 
-1. 新建 REAL V4 Harness workflow，不破壞 V3 regression。
+1. 新建 REAL V4 Harness workflow，不破壞 V3 deterministic regression。
 2. 固定 `DESKTOP-ODAQN0D` + `D:\AI-Work\jobs\0002-ALADDIN`。
-3. 啟動 go-tool、OS、Studio、ComfyX、ComfyUI 後，不再直接執行 source-to-film Python orchestration 作為 primary path。
-4. 改執行 OpenWorker Engineering Harness CLI/runner，讓 DeepSeek Harness 自己透過 OS engineering tools 完成任務。
-5. 保存 Harness + OS + Studio + ComfyX evidence。
+3. 保留 Action lock，禁止同一正式 workspace 有第二個 production worker。
+4. Action 先 checkout/build/啟動所有受控服務。
+5. Action 內明確啟動 DeepSeek Harness 所需 Node/Cordis/ACP 環境。
+6. 最後才啟動 OpenWorker EngineeringHarnessHost。
+7. 不讓外部 agent 直接接管本機程序。
 
-### P0-C 驗證
+### P0-C Case 0002
+
+1. 不再由 Python driver primary orchestration 整條 source-to-film。
+2. Action 把 `TASK.md` / mission / expected deliverables 交給 OpenWorker。
+3. DeepSeek Harness 在 Action 內判斷下一步。
+4. 需要工具時查 go-tool，再透過 OpenWorker engineering tool gateway 呼叫 OS。
+5. failure → Project Ledger → go-tool re-query → Mission Guard → 合法 retry。
+6. 最終仍由 Action 收集 evidence 與 terminal status。
+
+### P0-D 驗證
 
 必須證明：
 
-1. go-tool preflight 在 OS execution 前。
-2. Harness ACP session 真實建立。
-3. Harness runtime job 與 OS Job 關聯。
-4. Harness 真實取得 OS tool manifest。
-5. source-to-film tool call 由 Harness 路徑發出，而不是 Case Python driver 偷跑。
-6. H3 prompt/artifact provenance 對應 current prompt。
-7. Project Knowledge 可回答 current stage、blocker、next action、latest runtime_job_id/prompt_id。
+1. GitHub self-hosted Action 是正式外層執行容器。
+2. runner 真的是 assigned host。
+3. go-tool preflight 在 OS execution 前。
+4. Harness ACP session 在該次 Action 中真實建立。
+5. Harness runtime job 與 OS Job 關聯。
+6. Harness 真實取得 OS tool manifest。
+7. source-to-film tool call 從 Harness → engineering gateway → OS 發出。
+8. 不存在 Harness 直接 shell/HTTP 繞過正式工具鏈的 production 證據。
+9. H3 prompt/artifact provenance 對應 current prompt。
+10. Project Knowledge 可回答 current Action run、stage、blocker、next action、runtime_job_id、prompt_id。
 
-## 5. Python Case Driver 的新定位
+## 6. Python Case Driver 的新定位
 
 保留 `case0002_openworker_source_to_film.py`，但定位改為：
 
 - deterministic integration regression
 - OS/Studio/ComfyX contract smoke
-- Harness 故障時的診斷對照
+- Harness 路徑故障時的診斷對照
 
-它的成功不能再單獨代表「OpenWorker AI agent 案例完成」。
+它仍可在 self-hosted Action 中跑，但它的成功不能單獨代表「OpenWorker + DeepSeek Harness AI worker 閉環」。
 
-## 6. 完成標準
+## 7. Project Knowledge 的正確定位
+
+OpenWorker Project Knowledge 必須把 Action 也視為工作身份的一部分。
+
+建議每個重要事件包含：
+
+```text
+github_run_id
+github_job_id
+runner_name
+assigned_host
+workspace
+harness_session_id
+runtime_job_id
+os_project_id
+os_job_id
+capability_id
+execution_id
+prompt_id
+artifact_refs
+evidence_refs
+```
+
+因此之後大模型問：
+
+`這個專案做到哪了？`
+
+OpenWorker 可以回答：
+
+`正式 run 318... 在 DESKTOP-ODAQN0D 上完成 shot-1；Harness runtime_job=...；OS job=...；H3 prompt=...；artifact 已 accepted；下一步是 shot-2。`
+
+而不是只回答一份脫離 Action 的 agent session 狀態。
+
+## 8. 完成標準
 
 只有 REAL V4 evidence 同時存在以下鏈才可關閉缺口：
 
-`go-tool session → OpenWorker binding → Harness ACP session → Harness runtime_job → OS job → Harness engineering tool call → Studio queue → ComfyX execution/prompt → current artifact → QC/final delivery → Project Work Ledger`
+`GitHub self-hosted Action → fixed runner/workspace → go-tool session → OpenWorker binding → Harness ACP session → Harness runtime_job → OS job → Harness engineering tool call → Studio queue → ComfyX execution/prompt → current artifact → QC/final delivery → Project Work Ledger → Action terminal`
 
 任何一段缺失都維持 IMPLEMENTING。
