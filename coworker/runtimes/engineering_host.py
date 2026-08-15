@@ -1,11 +1,11 @@
 """One-command composition root for the OpenWorker engineering Harness.
 
-This host does not implement an agent loop. It wires the existing authorities:
+Authority order is deliberate:
 
-* go-tool-runtime -> information/context bootstrap
-* AI-Engineering-OS -> Project/Job identity + canonical engineering tools
-* OpenWorker -> permission policy and lifecycle
-* DeepSeek Harness -> model/ACP host
+1. go-tool-runtime -> information/context bootstrap before execution starts;
+2. OpenWorker -> fixed host/workspace Job binding + permission/lifecycle policy;
+3. AI-Engineering-OS -> Project/Job identity + canonical engineering tools;
+4. DeepSeek Harness -> model/ACP host.
 """
 
 from __future__ import annotations
@@ -26,6 +26,7 @@ from .harness import HarnessProcessConfig, HarnessRuntimeError
 from .harness_context_ingress import HarnessContextIngressServer
 from .harness_engineering_tools import EngineeringOSToolClient, HarnessEngineeringToolGateway
 from .harness_permissions import HarnessPermissionBridge, HarnessToolContextRegistry
+from .job_binding import JobBindingError, JobBindingStore
 from .tool_runtime_bootstrap import ToolRuntimeBootstrapClient
 
 
@@ -42,7 +43,7 @@ def _yaml_string(value: str) -> str:
 
 
 class EngineeringHarnessHost:
-    """Compose and own one engineering Harness session for a Project Workspace."""
+    """Compose and own one engineering Harness session for a bound Project Workspace."""
 
     def __init__(
         self,
@@ -101,6 +102,7 @@ class EngineeringHarnessHost:
             self.tool_runtime_base_url
         )
         self._owns_bootstrap_client = bootstrap_client is None
+        self._binding_store = JobBindingStore(self.workspace)
         self._scope: EngineeringScope | None = None
         self._contexts: HarnessToolContextRegistry | None = None
         self._gateway: HarnessEngineeringToolGateway | None = None
@@ -130,11 +132,32 @@ class EngineeringHarnessHost:
             if not request:
                 raise HarnessRuntimeError("initial request must not be empty")
             try:
-                scope = await asyncio.to_thread(
-                    self._scope_client.ensure,
+                # Information authority must be consulted before any OS execution
+                # scope is created or resumed. The model starts by reading the
+                # tool knowledge, not by guessing which executor to invoke.
+                preflight = await asyncio.to_thread(
+                    self._bootstrap_client.start,
                     self.workspace,
                     request,
+                    task="Determine the correct tools, execution constraints, host requirements, and success criteria before starting work.",
+                    project=self.workspace.name or "workspace",
+                    agent="openworker-harness",
                 )
+
+                # A job is pinned to the machine and workspace chosen at creation.
+                # Later Action invocations on another machine fail closed instead
+                # of silently continuing the same local job elsewhere.
+                binding = self._binding_store.load()
+                if binding is not None:
+                    scope = binding.scope()
+                else:
+                    scope = await asyncio.to_thread(
+                        self._scope_client.ensure,
+                        self.workspace,
+                        request,
+                    )
+                    self._binding_store.create(scope)
+
                 contexts = HarnessToolContextRegistry()
                 gateway = HarnessEngineeringToolGateway(self._tool_client, contexts)
                 await asyncio.to_thread(gateway.refresh)
@@ -155,6 +178,8 @@ class EngineeringHarnessHost:
                         "OPENWORKER_HARNESS_CONTEXT_TOKEN": address.token,
                         "OPENWORKER_ENGINEERING_PROJECT_ID": scope.project_id,
                         "OPENWORKER_ENGINEERING_JOB_ID": scope.job_id,
+                        "OPENWORKER_ASSIGNED_HOST": self._binding_store.current_host(),
+                        "OPENWORKER_JOB_WORKSPACE": str(self.workspace),
                     }
                 )
                 if self.engineering_os_token:
@@ -171,9 +196,10 @@ class EngineeringHarnessHost:
                     workspace=self.workspace,
                     bootstrap_client=self._bootstrap_client,
                     bootstrap_project=scope.project_id,
+                    initial_bootstrap=preflight,
                     permission_handler=permission_bridge,
                 )
-            except BaseException:
+            except (JobBindingError, BaseException):
                 ingress_obj = locals().get("ingress")
                 if isinstance(ingress_obj, HarnessContextIngressServer):
                     ingress_obj.close()
@@ -210,6 +236,10 @@ class EngineeringHarnessHost:
         if self._scope is not None:
             data["project_id"] = self._scope.project_id
             data["job_id"] = self._scope.job_id
+        binding = self._binding_store.load()
+        if binding is not None:
+            data["assigned_host"] = binding.assigned_host
+            data["workspace_root"] = binding.workspace_root
         data["publish_capability_enabled"] = self.allow_publish
         return data
 
