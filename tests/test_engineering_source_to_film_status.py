@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from coworker.engineering.engineering_os import EngineeringOSConfig, TransportResponse
+from coworker.engineering.engineering_os import EngineeringOSConfig, EngineeringOSContractError, TransportResponse
 from coworker.engineering.source_to_film import EngineeringOSMediaClient
 
 
@@ -27,6 +27,20 @@ def client(*payloads):
     ), transport
 
 
+def succeeded_queue(*, artifacts=True):
+    output = {"artifacts": ["shot-1.mp4"]} if artifacts else {"artifacts": []}
+    return {
+        "os_job_id": "job_0002",
+        "queue_id": "q",
+        "queue": {
+            "status": "succeeded",
+            "items": [
+                {"id": "shot.generate:shot-1", "kind": "shot.generate", "status": "succeeded", "output": output}
+            ],
+        },
+    }
+
+
 def test_source_to_film_status_calls_os_only():
     c, transport = client({
         "os_job_id": "job_0002",
@@ -43,12 +57,28 @@ def test_source_to_film_status_calls_os_only():
 def test_wait_source_to_film_returns_terminal_success_without_direct_studio_access(monkeypatch):
     c, transport = client(
         {"os_job_id": "job_0002", "queue_id": "q", "queue": {"status": "running"}},
-        {"os_job_id": "job_0002", "queue_id": "q", "queue": {"status": "succeeded"}},
+        succeeded_queue(),
     )
     monkeypatch.setattr("coworker.engineering.source_to_film.time.sleep", lambda _: None)
     result = c.wait_source_to_film(job_id="job_0002", timeout_seconds=10, poll_seconds=0.01)
     assert result["queue"]["status"] == "succeeded"
     assert all("127.0.0.1:8080" in url for _, url, _ in transport.calls)
+
+
+def test_wait_source_to_film_rejects_false_green_without_shots():
+    c, _ = client({
+        "os_job_id": "job_0002",
+        "queue_id": "q",
+        "queue": {"status": "succeeded", "items": [{"id": "character.prepare:a", "kind": "character.prepare", "status": "succeeded"}]},
+    })
+    with pytest.raises(EngineeringOSContractError, match="shot.generate"):
+        c.wait_source_to_film(job_id="job_0002", timeout_seconds=10, poll_seconds=0.01)
+
+
+def test_wait_source_to_film_rejects_false_green_without_shot_artifact():
+    c, _ = client(succeeded_queue(artifacts=False))
+    with pytest.raises(EngineeringOSContractError, match="no artifact"):
+        c.wait_source_to_film(job_id="job_0002", timeout_seconds=10, poll_seconds=0.01)
 
 
 def test_status_rejects_missing_queue_contract():
