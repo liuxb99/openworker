@@ -3,7 +3,7 @@ name: E7 Media Company Personas Win11
 on:
   push:
     branches:
-      - engineering-h11-workspace-bootstrap
+      - main
     paths:
       - 'coworker/personas/builtin/media.md'
       - 'coworker/personas/builtin/company.md'
