@@ -152,6 +152,65 @@ D:\AI-Work\jobs\0003-YUJING-BRIDGE\geo\geolocation.json
 
 Street View Operator 只讀這個 accepted state，不由案例重新解析或硬寫座標。
 
+### 4.5 REAL geo rerun 與 credential gap
+
+正式 go-tool Case0003 run：
+
+- parent run `31922591331`
+- selected UL7 parent job `95104797958`
+- target geolocation run `31922624858`
+- selected UL7 geo job `95104881218`
+- runner：`DESKTOP-UL7V2VV-R006`
+- computer：`DESKTOP-UL7V2VV`
+- workspace：`D:\AI-Work\jobs\0003-YUJING-BRIDGE`
+
+已確認：
+
+1. UL7 host gate PASS；
+2. Terrain repo checkout PASS；
+3. Go setup PASS；
+4. `GOOGLE_MAPS_API_KEY` repository secret 為空；
+5. self-hosted runner service environment 亦沒有 `GOOGLE_MAPS_API_KEY`；
+6. geo readiness 因此 fail-closed；
+7. 尚未產出 accepted `geo/geolocation.json`；
+8. Street View screenshot target 因前置 geo 未成功，尚未 dispatch。
+
+這次失敗證明問題已縮小為 geolocation provider credential，而不是 UL7、go-tool dispatch、workspace、Street View headless renderer 或 browser routing。
+
+### 4.6 對齊既有 build-time demo key injection 設計
+
+Terrain 既有 commit：
+
+- `de8a7aa82d1b6729fc62cb5876365820a1173e79`
+- title：`feat(streetview): support build-time demo key injection`
+
+其設計規則：
+
+- `BuildGoogleMapsAPIKey` 在 source control 永遠保持空值；
+- trusted local build 可用 `-ldflags -X` 注入 disposable/demo key；
+- runtime environment variable 優先於 build-time injected value；
+- key 不得出現在 evidence。
+
+Case 0003 已把 geocoder 對齊同一模式：
+
+- commit `5cf75e5e8f1c8fb0cb9bec4c8f17258c14c443ea`
+- `internal/geocode.BuildGoogleMapsAPIKey`
+- environment first；build-time injection second；source control empty。
+
+使用者已提供 Google Maps demo key 作為本案例可用 credential；**該 key 不寫進 Git 手冊、workflow、evidence 或任何 commit**，文檔只記錄「demo key supplied out-of-band」。
+
+### 4.7 Provider-neutral fallback gap
+
+因目前 GitHub connector 無 repository-secret write 能力，而 runner service 也沒有 Google key，為避免 Case 0003 被 credential plumbing 阻塞，Terrain 同步補 explicit provider selection：
+
+- `055d4aa06b834fad1d7772cf935193d410bdf373` — bounded Nominatim resolver
+- `7fca1dfb9acbc6751d6acc5ddc6b8eaada729899` — canonical Result 增加 attribution
+- `790ba071ee0edd5e5d19cddafc7d304685dfbd6a` — explicit `TERRAIN_GEOCODER` selector
+- `e6243bc50cecb66c883594621d83a80e2d3cebd1` — `terrain-geocode` CLI 接 provider selector
+- `b82c63f14d88b214f1671422882ef4caedfe9348` — Operator：Google credential available → Google；否則 explicit bounded Nominatim fallback
+
+Nominatim 僅做 location lookup，不用於 Street View imagery。Street View 視覺證據仍固定使用 Google Maps Browser URL + headless screenshot。
+
 ## 5. go-tool contract repair
 
 `go-tool-runtime/config.yaml` 已把 `terrain.streetview.acquire` 改成正式 Headless Browser Screenshot contract：
@@ -173,14 +232,17 @@ Case 0003 go-tool E2E harness 亦更新：
 
 ## 6. REAL execution state
 
-最新版 go-tool formal Case0003 run：
+正式 parent run：
 
 - run `31922591331`
 - head `9e70e661b69ddd6678bec7b318100f88c1def701`
 - workflow：`Operator E2E 0003 Yujing Bridge`
-- 當前狀態：queued，等待 generic self-hosted transport candidate 被 runner 接單；只有 `DESKTOP-UL7V2VV` 可以通過 consequential execution host gate。
 
-因此目前不能把 REAL 玉井橋 Street View 標成 PASS。
+第一次 selected UL7 attempt 已走到 target geo run `31922624858`，並因 Google credential absence 正確 fail-closed；完整 job log 已確認 host/workspace/checkout/go setup 均正常。
+
+在 geocoder provider fallback 修復後，已對 parent run 執行 failed-jobs rerun；新 attempt 正在等待真正 UL7 selected candidate。非 UL7 candidates 已大量 clean-skip success，不能當 business PASS。
+
+因此目前仍不能把 REAL 玉井橋 Street View 標成 PASS。
 
 ## 7. Accepted procedure
 
@@ -190,7 +252,8 @@ Case 0003 go-tool E2E harness 亦更新：
 - 在案例碼寫死玉井橋 lat/lng；
 - 讓 Street View Operator 自己重做 geocode；
 - 從任意 URL / arbitrary browser executable 截圖；
-- 把 screenshot 宣稱成 survey / terrain geometry 真值。
+- 把 screenshot 宣稱成 survey / terrain geometry 真值；
+- 把 demo key 明文寫進 Git、workflow 或 evidence。
 
 正式程序固定為：
 
@@ -198,6 +261,7 @@ Case 0003 go-tool E2E harness 亦更新：
 OpenWorker persisted JobBinding
 → go-tool terrain.geo.resolve
 → UL7 local Action
+→ Google geocoder when configured; otherwise explicit bounded Nominatim lookup
 → workspace/geo/geolocation.json
 → go-tool terrain.streetview.acquire
 → UL7 local Action
@@ -210,9 +274,29 @@ OpenWorker persisted JobBinding
 
 Terrain / DEM / DTM 仍是 geometry/elevation 真值。
 
-## 8. Next acceptance gate
+## 8. 每一步即時記錄規則
 
-追 run `31922591331`：
+從本次修正起，Case 0003 每個 consequential step 必須在進入下一步前回寫 evidence：
+
+1. local Action run id；
+2. selected job id；
+3. runner name / COMPUTERNAME；
+4. tool/repo SHA；
+5. canonical input；
+6. workspace path；
+7. readiness/provider/credential source（不含 secret）；
+8. physical artifact path / size / mtime / SHA256；
+9. failure root cause；
+10. owning repo repair commit；
+11. same-Step rerun id/job id；
+12. accepted verdict；
+13. next Step。
+
+`queued` / wrong-host clean skip / workflow 200 / artifact-upload quota failure 都不得被誤記成 business success。
+
+## 9. Next acceptance gate
+
+追 parent rerun：
 
 1. UL7 selected candidate；
 2. go-tool discovery/schema/readiness；
@@ -222,5 +306,5 @@ Terrain / DEM / DTM 仍是 geometry/elevation 真值。
 6. Chrome/Edge headless REAL render；
 7. 四張非空 PNG；
 8. 每張 SHA256 與 manifest 一致；
-9. 寫回本手冊 run/job/runner/artifact evidence；
+9. 把新 run/job/provider/artifact evidence 即時補入本手冊；
 10. 通過後才進 Terrain AOI / Blender scene。
