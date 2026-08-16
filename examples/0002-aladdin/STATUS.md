@@ -2,7 +2,7 @@
 
 更新時間：2026-08-16 Asia/Taipei
 
-狀態：`IMPLEMENTING / OUTER GATES GREEN / FORMAL REAL REDISPATCH STARTED / WAITING ODAQ`
+狀態：`IMPLEMENTING / OUTER GATES GREEN / FORMAL REAL REDISPATCH STARTED / HOST ROUTING FANOUT EXPANDED / WAITING ODAQ`
 
 ## 已完成
 
@@ -30,11 +30,11 @@ execution：`engineering.source-to-film:31916089801`
 
 該 run 在 initial ComfyUI readiness 後 production 中途失去 `127.0.0.1:8188`，舊流程等滿 1800 秒才 timeout，因此 Shot 1 未 ACCEPT。此缺口現已由 backend heartbeat fail-fast 覆蓋。
 
-## 本批新增：正式 0002 dispatch 自帶 Actions queue authority
+## 已補：正式 0002 dispatch 自帶 Actions queue authority
 
 go-tool 的 queue-drain 已是正式 production preflight，但原 `operator-e2e-0002-comfyx-studio.yml` 只有 `contents: read`，runtime 是否能取得 Actions write credential 仍依賴 runner 本機 service account。
 
-本批已修：
+已修：
 
 - workflow permissions 加入 `actions: write`。
 - bounded token 明確注入 `GITHUB_TOKEN` / `GH_TOKEN`。
@@ -42,22 +42,42 @@ go-tool 的 queue-drain 已是正式 production preflight，但原 `operator-e2e
 
 提交：`09c83e70af39e47ba9b55ed6d8af08670b1cf2a0`。
 
-## 新一輪正式 REAL redispatch
+## 本批新發現：兩個 hostname candidate 會產生「假綠」
 
-上述提交已自動觸發：
+正式 redispatch run `31920059499` 的兩個 matrix candidate 最後都被非 production host 接走；其中 job `95098397014` 明確跑在 `DESKTOP-O87PJNR-R030`，log 顯示：
 
-- go-tool Operator E2E 0002 run：`31920059499`
+`0002_DISPATCH_SKIP_WRONG_HOST slot=2 host=DESKTOP-O87PJNR`
 
-最新觀察：
+兩個 candidate 都 clean skip，整個 workflow 卻仍是 success，實際正式 dispatch 次數為 0。因此這個 success 不能當作 0002 production success。
 
-- matrix candidate `e2e (1)` job `95098397002` 已完成，判定不是 `DESKTOP-ODAQN0D`，因此正式 harness 跳過並 clean exit。
-- matrix candidate `e2e (2)` job `95098397014` 仍 `queued`，等待 ODAQ runner。
+## 本批修復：hostname routing fan-out 由 2 擴成 24
 
-這輪不是直接手動觸發 OS workflow；真正 production dispatch 仍必須由 `go run ./cmd/e2e-0002-dispatch` → go-tool `engineering.source-to-film` 建立。
+依目前設計仍只使用 `COMPUTERNAME == DESKTOP-ODAQN0D` 作為 production host 判斷，不重新引入脆弱的自訂 runner label。
+
+已修改 `operator-e2e-0002-comfyx-studio.yml`：
+
+- matrix slot：`2 → 24`。
+- `max-parallel: 24`。
+- timeout：`20 → 30` 分鐘。
+- 每個非 ODAQ candidate 只 clean skip。
+- ODAQ 上仍靠 host-local lock `D:\AI-Example\0002\.locks\gtr-dispatch-<run>-<attempt>` 保證只有一個 candidate 真正 dispatch。
+- queue hygiene 的 bounded Actions token 保持不變。
+
+提交：`b4718f0977f91f2889d393da0ecddafa3cede666`。
+
+新的正式 routing run：`31920155718`。
+
+建立本紀錄時，24 個 candidate 全部已進 queue，等待 self-hosted runners；只要 ODAQ runner 在線並接到其中一個，才會執行 `go run ./cmd/e2e-0002-dispatch`，其餘 candidate 即使跑到其他 host 也只會退出。
 
 ## 目前驗收鏈
 
 `go-tool dispatch runner → ODAQ host route → go-tool queue inspect/drain → preserve current run → queue clean → ComfyUI clean/ready → OpenWorker → OS → Studio → audited ComfyX → H3 REAL → heartbeat → physical MP4`
+
+下一個真驗收點不是 workflow 是否顯示綠色，而是 log 必須出現：
+
+`0002_DISPATCH_HOST_OK ... host=DESKTOP-ODAQN0D`
+
+並且隨後產生新的 `engineering.source-to-film:<run_id>` execution。
 
 Shot 1 必須同時具備：physical MP4、ComfyX execution correlation、Studio canonical workspace MP4、SHA256 byte identity、visual semantic QC，才標記 ACCEPT。
 
