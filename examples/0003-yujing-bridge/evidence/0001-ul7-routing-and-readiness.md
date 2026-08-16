@@ -154,15 +154,60 @@ owning repo：`liuxb99/openworker`
 - `95099001581`
 - `95099001620`
 
-目前這 8 個 jobs 均為 `queued`，尚未取得 runner identity。
+截至最近一次查詢，8 個 jobs 仍全部 `queued`，沒有 `runner_name`，因此 Step 1 readiness 仍未開始。
 
-因此 G-0003-002 的驗證結果為：**修復有效，新的正式驗證不再被舊 run 的 concurrency group 阻塞**；但 UL7/self-hosted runner 尚未實際接單，Step 1 readiness 仍未 PASS。
+## 發現缺口 G-0003-003 — UL7 runner 可見性 / 註冊 / 在線狀態尚未成立
+
+為排除 GitHub Actions 平台或 `[self-hosted, Windows, X64]` selector 本身故障，交叉檢查同一時間其他 owning repo 的成功 Windows jobs：
+
+### go-tool-runtime 成功 runner 證據
+
+- run `31920155725` / job `95098649210`：`DESKTOP-O87PJNR-R030`，machine `DESKTOP-O87PJNR`，成功完成 Win11 Local Verification。
+- run `31920059493` / job `95098396799`：`DESKTOP-ODAQN0D-R002`，machine `DESKTOP-ODAQN0D`，成功完成 Win11 Local Verification。
+- run `31919939848` / job `95098079885`：runner `DESKTOP-O87PJNR-R030`，labels 為 `[self-hosted, Windows, X64]`，success。
+- run `31919459618` / job `95096822109`：runner `DESKTOP-ODAQN0D-R002`，labels 為 `[self-hosted, Windows, X64]`，success。
+
+### AI-Engineering-OS 成功 runner 證據
+
+- run `31919947413` / job `95098100854`：runner `DESKTOP-ODAQN0D-R003`，machine `DESKTOP-ODAQN0D`，成功完成 OpenWorker Win11 Baseline。
+
+### Runner API 限制
+
+嘗試直接呼叫 GitHub REST：
+
+`GET /repos/liuxb99/go-tool-runtime/actions/runners?per_page=100`
+
+回覆：`403 Resource not accessible by integration`。
+
+因此目前 GitHub App 權限無法直接枚舉 self-hosted runner 清單，也無法從 REST endpoint 直接讀 UL7 的 online/busy 狀態。
+
+### 判定
+
+- GitHub Actions 平台正常；
+- `[self-hosted, Windows, X64]` selector 正常；
+- O87 / ODAQ runner 在同一時間窗有實際成功接單證據；
+- 0003 run `31920291957` 仍完全沒有 runner 接單；
+- 目前可取得的真實 job evidence 中尚未觀察到 `DESKTOP-UL7V2VV`。
+
+因此 Step 1 當前 verdict：`BLOCKED`。
+
+blocker：**UL7 self-hosted runner 對案例執行 repo 的可見性 / 註冊 / 在線狀態尚未被證明成立。**
+
+這一點不能被誤寫成 `go-tool`、Blender、街景或 SceneX readiness 失敗，因為 UL7 尚未取得任何 job。
+
+### 下一個修復 / 驗證動作
+
+1. 優先找出 UL7 對應的實際 GitHub runner instance（預期 runner name 形如 `DESKTOP-UL7V2VV-Rxxx`，但不得猜具體 suffix）。
+2. 驗證該 runner 是否有註冊到承載案例正式 execution 的 repo，且 labels 包含 `[self-hosted, Windows, X64]`。
+3. 若 UL7 只註冊在其他 owning repo，應透過正式跨 repo execution/dispatch 能力讓案例由可見的 UL7 runner 執行，而不是改用 O87/ODAQ 代做。
+4. UL7 runner 恢復可見後，重新執行 Case 0003 Step 1。
+5. 只有拿到 `COMPUTERNAME=DESKTOP-UL7V2VV` 與實際 `RUNNER_NAME` 後，才進 `go-tool` / Blender readiness。
 
 ## 重跑驗收
 
 下一個 gate：
 
-1. run `31920291957` 的任一 `[self-hosted, Windows, X64]` job 被 runner 接單；
+1. run `31920291957` 或後續正式重跑的任一 `[self-hosted, Windows, X64]` job 被 runner 接單；
 2. 必須留下 `COMPUTERNAME` / `RUNNER_NAME`；
 3. 非 UL7 必須只 clean skip；
 4. `DESKTOP-UL7V2VV` 接單時，才執行 `go-tool` / `blender` readiness；
@@ -178,4 +223,5 @@ owning repo：`liuxb99/openworker`
 - 只有 canonical hostname 命中的 candidate 才執行 consequential steps；
 - 文檔/evidence 更新不得設計成會取消正在執行或等待的正式案例 run；
 - 不要用固定 concurrency group 去序列化可能長時間 queued 的 self-hosted case runs，否則新修正 run 會被歷史死 run 阻塞；
-- runner 尚未接單時，不得把 queued/pending/cancelled 解讀成工具 readiness 失敗。
+- runner 尚未接單時，不得把 queued/pending/cancelled 解讀成工具 readiness 失敗；
+- 若其他同 selector runner 可成功接單，而指定主機始終不可見，應把問題收斂到該主機的 runner registration / online visibility，而不是繼續修改業務工具。
