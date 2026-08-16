@@ -2,7 +2,7 @@
 
 更新時間：2026-08-16 Asia/Taipei
 
-狀態：`IMPLEMENTING / HYGIENE PREFLIGHT WIRED / BACKEND HEARTBEAT WIRED / GO-TOOL REGRESSION GREEN / VERIFYING`
+狀態：`IMPLEMENTING / HYGIENE PREFLIGHT WIRED / BACKEND HEARTBEAT WIRED / GO-TOOL CORE GREEN / OUTER GATES REPAIRED / VERIFYING`
 
 ## 已完成
 
@@ -49,6 +49,7 @@
 - `9b6a454beb9cb2a7507a93808e07fa128285ba78`
 - `2aabcffd61b1df08addcb9c9f3afae51d2154b4b`
 - `a666b4750ef17d217a98bd681e0224c9a6cc9f12`
+- `fced16eedede6a213cd886212d98c93361b93e37` — 修正永久測試使用真正 registered workflow。
 
 ## 已補：0002 正式 preflight 接線
 
@@ -71,44 +72,46 @@ Production waiting 期間每個 status poll 同步 probe `/object_info`：
 
 初始 heartbeat 提交：`1fe87df87d31e4257492afa5ff95d6b7c05ec6e5`。
 
-## 本批新發現與修復
+## go-tool 核心驗證已綠
 
-go-tool Win11 run `31919340953` 的 full regression 失敗原因不是 queue-drain implementation，而是新永久測試硬編碼了錯誤 workflow 名 `test.yml`；共用 `testConfig()` 真正 registered workflow 是 `run.yml`。
+go-tool Win11 Local Verification run `31919459618` 已 `success`：full regression、vet、Windows build、Actions provider、environment probe、workspace bootstrap、Engineering OS bridge、runner heartbeat、readiness fail-closed、production security、observability、Agent information pack 全部 PASS。
 
-已修正測試，讓永久測試直接驗 capability 真正註冊的 workflow。
+## 本批新發現：外層 E2E / baseline 本身不符合目前正式環境
 
-修復提交：`fced16eedede6a213cd886212d98c93361b93e37`。
+### 1. go-tool Operator E2E 0001 credential bootstrap
 
-## 目前驗證
+舊 run `31919459625` 被排到 `DESKTOP-O87PJNR-R030`，runtime 啟動後找不到可用 local GitHub credential，`/api/execution/credentials/github/bootstrap` 回 `local_credential_source_missing`。另外 artifact storage quota 仍滿，但 artifact upload 已是 `continue-on-error`，不應當作產品 gate。
 
-修正後 go-tool Win11 Local Verification run `31919459618` 已通過：
+本批已修 workflow：
 
-- Full regression suite：PASS
-- Vet：PASS
-- Build Windows executable：PASS
-- GitHub Actions execution provider tests：PASS
-- Immediate environment probe：PASS
-- Empty workspace bootstrap：PASS
-- Engineering OS live bridge：PASS
-- services/models/jobs/artifacts：PASS
-- runner heartbeat：PASS
-- readiness fail-closed：PASS
-- production security：PASS
-- observability：PASS
-- Agent information pack：PASS
+- 明確給 `actions: write`。
+- 把 `${{ secrets.GH_TOKEN || github.token }}` 注入 `GITHUB_TOKEN` 與 `GH_TOKEN`，讓 runtime bootstrap 在任一合法 self-hosted runner 都有 bounded credential source。
+- artifact upload 保留為非阻塞 evidence mirror。
 
-建立本紀錄時只剩 post-checkout cleanup 尚在收尾，因此功能 gate 已全綠。
+提交：`f0ab9bf14fa5088b33f46dabae2917e9915b8537`。
 
-其他仍在驗證：
+新驗證：
 
-- go-tool Operator E2E 0001：run `31919459625`。
-- AI-Engineering-OS OpenWorker Win11 Baseline：run `31919403381`，Full Python baseline suite 執行中。
+- Operator E2E 0001 run `31919939846`：建立本紀錄時 `in_progress`。
+- Win11 Local Verification run `31919939848`：建立本紀錄時 `in_progress`。
 
-前一個 OS baseline `31919334756` 是被後續同分支 push supersede/cancel，不視為產品失敗。
+### 2. AI-Engineering-OS OpenWorker baseline 驗錯舊版
+
+舊 run `31919403381` checkout 的是早期固定 SHA `468d581...`，並跑整套 1238+ tests；失敗包含 Windows symlink privilege、NetworkService ACL、舊 engineering state expectation、relay timing 等，與目前 0002 Source-to-Film contract 無直接關係。
+
+本批已修 baseline：
+
+- checkout 改為目前工程分支 `engineering-h11-workspace-bootstrap`。
+- 不再宣稱早期 pre-H1 SHA 是 current baseline。
+- baseline 改驗 0002 真正依賴的 contract：project lifecycle、source-to-film、source-to-film status、job binding。
+
+提交：`92472d12d10e2f080f15f4c0d3f4239528265347`。
+
+新 OpenWorker baseline run：`31919947413`，建立本紀錄時為 `in_progress/queued-to-runner`。
 
 ## 下一個驗收點
 
-剩餘 baseline / E2E gate 綠後，重新從 go-tool 正式 dispatch 0002：
+上述兩個 repaired outer gate 綠後，重新從 go-tool 正式 dispatch 0002：
 
 `go-tool queue inspect/drain → preserve current run → queue clean → ComfyUI clean/ready → OpenWorker → OS → Studio → audited ComfyX → H3 REAL`
 
