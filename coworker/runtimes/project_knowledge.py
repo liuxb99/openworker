@@ -280,7 +280,7 @@ class ProjectKnowledgeStore:
 
         q = normalized.casefold()
         if "prompt" in q:
-            answer = f"最新 prompt_id：{snapshot.latest_prompt_id or '尚無'}。"
+            answer = self._prompt_answer(snapshot, matched)
         elif "harness" in q or "runtime" in q or "session" in q:
             answer = f"runtime={snapshot.latest_runtime or '尚無'}；session_id={snapshot.latest_session_id or '尚無'}；runtime_job_id={snapshot.latest_runtime_job_id or '尚無'}。"
         elif any(token in q for token in ("卡", "問題", "问题", "失敗", "失败", "blocker", "error")):
@@ -294,6 +294,24 @@ class ProjectKnowledgeStore:
         else:
             answer = self._detail_answer(snapshot, matched)
         return ProjectKnowledgeAnswer(normalized, answer, snapshot, matched)
+
+    @staticmethod
+    def _prompt_answer(snapshot: ProjectKnowledgeSnapshot, events: tuple[ProjectKnowledgeEvent, ...]) -> str:
+        prompt_ids: list[str] = []
+        if snapshot.latest_prompt_id:
+            prompt_ids.append(snapshot.latest_prompt_id)
+        for event in events:
+            if event.prompt_id and event.prompt_id not in prompt_ids:
+                prompt_ids.append(event.prompt_id)
+            for evidence in event.evidence:
+                if evidence.casefold().startswith("prompt_id="):
+                    value = evidence.split("=", 1)[1].strip()
+                    if value and value not in prompt_ids:
+                        prompt_ids.append(value)
+        prefix = "prompt_id=" + ",".join(prompt_ids) if prompt_ids else "prompt_id=尚無"
+        if not events:
+            return prefix + "。"
+        return prefix + "；相關記錄：" + "；".join(f"#{event.sequence} {event.summary}" for event in events)
 
     @staticmethod
     def _status_answer(snapshot: ProjectKnowledgeSnapshot) -> str:
