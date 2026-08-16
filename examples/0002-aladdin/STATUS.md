@@ -2,7 +2,7 @@
 
 更新時間：2026-08-16 Asia/Taipei
 
-狀態：`IMPLEMENTING / HYGIENE PREFLIGHT WIRED / BACKEND HEARTBEAT WIRED / CI FIXED / VERIFYING`
+狀態：`IMPLEMENTING / HYGIENE PREFLIGHT WIRED / BACKEND HEARTBEAT WIRED / GO-TOOL REGRESSION GREEN / VERIFYING`
 
 ## 已完成
 
@@ -73,32 +73,42 @@ Production waiting 期間每個 status poll 同步 probe `/object_info`：
 
 ## 本批新發現與修復
 
-go-tool Win11 run `31919340953` 的 full regression 真正失敗原因不是 queue-drain implementation，而是新永久測試硬編碼了錯誤 workflow 名 `test.yml`；共用 `testConfig()` 的正式 registered workflow 實際是 `run.yml`。
+go-tool Win11 run `31919340953` 的 full regression 失敗原因不是 queue-drain implementation，而是新永久測試硬編碼了錯誤 workflow 名 `test.yml`；共用 `testConfig()` 真正 registered workflow 是 `run.yml`。
 
-失敗 evidence：
-
-- `TestDrainCapabilityWorkflowPreservesCurrentRunAndCancelsConflicts` → GitHub API 404
-- `TestCapabilityWorkflowRunsUsesRegisteredWorkflow` → expected `test.yml`，實際請求 `/actions/workflows/run.yml/runs`
-
-已修正測試，讓永久測試驗證「使用 capability 真正註冊的 workflow」，而不是另外寫死第二個 workflow 名。
+已修正測試，讓永久測試直接驗 capability 真正註冊的 workflow。
 
 修復提交：`fced16eedede6a213cd886212d98c93361b93e37`。
 
 ## 目前驗證
 
-修正後已自動觸發：
+修正後 go-tool Win11 Local Verification run `31919459618` 已通過：
 
-- go-tool Win11 Local Verification：run `31919459618`，最新觀察為 `in_progress`，Full regression suite 正在執行。
-- go-tool Operator E2E 0001：run `31919459625`，最新觀察為 `in_progress`。
-- AI-Engineering-OS OpenWorker Win11 Baseline：run `31919403381`，最新觀察為 `in_progress`，Full Python baseline suite 正在執行。
+- Full regression suite：PASS
+- Vet：PASS
+- Build Windows executable：PASS
+- GitHub Actions execution provider tests：PASS
+- Immediate environment probe：PASS
+- Empty workspace bootstrap：PASS
+- Engineering OS live bridge：PASS
+- services/models/jobs/artifacts：PASS
+- runner heartbeat：PASS
+- readiness fail-closed：PASS
+- production security：PASS
+- observability：PASS
+- Agent information pack：PASS
+
+建立本紀錄時只剩 post-checkout cleanup 尚在收尾，因此功能 gate 已全綠。
+
+其他仍在驗證：
+
+- go-tool Operator E2E 0001：run `31919459625`。
+- AI-Engineering-OS OpenWorker Win11 Baseline：run `31919403381`，Full Python baseline suite 執行中。
 
 前一個 OS baseline `31919334756` 是被後續同分支 push supersede/cancel，不視為產品失敗。
 
-因此目前仍是 `IMPLEMENTED / VERIFYING`，尚未提前標 `VERIFIED`。
-
 ## 下一個驗收點
 
-三個 contract/CI gate 綠後，重新從 go-tool 正式 dispatch 0002：
+剩餘 baseline / E2E gate 綠後，重新從 go-tool 正式 dispatch 0002：
 
 `go-tool queue inspect/drain → preserve current run → queue clean → ComfyUI clean/ready → OpenWorker → OS → Studio → audited ComfyX → H3 REAL`
 
