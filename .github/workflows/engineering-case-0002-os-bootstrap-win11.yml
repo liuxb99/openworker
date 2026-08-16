@@ -3,7 +3,7 @@ name: Case 0002 OpenWorker OS Bootstrap Win11
 on:
   push:
     branches:
-      - engineering-h11-workspace-bootstrap
+      - main
     paths:
       - .github/workflows/engineering-case-0002-os-bootstrap-win11.yml
       - coworker/engineering/project_lifecycle.py
@@ -33,10 +33,10 @@ jobs:
           python --version
           git --version
 
-      - name: Checkout OpenWorker branch
+      - name: Checkout OpenWorker main
         uses: actions/checkout@v4
         with:
-          ref: engineering-h11-workspace-bootstrap
+          ref: main
           path: openworker
 
       - name: Checkout AI-Engineering-OS
