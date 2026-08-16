@@ -1,9 +1,9 @@
-# 案例 0003：臺南市玉井橋真實街景 → Blender 地形場景 → SceneX 瀏覽
+# 案例 0003：臺南市玉井橋真實街景 → Blender 地形場景 → SceneX 瀏覽 → OS 成果網站交付
 
 > 類型：大模型逐步操作手冊  
 > Canonical owner：OpenWorker `examples/0003-yujing-bridge/`  
-> 執行主機：UL7  
-> 目標：證明一個不知道各 repo 原始碼的大模型，可以只依本手冊與既有正式工具能力，完成「真實地點 → 真實街景/地形資料 → Blender 3D 場景 → SceneX 可瀏覽成果」的 REAL 閉環。
+> 固定執行主機：UL7（Windows `DESKTOP-UL7V2VV`）  
+> 目標：證明一個不知道各 repo 原始碼的大模型，可以只依本手冊與既有正式工具能力，完成「真實地點 → 真實街景/地形資料 → Blender 3D 場景 → SceneX 可瀏覽成果 → OS 成果網站」的 REAL 閉環。
 
 ## 1. 任務
 
@@ -11,9 +11,9 @@
 
 > 臺南市玉井橋
 
-目標不是只產生腳本、JSON、截圖或一個 Blender project，而是完成：
+目標不是只產生腳本、JSON、截圖、一個 Blender project 或只在 SceneX 打開場景，而是完成：
 
-`使用者地點 → OpenWorker → go-tool → 既有地理/街景能力 → 真實位置解析 → 真實街景與地形參考 → Blender 建模/場景組裝 → physical 3D artifacts → SceneX 匯入/載入 → 實際可瀏覽場景 → evidence`
+`使用者地點 → OpenWorker → go-tool → 既有地理/街景能力 → 真實位置解析 → 真實街景與地形參考 → Blender 建模/場景組裝 → physical 3D artifacts → SceneX 匯入/載入 → 實際可瀏覽場景 → OS Artifact Registry / Delivery Revision → delivery/website/index.html → evidence`
 
 正式工作目錄由 OpenWorker / OS 決定；不得由大模型自行猜絕對路徑。
 
@@ -24,23 +24,29 @@
 - 所有工具使用執行當下的最新正式提交；記錄 SHA 作 provenance，不 pin 舊版。
 - 使用者輸入只給「臺南市玉井橋」；座標、街景 pano、道路方向、地形範圍必須由正式工具解析，不可在 workflow/script 偷偷寫死。
 - consequential side effects 必須走受控工具與 self-hosted Action execution boundary。
+- 本案例固定由 UL7（`DESKTOP-UL7V2VV`）執行；其他 self-hosted Windows runner 只能 clean skip，不得代做成果。
 - 如果工具缺能力，先把缺口記錄到 `STATUS.md` / evidence；案例本身不直接改工具。
 - 舊 artifact、示意圖、假資料、Google 搜尋截圖、只建立空 Blender scene，都不能冒充 REAL 完成。
-- 只有取得新鮮 physical artifact、來源 provenance、Blender scene、SceneX 實際載入與可瀏覽證據才算完成。
+- SceneX 可瀏覽只是中間 gate；依 OS 交付規則，**最終成果必須是一個成果網站**。
+- 只有取得新鮮 physical artifact、來源 provenance、Blender scene、SceneX 實際載入/瀏覽、Artifact Registry / Delivery Revision 與 `delivery/website/index.html` 才算完成。
 
-## 3. Step 1 — UL7 健康檢查
+## 3. Step 1 — UL7 健康與路由檢查
 
-確認 UL7 self-hosted runner 在線且可接單。
+確認固定執行主機 UL7（Windows `DESKTOP-UL7V2VV`）的 self-hosted runner 在線且可接單。
+
+Action 可使用一般 `[self-hosted, Windows, X64]` routing 讓 runner 接單，但 consequential case steps 必須先驗證 `COMPUTERNAME == DESKTOP-UL7V2VV`；非 UL7 runner 必須 clean skip。
 
 向 go-tool 查 health，確認案例需要的既有能力可以被發現與呼叫。
 
 驗收：
 
-- UL7 runner online / idle / 可執行；
+- UL7 runner online / 可執行；
+- runner identity 與 `COMPUTERNAME` 已記錄；
 - go-tool runtime 可用；
 - Blender CLI readiness 可查；
 - 真實地理/街景取得能力可查；
-- SceneX import / launch / browse 能力可查。
+- SceneX import / launch / browse 能力可查；
+- OS Artifact Registry / Delivery Revision / website delivery 能力可查。
 
 若任何一項不可用，記錄 blocker；不得私下改用 repo script 冒充正式案例路徑。
 
@@ -52,7 +58,9 @@
 2. 真實街景取得；
 3. 真實地形或可建立地形的 elevation / map data；
 4. Blender CLI 建模、匯入、材質、場景輸出；
-5. SceneX 場景匯入、啟動、瀏覽與驗證。
+5. SceneX 場景匯入、啟動、瀏覽與驗證；
+6. OS Artifact Registry / Delivery Revision；
+7. 成果網站 materialization / delivery website。
 
 本案例不預設 capability 名稱；以執行當下工具資訊契約為準。
 
@@ -161,11 +169,61 @@ canonical input：
 - 取得新鮮 screenshot / capture evidence；
 - 截圖內容需能辨識為本案例場景，不接受空白畫面或 editor chrome 畫面當成果。
 
-## 12. 完成標準
+SceneX REAL 瀏覽 PASS 後才可進正式 delivery closure。
+
+## 12. Step 10 — OS Artifact Registry / Delivery Revision
+
+將本案例 accepted artifacts 正式登錄到 OS，而不是只留在 UL7 工作目錄。
+
+至少包含：
+
+- canonical geolocation / source manifest；
+- accepted street-view references；
+- terrain / AOI metadata；
+- accepted `.blend`；
+- accepted SceneX exchange artifact；
+- SceneX project/scene identity；
+- Blender preview 與 SceneX runtime captures；
+- 每個 artifact 的 path / size / mtime / SHA256；
+- case execution / run / job / tool SHA provenance。
+
+必須建立或更新本案例的 Delivery Revision，使網站交付可反查到這批 accepted artifacts。
+
+## 13. Step 11 — OS 成果網站
+
+依 OS 規定，**最終交付成果是一個成果網站**。
+
+canonical website entry：
+
+`delivery/website/index.html`
+
+成果網站最低內容：
+
+- 案例名稱：案例 0003 — 臺南市玉井橋；
+- 真實位置摘要與地圖/座標資訊；
+- 真實街景參考縮圖與 provenance 摘要；
+- terrain / AOI / 比例 / north / source 摘要；
+- Blender preview 與場景資訊；
+- SceneX REAL 瀏覽至少三個 accepted captures；
+- SceneX scene/project identity 與可用的啟動/瀏覽說明或入口；
+- `.blend`、交換 artifact 等交付物的可追溯下載/索引入口（依 OS delivery 規則）；
+- QC 結果；
+- Artifact Registry / Delivery Revision identity；
+- execution / job / runner / tool SHA provenance。
+
+網站必須：
+
+- physical `index.html` 真實存在且為本次 execution 新鮮產物；
+- 可離線或依 OS delivery contract 正常開啟；
+- 不含 placeholder / 假資料 / broken links；
+- 頁面內容能辨識是「臺南市玉井橋」案例；
+- 網站引用的成果與 Artifact Registry / Delivery Revision 一致。
+
+## 14. 完成標準
 
 只有以下全部成立才可標 `LIVE_VERIFIED / DELIVERABLE`：
 
-1. 案例由 UL7 正式 self-hosted execution 執行。
+1. 案例 consequential work 由 UL7（`DESKTOP-UL7V2VV`）正式 self-hosted execution 執行。
 2. 使用者只提供「臺南市玉井橋」，真實位置由正式工具解析。
 3. 真實街景已取得並有 provenance / SHA256。
 4. 真實地形/場地資料已取得並保留來源、AOI、座標與比例資訊。
@@ -173,10 +231,15 @@ canonical input：
 6. Blender visual/geometric QC PASS。
 7. SceneX 實際載入 accepted artifact。
 8. SceneX 可實際瀏覽玉井橋場景並保存 runtime evidence。
-9. physical artifacts 全部可追溯到本次 execution 與最新工具 SHA。
-10. `STATUS.md` 與 `evidence/README.md` 記錄真實證據與任何缺口。
+9. accepted artifacts 已進 OS Artifact Registry，並有 Delivery Revision。
+10. physical `delivery/website/index.html` 已建立且可正常瀏覽。
+11. 成果網站內容與 Registry / Revision / accepted artifacts 一致。
+12. physical artifacts 全部可追溯到本次 execution 與最新工具 SHA。
+13. `STATUS.md` 與 `evidence/README.md` 記錄真實證據與任何缺口。
 
-## 13. 案例遇到缺口時的規則
+**SceneX browse PASS 但沒有成果網站，不算案例完成。**
+
+## 15. 案例遇到缺口時的規則
 
 本案例的目的之一就是讓缺口自然暴露。
 
@@ -189,10 +252,11 @@ canonical input：
 5. 標明真正 owning repo；
 6. 後續若決定修工具，才另開開發批次；修完後從本手冊正規步驟重新驗證。
 
-## 14. 相關 owning repos / systems
+## 16. 相關 owning repos / systems
 
 - OpenWorker：案例入口、execution governance、workspace、證據索引。
 - go-tool-runtime：能力發現、schema、readiness、dispatch、execution query。
+- AI-Engineering-OS：Artifact Registry、Delivery Revision、成果網站交付規則。
 - 既有地理/街景工具：位置解析、街景、地形/參考資料取得。
 - Blender integration：3D terrain / bridge / scene 建立與 physical artifact 輸出。
 - SceneX：場景匯入、runtime、實際瀏覽驗證。
