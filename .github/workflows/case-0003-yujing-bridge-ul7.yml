@@ -7,10 +7,6 @@ on:
     paths:
       - '.github/workflows/case-0003-yujing-bridge-ul7.yml'
 
-concurrency:
-  group: case-0003-yujing-bridge-ul7
-  cancel-in-progress: false
-
 env:
   CASE0003_ASSIGNED_HOST: DESKTOP-UL7V2VV
   CASE0003_LOCATION_TEXT: 臺南市玉井橋
