@@ -2,7 +2,7 @@
 
 更新時間：2026-08-16 Asia/Taipei
 
-狀態：`EXECUTING / UL7 ROUTING / MANUAL-EVOLVING / GAP-FIX-CLOSURE / OS WEBSITE DELIVERY REQUIRED`
+狀態：`BLOCKED / UL7 RUNNER OFFLINE-OR-UNAVAILABLE / MANUAL-EVOLVING / GAP-FIX-CLOSURE / OS WEBSITE DELIVERY REQUIRED`
 
 ## 任務
 
@@ -14,90 +14,75 @@
 
 本案例每一步都必須詳實記錄，文檔不是事後摘要，而是後續大模型直接照著執行的正式操作手冊。
 
-每一步至少記錄：
-
-- canonical input；
-- tool / capability / workflow；
-- owning repo 與 SHA；
-- run id / job id / runner / COMPUTERNAME；
-- 正式輸入與輸出摘要；
-- artifact path / size / mtime / SHA256；
-- PASS / FAIL / BLOCKED 依據；
-- 缺口與根因；
-- 修復 repo / commit / tests；
-- 修復後同一步 REAL rerun；
-- 最終 accepted 操作方式。
-
-不得只寫「完成」或「失敗」。
+每一步至少記錄：canonical input、tool/capability/workflow、owning repo/SHA、run/job/runner/COMPUTERNAME、輸入/輸出、artifact path/size/mtime/SHA256、PASS/FAIL/BLOCKED 依據、缺口根因、修復 commit/tests、修復後 REAL rerun、最終 accepted 操作方式。
 
 ## 缺口修復規則
 
-案例執行時若發現正式能力缺口：
-
-1. 先保存原始失敗 evidence；
-2. 確認真正 owning repo；
-3. 將缺口寫入 STATUS / evidence；
-4. 直接補真正 owning repo 的缺口；
-5. tests / build / CI 驗證；
-6. 使用最新 commit 回到原失敗案例 Step；
-7. 固定由 UL7 REAL 重跑；
-8. PASS 後把正確操作與修復經驗寫回 README，形成後續手冊。
+案例執行時若發現正式能力缺口：保存原始 evidence → 確認 owning repo → 寫入 STATUS/evidence → 修真正 owning repo → tests/build/CI → 使用最新 commit 回原 Step → 固定 UL7 REAL 重跑 → PASS 後寫回手冊。
 
 不得用案例特例、舊 commit、人工替代或臨時 script 掩蓋正式能力缺口。
 
 ## 固定執行邊界
 
-- 本案例只允許 UL7（`DESKTOP-UL7V2VV`）執行 consequential case steps。
-- routing workflow 可由 `[self-hosted, Windows, X64]` runner 接單；非 UL7 主機必須 clean skip。
-- 不 fallback 到其他電腦產生成果。
-- 案例 workflow：`.github/workflows/case-0003-yujing-bridge-ul7.yml`。
+- consequential case steps 只允許 `DESKTOP-UL7V2VV`。
+- OpenWorker routing workflow：`.github/workflows/case-0003-yujing-bridge-ul7.yml`。
+- 已新增跨 repo UL7 probe：`liuxb99/DWG_todo/.github/workflows/case-0003-yujing-ul7-probe.yml`。
+- 不 fallback 到 O87/ODAQ 產生成果。
 
 ## OS 最終交付規則
 
-- SceneX 可瀏覽只是中間驗收 gate。
+- SceneX REAL browse 是中間 gate。
 - accepted artifacts 必須進 OS Artifact Registry。
 - 必須建立 Delivery Revision。
-- 最終 physical delivery 必須有：`delivery/website/index.html`。
-- 成果網站必須展示/索引玉井橋真實位置、街景/地形 provenance、Blender 場景、SceneX REAL captures、QC、artifact hashes、execution provenance。
+- 最終 physical delivery：`delivery/website/index.html`。
 
-## 已完成
+## 已完成 / 已證實
 
-- canonical 案例入口已建立於 `examples/0003-yujing-bridge/`。
-- 已定義 REAL 完成標準與 OS 成果網站交付規則。
-- 已修正 UL7 routing：UL7 正式 Windows 主機為 `DESKTOP-UL7V2VV`，不使用不存在的 `UL7` label。
-- routing workflow head：`22379efa04b55020508d2a3aced418714af0bdc6`。
-- run `31919992683` 的 8 個 route jobs 最終均 cancelled，未取得 runner identity。
-- 後續最新 route run `31920050536` 已建立 8 個 `[self-hosted, Windows, X64]` jobs；最近一次查詢仍全部 queued。
-- 已把「每一步詳實記錄 → 文檔演進成手冊 → 缺口即修 owning repo → 同一步 REAL 重跑」寫入 canonical README。
+1. canonical 案例入口與完整主流程已建立於 `examples/0003-yujing-bridge/`。
+2. OS 成果網站已列為硬性最終交付 gate。
+3. 已修 G-0003-001：文檔更新不再自動取消正式案例 run。
+4. 已修 G-0003-002：移除固定 concurrency，避免舊 queued run 阻塞新驗證。
+5. OpenWorker 最新正式 routing run `31920291957` 已能正常建立 8 個 `[self-hosted, Windows, X64]` jobs，但仍全部 queued、沒有 runner identity。
+6. 已確認同時間 O87、ODAQ self-hosted runners 可在其他 repo 正常接單，因此 GitHub Actions 平台與 Windows selector 並未整體故障。
+7. 已找到 UL7 歷史正式成功證據：`DWG_todo` run `31316843916`、job `93253413948`、runner `DESKTOP-UL7V2VV-R011`、labels `[self-hosted, Windows, X64, ai-ci]`、SUCCESS。
+8. 已新增使用同 repo + 同 `ai-ci` selector 的 Case 0003 readiness probe，commit `8b351993cd655800df3d63dcaab0c59ccbfe712b`。
+9. 新 probe run `31920589306`、job `95099748288` 目前仍 `queued`，`runner_id=null`、`runner_name=null`。
 
 ## 目前 gate
 
-Step 1 — UL7 runner identity / readiness。
+**Step 1 — UL7 runner identity / readiness：BLOCKED。**
 
-最新 run：`31920050536`
+最新權威 probe：
 
-最近一次 jobs：
+- repo：`liuxb99/DWG_todo`
+- workflow：`Case 0003 Yujing UL7 Readiness`
+- run：`31920589306`
+- job：`95099748288`
+- selector：`[self-hosted, Windows, X64, ai-ci]`
+- current status：`queued`
+- runner：尚未指派
 
-- `95098375481`
-- `95098375482`
-- `95098375483`
-- `95098375512`
-- `95098375525`
-- `95098375540`
-- `95098375542`
-- `95098375581`
+由於這是曾經能由 `DESKTOP-UL7V2VV-R011` 成功接單的同 repo + 同 selector，現在仍 queued，因此 G-0003-003 已收斂為：
 
-最近一次查詢全部為 `queued`，尚未取得 runner name / COMPUTERNAME，因此尚未進 go-tool / Blender readiness。
+**UL7 runner service / registration / online availability 當前未能接 GitHub queue。**
+
+這不是 go-tool、Blender、街景、terrain 或 SceneX readiness FAIL；那些 steps 尚未開始。
+
+## UL7 一恢復後，同一 probe 會直接驗證
+
+1. `COMPUTERNAME == DESKTOP-UL7V2VV`；
+2. 實際 `RUNNER_NAME`；
+3. checkout 最新 `openworker@main`；
+4. checkout 最新 `go-tool-runtime@main`；
+5. go-tool `go test ./...`、build、`--help`；
+6. Blender CLI executable/version；
+7. PASS 後進 Step 2 capability discovery。
 
 ## 下一個執行點
 
-1. 追 `31920050536` 是否有 runner 接單。
-2. 非 `DESKTOP-UL7V2VV` clean skip；UL7 取得 runner identity。
-3. 記錄 go-tool / Blender / SceneX / OS delivery readiness。
-4. 查正式 capabilities / schema / readiness。
-5. 以 `臺南市玉井橋` 做 geocoding。
-6. 每推進一個 Step 就立即更新 STATUS / evidence / README 的 accepted 操作方式。
-7. 任一步發現缺口，就依缺口修復閉環補真正 owning repo，然後由 UL7 回到該 Step REAL 重跑。
+- 首先看 `31920589306 / 95099748288` 是否被 UL7 接走。
+- 一旦 Step 1 PASS：立即查 go-tool capabilities/schema/readiness，接著只用 `location_text=臺南市玉井橋` 做 canonical geolocation。
+- 後續逐步取得 REAL Street View / terrain → Blender → SceneX → OS website；每一步都更新手冊。
 
 ## 尚未完成
 
