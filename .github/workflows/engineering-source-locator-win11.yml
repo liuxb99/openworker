@@ -1,0 +1,44 @@
+name: Engineering Source Locator Win11
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'source-locator-requests/request.json'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: engineering-source-locator
+  cancel-in-progress: false
+
+jobs:
+  locate:
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+    steps:
+      - name: Checkout OpenWorker
+        uses: actions/checkout@v4
+
+      - name: Locate exact immutable source
+        id: locate
+        run: |
+          $request = Join-Path (Get-Location) 'source-locator-requests\request.json'
+          if (-not (Test-Path -LiteralPath $request -PathType Leaf)) { throw "missing locator request: $request" }
+          $evidence = Join-Path $env:RUNNER_TEMP "engineering-source-locator-$env:GITHUB_RUN_ID.json"
+          python scripts/engineering_source_locator.py --request $request --evidence $evidence
+
+      - name: Upload locator evidence
+        if: always() && steps.locate.outputs.evidence_path != ''
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: engineering-source-locator-${{ github.run_id }}
+          path: ${{ steps.locate.outputs.evidence_path }}
+          if-no-files-found: warn
+          retention-days: 14
