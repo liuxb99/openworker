@@ -3,6 +3,8 @@
 > 類型：大模型逐步操作手冊  
 > Canonical owner：OpenWorker `examples/0003-yujing-bridge/`  
 > 固定執行主機：UL7（Windows `DESKTOP-UL7V2VV`）  
+> Canonical workspace：`D:\AI-Work\jobs\0003-YUJING-BRIDGE`  
+> Case mirror：`D:\AI-Example\0003`  
 > 執行邊界：**所有 REAL / consequential 工作一律由本機 self-hosted GitHub Action 執行**  
 > 目標：證明一個不知道各 repo 原始碼的大模型，可以只依本手冊與正式工具能力，完成「真實地點 → 真實街景/地形資料 → Blender 3D 場景 → SceneX 可瀏覽成果 → OS 成果網站」的 REAL 閉環。
 
@@ -78,7 +80,13 @@ ChatGPT / GitHub connector 只負責：
 
 `使用者地點 → OpenWorker → go-tool → 地理/街景能力 → 真實位置解析 → 真實街景與地形參考 → Blender 建模/場景組裝 → physical 3D artifacts → SceneX 匯入/載入 → 實際可瀏覽場景 → OS Artifact Registry / Delivery Revision → delivery/website/index.html → evidence`
 
-正式工作目錄由 OpenWorker / OS 決定；不得由大模型自行猜絕對路徑。
+Canonical workspace 沿用案例 0002 已驗證的 OpenWorker/OS 固定工作目錄規則：
+
+- workspace：`D:\AI-Work\jobs\0003-YUJING-BRIDGE`
+- case mirror：`D:\AI-Example\0003`
+- binding file：`D:\AI-Work\jobs\0003-YUJING-BRIDGE\.openworker\job-binding.json`
+
+此路徑必須由 OpenWorker persisted JobBinding 驗證 host/workspace/project/job identity；不得只因 YAML 寫了該路徑就視為 binding 成立。
 
 ## 2. 案例原則
 
@@ -102,7 +110,8 @@ ChatGPT / GitHub connector 只負責：
 先由 OpenWorker 恢復 / 建立 CASE-0003 project work state，確認 persisted JobBinding 固定：
 
 - assigned host：`DESKTOP-UL7V2VV`
-- workspace：由 OpenWorker / OS canonical bootstrap 決定
+- workspace：`D:\AI-Work\jobs\0003-YUJING-BRIDGE`
+- mirror：`D:\AI-Example\0003`
 - project / job / execution identity：由正式 API 建立或恢復
 
 再由 go-tool 取得 current AgentInformationPack / environment / operational facts，並透過正式 Action routing 送到 self-hosted Windows runner。
@@ -116,34 +125,11 @@ Action transport 可使用共享 labels / candidate fan-out，但 consequential 
 
 非 UL7 runner 必須 clean skip，不得產生 consequential side effects。
 
-同一輪還要查：
+### Step 1 REAL 結論（2026-08-16）
 
-- go-tool current health / information pack；
-- Blender canonical runtime readiness；
-- 地理/街景/terrain canonical capability readiness；
-- SceneX import / launch / browse readiness；
-- OS Artifact Registry / Delivery Revision / website delivery readiness。
+Cross-repo readiness run `31921072421` 已由 `DESKTOP-UL7V2VV-R002` 接單並輸出 `CASE0003_UL7_IDENTITY_PASS`，因此 UL7 online / registered / accepting jobs 已確認。該 run 後續失敗是外層 workflow 直接 checkout private `go-tool-runtime` 時的 credential scope 問題，不是 runner availability 問題。
 
-### Step 1 記錄模板
-
-- OpenWorker project/execution/job：
-- persisted assigned host / workspace：
-- workflow / run id / attempt：
-- job id：
-- runner name / labels：
-- `COMPUTERNAME`：
-- OpenWorker SHA：
-- go-tool-runtime SHA：
-- AI-Engineering-OS SHA：
-- related owning repo SHAs：
-- AgentInformationPack / current facts：
-- readiness / queue preflight：
-- Blender runtime/version：
-- SceneX readiness：
-- OS delivery readiness：
-- verdict：`PASS / FAIL / BLOCKED`
-- blocker / owning repo：
-- fix commit / Action verification（如有）：
+正式修正：後續不再由 Case workflow 自己 checkout/build private tools；改由 UL7 上既有 go-tool-runtime 依其正式 credential/capability provider 執行。
 
 ## 4. Step 2 — 用最新版 go-tool 發現正式 capabilities
 
@@ -158,6 +144,8 @@ Action transport 可使用共享 labels / candidate fan-out，但 consequential 
 7. 成果網站 materialization。
 
 不得憑 repo 名稱、舊文檔或歷史記憶猜 capability 名稱。若 go-tool 無法發現一個實際已存在的最新正式能力，這本身就是 go-tool / registry integration gap，必須修 owner 後重跑 Step 2。
+
+目前已知候選 gap：`Terrain_To_DXF` main 已有 Street View metadata / snapshot / route scan / highest-resolution tile acquisition / native panorama stitch 等能力，而目前 go-tool registry 明確可見的 Terrain capability 仍是 `terrain.dxf.generate`；需確認 Street View/location 是否已有正式 Operator workflow，若無則補 owner + registry。
 
 ## 5. Step 3 — 真實位置解析
 
