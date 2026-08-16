@@ -6,11 +6,10 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/case-0003-yujing-bridge-ul7.yml'
-      - 'examples/0003-yujing-bridge/**'
 
 concurrency:
   group: case-0003-yujing-bridge-ul7
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   CASE0003_ASSIGNED_HOST: DESKTOP-UL7V2VV
@@ -75,7 +74,7 @@ jobs:
         if: steps.route.outputs.selected == 'true'
         shell: powershell
         run: |
-          Write-Host 'CASE0003_CASE_ONLY_NO_TOOL_DEVELOPMENT'
+          Write-Host 'CASE0003_MANUAL_EVOLVING_GAP_FIX_CLOSURE'
           Write-Host "LOCATION_TEXT=$env:CASE0003_LOCATION_TEXT"
           Write-Host "DELIVERY_CASE=$env:CASE0003_DELIVERY_CASE"
           Write-Host "ASSIGNED_HOST=$env:CASE0003_ASSIGNED_HOST"
