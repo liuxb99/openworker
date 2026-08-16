@@ -1,0 +1,324 @@
+name: Engineering Source Ingress Win11
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_blob_repository:
+        description: Private repository containing the unreferenced source Git blob.
+        required: true
+        default: liuxb99/AI-Engineering-OS
+      source_blob_sha:
+        description: Immutable Git blob SHA for the source bytes.
+        required: true
+      original_name:
+        description: Original user-facing file name.
+        required: true
+      canonical_name:
+        description: Canonical file name under workspace/input.
+        required: true
+        default: source.dwg
+      expected_size:
+        description: Exact byte length.
+        required: true
+      expected_sha256:
+        description: Exact SHA256 of the user source bytes.
+        required: true
+      expected_header:
+        description: Optional ASCII header prefix such as AC1032.
+        required: false
+      media_type:
+        description: Media type recorded by AI-Engineering-OS.
+        required: true
+        default: application/acad
+      workspace_root:
+        description: Existing/persistent OpenWorker project workspace.
+        required: true
+      assigned_host:
+        description: Persisted machine hostname. Product work fails on any other host.
+        required: true
+      user_request:
+        description: Engineering job request persisted into AI-Engineering-OS.
+        required: true
+  push:
+    branches: [main]
+    paths:
+      - 'source-ingress-requests/request.json'
+      - '.github/workflows/engineering-source-ingress-win11.yml'
+      - 'coworker/engineering/source_ingress.py'
+      - 'tests/test_engineering_source_ingress.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: engineering-source-ingress-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  source-ingress:
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+    steps:
+      - name: Checkout OpenWorker
+        uses: actions/checkout@v4
+        with:
+          path: openworker
+
+      - name: Resolve immutable ingress request
+        id: request
+        working-directory: openworker
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_SOURCE_BLOB_REPOSITORY: ${{ inputs.source_blob_repository }}
+          DISPATCH_SOURCE_BLOB_SHA: ${{ inputs.source_blob_sha }}
+          DISPATCH_ORIGINAL_NAME: ${{ inputs.original_name }}
+          DISPATCH_CANONICAL_NAME: ${{ inputs.canonical_name }}
+          DISPATCH_EXPECTED_SIZE: ${{ inputs.expected_size }}
+          DISPATCH_EXPECTED_SHA256: ${{ inputs.expected_sha256 }}
+          DISPATCH_EXPECTED_HEADER: ${{ inputs.expected_header }}
+          DISPATCH_MEDIA_TYPE: ${{ inputs.media_type }}
+          DISPATCH_WORKSPACE_ROOT: ${{ inputs.workspace_root }}
+          DISPATCH_ASSIGNED_HOST: ${{ inputs.assigned_host }}
+          DISPATCH_USER_REQUEST: ${{ inputs.user_request }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:EVENT_NAME -eq 'workflow_dispatch') {
+            $request = [ordered]@{
+              schema_version = 'openworker.source-ingress-request.v1'
+              source_blob_repository = $env:DISPATCH_SOURCE_BLOB_REPOSITORY
+              source_blob_sha = $env:DISPATCH_SOURCE_BLOB_SHA
+              original_name = $env:DISPATCH_ORIGINAL_NAME
+              canonical_name = $env:DISPATCH_CANONICAL_NAME
+              expected_size = [int64]$env:DISPATCH_EXPECTED_SIZE
+              expected_sha256 = $env:DISPATCH_EXPECTED_SHA256
+              expected_header = $env:DISPATCH_EXPECTED_HEADER
+              media_type = $env:DISPATCH_MEDIA_TYPE
+              workspace_root = $env:DISPATCH_WORKSPACE_ROOT
+              assigned_host = $env:DISPATCH_ASSIGNED_HOST
+              user_request = $env:DISPATCH_USER_REQUEST
+            }
+          } else {
+            $manifest = Join-Path (Get-Location) 'source-ingress-requests\request.json'
+            if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) {
+              throw "push-triggered source ingress requires $manifest"
+            }
+            $request = Get-Content -LiteralPath $manifest -Raw -Encoding UTF8 | ConvertFrom-Json
+          }
+          if ($request.schema_version -ne 'openworker.source-ingress-request.v1') { throw 'unsupported ingress request schema' }
+          foreach ($name in @('source_blob_repository','source_blob_sha','original_name','canonical_name','expected_size','expected_sha256','media_type','workspace_root','assigned_host','user_request')) {
+            $value = $request.$name
+            if ($null -eq $value -or [string]::IsNullOrWhiteSpace([string]$value)) { throw "missing ingress request field: $name" }
+          }
+          if ([int64]$request.expected_size -le 0) { throw 'expected_size must be positive' }
+          if ([string]$request.expected_sha256 -notmatch '^[0-9a-fA-F]{64}$') { throw 'expected_sha256 must be 64 hex chars' }
+          if ([string]$request.source_blob_sha -notmatch '^[0-9a-fA-F]{40}$') { throw 'source_blob_sha must be a Git SHA-1' }
+          $resolved = Join-Path $env:RUNNER_TEMP 'openworker-source-ingress-request.json'
+          $request | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $resolved -Encoding UTF8
+          "request_path=$resolved" >> $env:GITHUB_OUTPUT
+          "workspace_root=$($request.workspace_root)" >> $env:GITHUB_OUTPUT
+          "assigned_host=$($request.assigned_host)" >> $env:GITHUB_OUTPUT
+          Write-Host "SOURCE_INGRESS_REQUEST workspace=$($request.workspace_root) host=$($request.assigned_host) source=$($request.original_name) size=$($request.expected_size) sha256=$($request.expected_sha256) blob=$($request.source_blob_repository)@$($request.source_blob_sha)"
+
+      - name: Fixed-host gate
+        env:
+          ASSIGNED_HOST: ${{ steps.request.outputs.assigned_host }}
+        run: |
+          $actual = [string]$env:COMPUTERNAME
+          Write-Host "SOURCE_INGRESS_ROUTE host=$actual assigned=$env:ASSIGNED_HOST runner=$env:RUNNER_NAME"
+          if ($actual -ine $env:ASSIGNED_HOST) {
+            throw "wrong self-hosted machine: expected $env:ASSIGNED_HOST, got $actual"
+          }
+
+      - name: Verify private source token
+        env:
+          SOURCE_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:SOURCE_TOKEN)) {
+            throw 'GH_TOKEN secret is required to fetch a private source blob'
+          }
+
+      - name: Fetch immutable private source blob
+        id: source
+        env:
+          REQUEST_PATH: ${{ steps.request.outputs.request_path }}
+          SOURCE_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $request = Get-Content -LiteralPath $env:REQUEST_PATH -Raw -Encoding UTF8 | ConvertFrom-Json
+          $staging = Join-Path $env:RUNNER_TEMP 'openworker-engineering-source.bin'
+          $url = "https://api.github.com/repos/$($request.source_blob_repository)/git/blobs/$($request.source_blob_sha)"
+          & curl.exe -fL --retry 3 --retry-delay 2 `
+            -H 'Accept: application/vnd.github.raw+json' `
+            -H "Authorization: Bearer $env:SOURCE_TOKEN" `
+            -H 'X-GitHub-Api-Version: 2022-11-28' `
+            -o $staging $url
+          if ($LASTEXITCODE -ne 0) { throw "private source blob download failed: exit=$LASTEXITCODE" }
+          if (-not (Test-Path -LiteralPath $staging -PathType Leaf)) { throw 'private source blob did not materialize' }
+          $size = (Get-Item -LiteralPath $staging).Length
+          $sha = (Get-FileHash -LiteralPath $staging -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($size -ne [int64]$request.expected_size) { throw "staged source size mismatch: expected=$($request.expected_size) actual=$size" }
+          if ($sha -ne ([string]$request.expected_sha256).ToLowerInvariant()) { throw "staged source SHA256 mismatch: expected=$($request.expected_sha256) actual=$sha" }
+          if (-not [string]::IsNullOrWhiteSpace([string]$request.expected_header)) {
+            $bytes = [System.IO.File]::ReadAllBytes($staging)
+            $count = [Math]::Min(32, $bytes.Length)
+            $header = [Text.Encoding]::ASCII.GetString($bytes, 0, $count).Trim([char]0)
+            if (-not $header.StartsWith([string]$request.expected_header, [StringComparison]::Ordinal)) {
+              throw "staged source header mismatch: expected prefix=$($request.expected_header) actual=$header"
+            }
+          }
+          "staging_path=$staging" >> $env:GITHUB_OUTPUT
+          Write-Host "PRIVATE_SOURCE_VERIFIED size=$size sha256=$sha"
+
+      - name: Checkout AI-Engineering-OS private main
+        uses: actions/checkout@v4
+        with:
+          repository: liuxb99/AI-Engineering-OS
+          ref: main
+          path: ai-engineering-os
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: ai-engineering-os/go.mod
+          cache: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install OpenWorker runtime
+        working-directory: openworker
+        run: |
+          python -m pip install --disable-pip-version-check -e .
+
+      - name: Focused source ingress tests
+        working-directory: openworker
+        run: |
+          python -m pytest -q tests/test_engineering_source_ingress.py
+
+      - name: Start isolated AI-Engineering-OS for bound workspace
+        id: os
+        working-directory: ai-engineering-os
+        env:
+          CASE_WORKSPACE: ${{ steps.request.outputs.workspace_root }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $workspace = [IO.Path]::GetFullPath($env:CASE_WORKSPACE)
+          New-Item -ItemType Directory -Path $workspace -Force | Out-Null
+          $osRoot = Join-Path $workspace '.engineering-os'
+          $jobRoot = Join-Path $osRoot 'jobs'
+          New-Item -ItemType Directory -Path $jobRoot -Force | Out-Null
+          $env:ENGINEERING_OS_ADDRESS = '127.0.0.1:18084'
+          $env:ENGINEERING_OS_DB_PATH = Join-Path $osRoot 'engineering-os.db'
+          $env:ENGINEERING_OS_JOB_ROOT = $jobRoot
+          $env:ENGINEERING_OS_WORKSPACE_ROOT = $workspace
+          $env:ENGINEERING_OS_MODULES_LOCK = Join-Path (Get-Location) 'modules.lock.yaml'
+          $logs = Join-Path $osRoot 'logs'
+          New-Item -ItemType Directory -Path $logs -Force | Out-Null
+          $stdout = Join-Path $logs "source-ingress-$env:GITHUB_RUN_ID.stdout.log"
+          $stderr = Join-Path $logs "source-ingress-$env:GITHUB_RUN_ID.stderr.log"
+          $p = Start-Process -FilePath 'go' -ArgumentList @('run','./cmd/engineering-os') -WorkingDirectory (Get-Location) -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru -Environment @{
+            ENGINEERING_OS_ADDRESS=$env:ENGINEERING_OS_ADDRESS
+            ENGINEERING_OS_DB_PATH=$env:ENGINEERING_OS_DB_PATH
+            ENGINEERING_OS_JOB_ROOT=$env:ENGINEERING_OS_JOB_ROOT
+            ENGINEERING_OS_WORKSPACE_ROOT=$env:ENGINEERING_OS_WORKSPACE_ROOT
+            ENGINEERING_OS_MODULES_LOCK=$env:ENGINEERING_OS_MODULES_LOCK
+          }
+          for ($i=0; $i -lt 120; $i++) {
+            Start-Sleep -Seconds 2
+            try {
+              $h = Invoke-RestMethod -Uri 'http://127.0.0.1:18084/healthz' -TimeoutSec 3
+              if ($h.status -eq 'ok') {
+                "pid=$($p.Id)" >> $env:GITHUB_OUTPUT
+                Write-Host "ENGINEERING_OS_READY pid=$($p.Id) db=$env:ENGINEERING_OS_DB_PATH job_root=$jobRoot"
+                exit 0
+              }
+            } catch {}
+            if ($p.HasExited) {
+              Get-Content -LiteralPath $stderr -ErrorAction SilentlyContinue
+              throw "AI-Engineering-OS exited early: $($p.ExitCode)"
+            }
+          }
+          throw 'AI-Engineering-OS did not become healthy'
+
+      - name: OpenWorker governed source ingress
+        id: ingress
+        working-directory: openworker
+        env:
+          REQUEST_PATH: ${{ steps.request.outputs.request_path }}
+          STAGING_PATH: ${{ steps.source.outputs.staging_path }}
+          GITHUB_HEAD_SHA: ${{ github.sha }}
+        run: |
+          @'
+          import json
+          import os
+          from pathlib import Path
+          from coworker.engineering.source_ingress import EngineeringSourceIngress
+
+          request = json.loads(Path(os.environ['REQUEST_PATH']).read_text(encoding='utf-8-sig'))
+          ingress = EngineeringSourceIngress(
+              os_url='http://127.0.0.1:18084',
+              workspace=request['workspace_root'],
+              assigned_host=request['assigned_host'],
+              user_request=request['user_request'],
+          )
+          try:
+              result = ingress.ingest(
+                  os.environ['STAGING_PATH'],
+                  canonical_name=request['canonical_name'],
+                  original_name=request['original_name'],
+                  media_type=request['media_type'],
+                  expected_size=int(request['expected_size']),
+                  expected_sha256=request['expected_sha256'],
+                  expected_header=request.get('expected_header',''),
+                  source_run_id=os.environ.get('GITHUB_RUN_ID',''),
+                  producer_repository=os.environ.get('GITHUB_REPOSITORY',''),
+                  producer_commit_sha=os.environ.get('GITHUB_HEAD_SHA',''),
+              )
+          finally:
+              ingress.close()
+          evidence_root = Path(request['workspace_root']) / 'evidence' / 'source-ingress'
+          evidence_root.mkdir(parents=True, exist_ok=True)
+          evidence_path = evidence_root / f"run-{os.environ.get('GITHUB_RUN_ID','local')}.json"
+          evidence_path.write_text(json.dumps(result.as_dict(), ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          print(json.dumps(result.as_dict(), ensure_ascii=False, indent=2))
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as out:
+              out.write(f"project_id={result.project_id}\n")
+              out.write(f"job_id={result.job_id}\n")
+              out.write(f"canonical_path={result.canonical_path}\n")
+              out.write(f"sha256={result.sha256}\n")
+              out.write(f"artifact_id={result.os_artifact_id}\n")
+              out.write(f"evidence_path={evidence_path}\n")
+          '@ | python -
+
+      - name: Final physical gate
+        env:
+          REQUEST_PATH: ${{ steps.request.outputs.request_path }}
+          CANONICAL_PATH: ${{ steps.ingress.outputs.canonical_path }}
+          RESULT_SHA: ${{ steps.ingress.outputs.sha256 }}
+        run: |
+          $request = Get-Content -LiteralPath $env:REQUEST_PATH -Raw -Encoding UTF8 | ConvertFrom-Json
+          if (-not (Test-Path -LiteralPath $env:CANONICAL_PATH -PathType Leaf)) { throw 'canonical source missing after ingress' }
+          $size = (Get-Item -LiteralPath $env:CANONICAL_PATH).Length
+          $sha = (Get-FileHash -LiteralPath $env:CANONICAL_PATH -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($size -ne [int64]$request.expected_size) { throw 'canonical source size mismatch' }
+          if ($sha -ne ([string]$request.expected_sha256).ToLowerInvariant()) { throw 'canonical source SHA mismatch' }
+          if ($sha -ne $env:RESULT_SHA) { throw 'ingress result SHA mismatch' }
+          Write-Host "SOURCE_INGRESS_REAL_PASS host=$env:COMPUTERNAME project=${{ steps.ingress.outputs.project_id }} job=${{ steps.ingress.outputs.job_id }} artifact=${{ steps.ingress.outputs.artifact_id }} path=$env:CANONICAL_PATH size=$size sha256=$sha"
+
+      - name: Upload convenience evidence
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: engineering-source-ingress-${{ github.run_id }}
+          path: |
+            ${{ steps.request.outputs.workspace_root }}/input/source-provenance.json
+            ${{ steps.ingress.outputs.evidence_path }}
+          if-no-files-found: warn
+          retention-days: 14
