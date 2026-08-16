@@ -108,12 +108,62 @@ workflow：`.github/workflows/case-0003-yujing-bridge-ul7.yml`
 
 修復 commit：`0956ca74f796e66eb974ca91f25ee0229f54ab3c`
 
+## 嘗試 4 — 保留舊 run 後的新正式驗證
+
+修復 G-0003-001 後產生 run：`31920174970`（run #9）。
+
+觀察：
+
+- 狀態為 `pending`；
+- `jobs` 清單為空；
+- 表示這個 run 尚未進到 job 建立/runner routing 階段；
+- 前一個 run `31920136486` 仍有 8 個 jobs 全部 `queued`。
+
+判定：仍未完成 Step 1。
+
+## 發現缺口 G-0003-002 — 固定 concurrency group 讓新驗證卡在舊 queued run 後面
+
+G-0003-001 把 `cancel-in-progress` 改為 `false` 後，雖然不再取消舊 run，但固定的：
+
+`concurrency.group = case-0003-yujing-bridge-ul7`
+
+會讓新 run `31920174970` 變成 `pending`，因為舊 run `31920136486` 仍佔著同一 group 且在等待 self-hosted runner。
+
+這會造成另一種死鎖：歷史 queued run 不能完成，新修正後的 run 也不能建立 jobs，自然無法驗證修正。
+
+### 正式修復
+
+owning repo：`liuxb99/openworker`
+
+修復：移除 Case 0003 workflow 的固定 `concurrency` block，讓每次正式驗證 run 都能獨立建立 jobs，不受歷史 queued run 阻塞。
+
+修復 commit：`b0a059647ed0ebb8d314dcecbbaa397ef8126933`
+
+### 修復後驗證
+
+新正式 run：`31920291957`（run #10）。
+
+此 run 已成功越過 `pending-with-no-jobs` 狀態並建立 8 個 `[self-hosted, Windows, X64]` jobs：
+
+- `95099001501`
+- `95099001512`
+- `95099001542`
+- `95099001553`
+- `95099001573`
+- `95099001578`
+- `95099001581`
+- `95099001620`
+
+目前這 8 個 jobs 均為 `queued`，尚未取得 runner identity。
+
+因此 G-0003-002 的驗證結果為：**修復有效，新的正式驗證不再被舊 run 的 concurrency group 阻塞**；但 UL7/self-hosted runner 尚未實際接單，Step 1 readiness 仍未 PASS。
+
 ## 重跑驗收
 
-修復 workflow 的 commit 會觸發新的 Case 0003 run。下一個 gate：
+下一個 gate：
 
-1. 新 run 不得因後續文檔 commit 被取消；
-2. 任一 `[self-hosted, Windows, X64]` runner 接單後，必須留下 `COMPUTERNAME` / `RUNNER_NAME`；
+1. run `31920291957` 的任一 `[self-hosted, Windows, X64]` job 被 runner 接單；
+2. 必須留下 `COMPUTERNAME` / `RUNNER_NAME`；
 3. 非 UL7 必須只 clean skip；
 4. `DESKTOP-UL7V2VV` 接單時，才執行 `go-tool` / `blender` readiness；
 5. readiness PASS 後才進 Step 2 capability discovery。
@@ -127,4 +177,5 @@ workflow：`.github/workflows/case-0003-yujing-bridge-ul7.yml`
 - 在第一個 step 讀 `COMPUTERNAME`；
 - 只有 canonical hostname 命中的 candidate 才執行 consequential steps；
 - 文檔/evidence 更新不得設計成會取消正在執行或等待的正式案例 run；
-- runner 尚未接單時，不得把 queued/cancelled 解讀成工具 readiness 失敗。
+- 不要用固定 concurrency group 去序列化可能長時間 queued 的 self-hosted case runs，否則新修正 run 會被歷史死 run 阻塞；
+- runner 尚未接單時，不得把 queued/pending/cancelled 解讀成工具 readiness 失敗。
