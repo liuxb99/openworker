@@ -27,15 +27,9 @@ def load_request(path: Path) -> dict[str, Any]:
     for key in ("assigned_host", "expected_size", "expected_sha256", "expected_header"):
         if key not in data:
             raise RuntimeError(f"missing source locator field: {key}")
-    candidate_paths = data.get("candidate_paths", [])
-    search_roots = data.get("search_roots", [])
-    name_patterns = data.get("name_patterns", [])
-    if candidate_paths is None:
-        candidate_paths = []
-    if search_roots is None:
-        search_roots = []
-    if name_patterns is None:
-        name_patterns = []
+    candidate_paths = data.get("candidate_paths", []) or []
+    search_roots = data.get("search_roots", []) or []
+    name_patterns = data.get("name_patterns", []) or []
     if not isinstance(candidate_paths, list) or len(candidate_paths) > 64:
         raise RuntimeError("candidate_paths must be an array with at most 64 entries")
     if not isinstance(search_roots, list) or len(search_roots) > 16:
@@ -50,11 +44,11 @@ def load_request(path: Path) -> dict[str, Any]:
     data["search_roots"] = [str(v) for v in search_roots if str(v).strip()]
     data["name_patterns"] = [str(v) for v in name_patterns if str(v).strip()]
     data["max_depth"] = int(data.get("max_depth", 8))
-    data["max_name_matches"] = int(data.get("max_name_matches", 256))
+    data["max_size_matches"] = int(data.get("max_size_matches", 256))
     if data["max_depth"] < 0 or data["max_depth"] > 20:
         raise RuntimeError("max_depth must be between 0 and 20")
-    if data["max_name_matches"] <= 0 or data["max_name_matches"] > 4096:
-        raise RuntimeError("max_name_matches must be between 1 and 4096")
+    if data["max_size_matches"] <= 0 or data["max_size_matches"] > 4096:
+        raise RuntimeError("max_size_matches must be between 1 and 4096")
     data["expected_size"] = int(data["expected_size"])
     if data["expected_size"] <= 0:
         raise RuntimeError("expected_size must be positive")
@@ -91,9 +85,17 @@ def bounded_recursive_candidates(
     roots: Iterable[str],
     patterns: list[str],
     *,
+    expected_size: int,
     max_depth: int,
-    max_name_matches: int,
+    max_size_matches: int,
 ) -> tuple[list[Path], list[dict[str, Any]]]:
+    """Discover only name+size candidates before any SHA256 work.
+
+    A broad pattern such as *.dwg is safe here because every matching file is
+    stat'ed, but only files whose byte length exactly equals expected_size are
+    returned for hashing.  This prevents the candidate cap from being consumed
+    by unrelated DWGs and avoids hashing whole engineering roots.
+    """
     found: list[Path] = []
     roots_evidence: list[dict[str, Any]] = []
     for raw_root in roots:
@@ -102,6 +104,8 @@ def bounded_recursive_candidates(
             "root": str(root),
             "exists": root.is_dir(),
             "name_match_count": 0,
+            "size_match_count": 0,
+            "stat_error_count": 0,
             "truncated": False,
         }
         roots_evidence.append(root_entry)
@@ -114,7 +118,6 @@ def bounded_recursive_candidates(
             depth = len(current_path.parts) - root_parts
             if depth >= max_depth:
                 dirs[:] = []
-            # Avoid runner / VCS internals and other high-churn trees if a broad root is used.
             dirs[:] = [
                 d for d in dirs
                 if d.casefold() not in {".git", "node_modules", ".venv", "venv", "__pycache__", "_work"}
@@ -123,8 +126,16 @@ def bounded_recursive_candidates(
                 if not any(fnmatch.fnmatch(name.casefold(), pattern.casefold()) for pattern in patterns):
                     continue
                 root_entry["name_match_count"] += 1
-                found.append((current_path / name).resolve())
-                if len(found) >= max_name_matches:
+                path = (current_path / name).resolve()
+                try:
+                    if path.stat().st_size != expected_size:
+                        continue
+                except (OSError, PermissionError):
+                    root_entry["stat_error_count"] += 1
+                    continue
+                root_entry["size_match_count"] += 1
+                found.append(path)
+                if len(found) >= max_size_matches:
                     root_entry["truncated"] = True
                     return found, roots_evidence
     return found, roots_evidence
@@ -139,7 +150,6 @@ def inspect(path: Path, expected_size: int) -> dict[str, Any]:
         "sha256": "",
         "header": "",
     }
-    # Avoid hashing every same-name historical file when size already proves it is not the source.
     if size != expected_size:
         item["sha256_match"] = False
         item["header_match"] = False
@@ -171,8 +181,9 @@ def main() -> int:
     discovered, roots_evidence = bounded_recursive_candidates(
         request["search_roots"],
         request["name_patterns"],
+        expected_size=expected_size,
         max_depth=request["max_depth"],
-        max_name_matches=request["max_name_matches"],
+        max_size_matches=request["max_size_matches"],
     )
     paths: list[Path] = []
     for candidate in request["candidate_paths"]:
@@ -201,7 +212,7 @@ def main() -> int:
         if len(unique_paths) > 1:
             raise RuntimeError(f"ambiguous exact source: {len(matches)} matching files")
     result = {
-        "schema_version": "openworker.source-locator-evidence.v2",
+        "schema_version": "openworker.source-locator-evidence.v3",
         "assigned_host": assigned,
         "actual_host": host,
         "expected_size": expected_size,
