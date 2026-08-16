@@ -24,6 +24,7 @@
 - 如果 go-tool 無法回答「有什麼能力、怎麼用、需要哪些輸入、是否 ready、怎麼 dispatch、如何查結果」，先修工具資訊契約。
 - 如果最新工具失敗，修最新 owning repo，不回退舊版繞過。
 - 只有取得新鮮 physical artifact、工作區 materialization、provenance 與 QC 才算完成。
+- REAL heavy job dispatch 前必須做 execution hygiene；不得把已知舊 queue / conflicting run 留給下一個案例自行撞上。
 
 ## 3. Step 1 — 健康檢查
 
@@ -55,13 +56,34 @@
 
 必須 fail-closed 檢查必要依賴；不得因知道本機安裝位置而繞過 readiness。
 
-## 7. Step 5 — Dispatch
+## 7. Step 5 — Execution hygiene / queue drain
+
+在新的 REAL dispatch 前先查同一 capability 的正式 workflow queue：
+
+`GET /api/execution/queues/engineering.source-to-film`
+
+若存在舊的 `queued / in_progress / waiting / pending` conflicting run，先做 drain：
+
+`POST /api/execution/queues/engineering.source-to-film/drain`
+
+如果 drain 是在目前 workflow 內執行，必須把目前 `GITHUB_RUN_ID` 放入 `exclude_run_ids`，避免清場時取消自己。
+
+Queue drain 必須：
+
+- 只作用於 capability 所註冊的 workflow，不能無差別取消同 repo 的其他工作；
+- cancellation 後重新 query；
+- conflicting queue 尚未清空時 fail-closed；
+- 不得只因 GitHub cancel API 回 202 就當作清乾淨。
+
+ComfyUI 本機 queue 也必須在 production 前 interrupt + clear + re-query，確認 running / pending 都為空。
+
+## 8. Step 6 — Dispatch
 
 用正式 capability dispatch 本案例，故事必須從 canonical input 傳入。
 
 保存 execution id / target run id。正式 LIVE 驗證必須由這一步建立，不能直接手動觸發底層 OS Action 冒充。
 
-## 8. Step 6 — 查 execution / job
+## 9. Step 7 — 查 execution / job
 
 透過 go-tool / OpenWorker 查：
 
@@ -70,9 +92,9 @@
 - blocker / failure
 - artifact / delivery refs
 
-若失敗，根據正式回覆定位 owning layer，修完後再由 Step 1–5 重新建立新 execution。
+若失敗，根據正式回覆定位 owning layer，修完後再由 Step 1–6 重新建立新 execution。
 
-## 9. Step 7 — OpenWorker / OS production contract
+## 10. Step 8 — OpenWorker / OS production contract
 
 正式 execution 應進入：
 
@@ -86,11 +108,15 @@
 - ComfyUI Desktop REAL readiness；
 - 非指定 runner candidate fail-closed / clean skip。
 
-## 10. Step 8 — REAL H3 Shot 1
+## 11. Step 9 — REAL H3 Shot 1 + backend heartbeat
 
 Shot 1 必須由 Studio 語意一路傳到 ComfyX H3 prompt。
 
-最低 gate：
+Production waiting 期間必須持續檢查 ComfyUI backend heartbeat。若 `/object_info` 連續多次無法連線，立即把這輪視為 backend death 並留下 heartbeat evidence；不得一路等到 30 分鐘 timeout 才發現。
+
+目前 0002 gate：連續 3 次 heartbeat failure 即 fail-fast，evidence 寫入 `03a-backend-heartbeat.json`。
+
+最低 Shot 1 gate：
 
 - prompt 具有 `Aladdin` / `magic lamp` 故事語意；
 - profile 使用正式最新策略（目前預設五種官方模式走 LightX2V H3 4-step；顯式 Standard 保持 Standard contract）；
@@ -101,7 +127,7 @@ Shot 1 必須由 Studio 語意一路傳到 ComfyX H3 prompt。
 
 Shot 1 視覺 semantic QC PASS 後標記 ACCEPT，不再無意義重跑。
 
-## 11. Step 9 — 完成影片
+## 12. Step 10 — 完成影片
 
 Shot 1 ACCEPT 後繼續 Shot 2–4，最後完成：
 
@@ -109,26 +135,28 @@ Shot 1 ACCEPT 後繼續 Shot 2–4，最後完成：
 
 每個 accepted artifact 都要保留 provenance；失敗 artifact 不得冒充 accepted delivery。
 
-## 12. 完成標準
+## 13. 完成標準
 
 只有以下全部成立才可標 `LIVE_VERIFIED / DELIVERABLE`：
 
 1. 本案例由 go-tool 正式 dispatch 建立 execution。
 2. 使用者故事由 canonical input 傳入，沒有腳本寫死。
-3. OpenWorker / OS / Studio / ComfyX 走唯一正式 production path。
-4. REAL H3 physical MP4 存在且可追溯。
-5. Studio / OS workspace 與 artifact registry 有 canonical artifact。
-6. 視覺與技術 QC PASS。
-7. Final Assembly / subtitles 完成。
-8. Delivery Revision 完成。
-9. `delivery/website/index.html` 存在且引用 accepted delivery。
-10. `STATUS.md` 與 `evidence/README.md` 記錄本次真實證據。
+3. Dispatch 前 execution hygiene 已確認無 conflicting workflow queue。
+4. OpenWorker / OS / Studio / ComfyX 走唯一正式 production path。
+5. Production 期間 backend heartbeat 可辨識 ComfyUI death，不會只靠長 timeout。
+6. REAL H3 physical MP4 存在且可追溯。
+7. Studio / OS workspace 與 artifact registry 有 canonical artifact。
+8. 視覺與技術 QC PASS。
+9. Final Assembly / subtitles 完成。
+10. Delivery Revision 完成。
+11. `delivery/website/index.html` 存在且引用 accepted delivery。
+12. `STATUS.md` 與 `evidence/README.md` 記錄本次真實證據。
 
-## 13. 相關 owning repos
+## 14. 相關 owning repos
 
 - OpenWorker：案例入口、worker binding、workspace / mission / execution governance。
-- go-tool-runtime：能力發現、schema、readiness、dispatch、execution query 的資訊權威。
-- AI-Engineering-OS：Job、workspace、artifact、delivery lifecycle。
+- go-tool-runtime：能力發現、schema、readiness、queue hygiene、dispatch、execution query 的資訊權威。
+- AI-Engineering-OS：Job、workspace、artifact、delivery lifecycle，以及案例 production heartbeat/evidence。
 - Comfyx-Studio：故事、劇本、分鏡、production semantics、final assembly。
 - ComfyX：ComfyUI / MiniMax H3 真實生成、execution ledger、physical artifact provenance。
 
