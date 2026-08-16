@@ -2,7 +2,7 @@
 
 更新時間：2026-08-16 Asia/Taipei
 
-狀態：`IMPLEMENTING / LAST REAL RUN FAILED / QUEUE-DRAIN + BACKEND-HEARTBEAT FIXED / VERIFYING`
+狀態：`IMPLEMENTING / LAST REAL RUN FAILED / HYGIENE PREFLIGHT WIRED / BACKEND HEARTBEAT WIRED / VERIFYING`
 
 ## 已完成
 
@@ -75,14 +75,39 @@ AI-Engineering-OS `scripts/cases/case0002_openworker_source_to_film.py` 已改�
 
 - 每次輪詢 Source-to-Film status 時做 backend heartbeat。
 - backend 恢復時會記錄 recovered。
-- 連續 3 次 heartbeat failure 立即 `BACKEND_DIED` 類型 RuntimeError，不再等待完整 30 分鐘。
+- 連續 3 次 heartbeat failure 立即報 backend died，不再等待完整 30 分鐘。
 - heartbeat samples 寫入 `03a-backend-heartbeat.json` 作 REAL evidence。
 
-提交：`1fe87df87d31e4257492afa5ff95d6b7c05ec6e5`。
+初始 heartbeat 提交：`1fe87df87d31e4257492afa5ff95d6b7c05ec6e5`。
+
+## 本批完成：0002 正式接上 go-tool hygiene preflight
+
+不再只是「go-tool 有 queue 清理 API」。案例本身已在正式 Source-to-Film dispatch 前呼叫：
+
+`POST /api/execution/queues/engineering.source-to-film/drain`
+
+並傳入目前 `GITHUB_RUN_ID` 到 `exclude_run_ids`，因此：
+
+- 舊的同 workflow conflicting run 會先取消；
+- 目前正在執行的 0002 run 保留；
+- queue 必須 re-query 到 `clean=true` 才能繼續；
+- evidence 寫入 `01a-execution-hygiene.json`。
+
+整合提交：`75f8e4bad4e4a1cafc56e2c29441255f722bf384`。
+
+## 驗證狀態
+
+本批 push 已觸發實機驗證：
+
+- go-tool-runtime Win11 Local Verification：run `31919340953`，建立本紀錄時為 `queued`。
+- AI-Engineering-OS Case 0002 REAL Production Trigger：run `31919334919`，建立本紀錄時為 `queued`。
+- AI-Engineering-OS OpenWorker Win11 Baseline：run `31919334756`，建立本紀錄時已進入 `in_progress`。
+
+因此本批目前只能標記 `IMPLEMENTED / VERIFYING`，不能提前標 `VERIFIED`。
 
 ## 下一個驗收點
 
-下一個正式 0002 execution 必須先通過 execution hygiene，再跑 production：
+下一個正式 0002 execution 必須依序證明：
 
 `go-tool queue inspect/drain → preserve current run → queue clean → ComfyUI clean/ready → OpenWorker → OS → Studio → audited ComfyX → H3 REAL`
 
