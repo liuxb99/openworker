@@ -7,11 +7,23 @@
   "expected_sha256": "aaadbd84e8a5b2e1b0b8f54c16901a69085c7501aeec602929fd994f3192f5b6",
   "expected_header": "AC1032",
   "candidate_paths": [
-    "D:\\AI-Civil\\DWG_todo\\output\\S1-1140926\\source\\S1-1140926.dwg",
+    "D:\\AI-Work\\jobs\\0004-DWG-TO-3D\\input\\S1-1140926*.dwg",
+    "D:\\AI-Example\\0004\\S1-1140926*.dwg",
     "D:\\AI-Civil\\DWG_todo\\output\\S1-1140926\\source\\S1-1140926*.dwg",
     "D:\\AI-Civil\\DWG_todo\\S1-1140926*.dwg",
-    "D:\\AI-Civil\\DWG_todo\\input\\S1-1140926*.dwg",
-    "D:\\AI-Work\\jobs\\0004-DWG-TO-3D\\input\\S1-1140926*.dwg",
-    "D:\\AI-Example\\0004\\S1-1140926*.dwg"
-  ]
+    "D:\\AI-Civil\\DWG_todo\\input\\S1-1140926*.dwg"
+  ],
+  "search_roots": [
+    "D:\\AI-Work",
+    "D:\\AI-Example",
+    "D:\\AI-Civil",
+    "D:\\AIWork"
+  ],
+  "name_patterns": [
+    "S1-1140926*.dwg",
+    "*.dwg"
+  ],
+  "max_depth": 10,
+  "max_size_matches": 512,
+  "request_nonce": "2026-08-16T16:57:00+08:00"
 }
