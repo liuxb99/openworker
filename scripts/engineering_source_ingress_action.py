@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import lzma
 import os
 import subprocess
 import sys
@@ -18,6 +19,10 @@ from coworker.runtimes.job_binding import JobBindingStore
 SCHEMA = "openworker.source-ingress-request.v1"
 
 
+def _is_hex(value: str, length: int) -> bool:
+    return len(value) == length and all(ch in "0123456789abcdef" for ch in value)
+
+
 def load_request(path: Path) -> dict[str, Any]:
     try:
         data = json.loads(path.read_text(encoding="utf-8-sig"))
@@ -27,7 +32,6 @@ def load_request(path: Path) -> dict[str, Any]:
         raise SourceIngressError("unsupported source ingress request schema")
     required = (
         "source_blob_repository",
-        "source_blob_sha",
         "original_name",
         "canonical_name",
         "expected_size",
@@ -47,13 +51,50 @@ def load_request(path: Path) -> dict[str, Any]:
     if data["expected_size"] <= 0:
         raise SourceIngressError("expected_size must be positive")
     digest = str(data["expected_sha256"]).strip().lower()
-    if len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest):
+    if not _is_hex(digest, 64):
         raise SourceIngressError("expected_sha256 must be 64 hexadecimal characters")
-    blob_sha = str(data["source_blob_sha"]).strip().lower()
-    if len(blob_sha) != 40 or any(ch not in "0123456789abcdef" for ch in blob_sha):
-        raise SourceIngressError("source_blob_sha must be a 40-character Git SHA-1")
     data["expected_sha256"] = digest
-    data["source_blob_sha"] = blob_sha
+
+    one = str(data.get("source_blob_sha", "") or "").strip().lower()
+    many_raw = data.get("source_blob_shas", [])
+    if many_raw is None:
+        many_raw = []
+    if not isinstance(many_raw, list):
+        raise SourceIngressError("source_blob_shas must be an array")
+    many = [str(item or "").strip().lower() for item in many_raw]
+    if one and many:
+        raise SourceIngressError("use source_blob_sha or source_blob_shas, not both")
+    if not one and not many:
+        raise SourceIngressError("source_blob_sha or source_blob_shas is required")
+    if one and not _is_hex(one, 40):
+        raise SourceIngressError("source_blob_sha must be a 40-character Git SHA-1")
+    if many:
+        if len(many) > 512:
+            raise SourceIngressError("source_blob_shas exceeds 512 chunks")
+        if any(not _is_hex(item, 40) for item in many):
+            raise SourceIngressError("every source_blob_shas item must be a 40-character Git SHA-1")
+        if len(set(many)) != len(many):
+            raise SourceIngressError("source_blob_shas contains duplicate chunk references")
+    data["source_blob_sha"] = one
+    data["source_blob_shas"] = many
+
+    compression = str(data.get("source_compression", "none") or "none").strip().lower()
+    if compression not in {"none", "xz"}:
+        raise SourceIngressError("source_compression must be none or xz")
+    data["source_compression"] = compression
+    packed_sha = str(data.get("packed_sha256", "") or "").strip().lower()
+    if packed_sha and not _is_hex(packed_sha, 64):
+        raise SourceIngressError("packed_sha256 must be 64 hexadecimal characters")
+    data["packed_sha256"] = packed_sha
+    packed_size = data.get("packed_size")
+    if packed_size not in (None, ""):
+        try:
+            packed_size = int(packed_size)
+        except (TypeError, ValueError) as exc:
+            raise SourceIngressError("packed_size must be an integer") from exc
+        if packed_size <= 0:
+            raise SourceIngressError("packed_size must be positive")
+    data["packed_size"] = packed_size
     return data
 
 
@@ -66,12 +107,7 @@ def host_gate(assigned_host: str) -> str:
     return actual
 
 
-def fetch_private_blob(request: dict[str, Any], token: str, staging: Path) -> None:
-    token = str(token or "").strip()
-    if not token:
-        raise SourceIngressError("GH_TOKEN is required to fetch the private source blob")
-    repo = str(request["source_blob_repository"]).strip()
-    sha = str(request["source_blob_sha"]).strip()
+def _fetch_blob(repo: str, sha: str, token: str) -> bytes:
     url = f"https://api.github.com/repos/{repo}/git/blobs/{sha}"
     headers = {
         "Accept": "application/vnd.github.raw+json",
@@ -82,13 +118,39 @@ def fetch_private_blob(request: dict[str, Any], token: str, staging: Path) -> No
     try:
         response = httpx.get(url, headers=headers, timeout=60.0, follow_redirects=True)
     except httpx.HTTPError as exc:
-        raise SourceIngressError(f"private source blob download failed: {exc}") from exc
+        raise SourceIngressError(f"private source blob download failed for {sha}: {exc}") from exc
     if response.is_error:
-        raise SourceIngressError(f"private source blob download failed ({response.status_code})")
+        raise SourceIngressError(f"private source blob download failed for {sha} ({response.status_code})")
+    return response.content
+
+
+def fetch_private_source(request: dict[str, Any], token: str, staging: Path) -> None:
+    token = str(token or "").strip()
+    if not token:
+        raise SourceIngressError("GH_TOKEN is required to fetch the private source blob")
+    repo = str(request["source_blob_repository"]).strip()
+    shas = request["source_blob_shas"] or [request["source_blob_sha"]]
+    packed = b"".join(_fetch_blob(repo, sha, token) for sha in shas)
+    packed_size = request.get("packed_size")
+    if packed_size is not None and len(packed) != packed_size:
+        raise SourceIngressError(f"packed source size mismatch: expected {packed_size}, got {len(packed)}")
+    packed_sha = request.get("packed_sha256", "")
+    actual_packed_sha = hashlib.sha256(packed).hexdigest()
+    if packed_sha and actual_packed_sha != packed_sha:
+        raise SourceIngressError(
+            f"packed source SHA256 mismatch: expected {packed_sha}, got {actual_packed_sha}"
+        )
+    if request["source_compression"] == "xz":
+        try:
+            source = lzma.decompress(packed, format=lzma.FORMAT_XZ)
+        except lzma.LZMAError as exc:
+            raise SourceIngressError(f"cannot decompress XZ source bundle: {exc}") from exc
+    else:
+        source = packed
     staging.parent.mkdir(parents=True, exist_ok=True)
-    staging.write_bytes(response.content)
-    size = staging.stat().st_size
-    digest = hashlib.sha256(response.content).hexdigest()
+    staging.write_bytes(source)
+    size = len(source)
+    digest = hashlib.sha256(source).hexdigest()
     if size != int(request["expected_size"]):
         raise SourceIngressError(
             f"staged source size mismatch: expected {request['expected_size']}, got {size}"
@@ -99,7 +161,7 @@ def fetch_private_blob(request: dict[str, Any], token: str, staging: Path) -> No
         )
     expected_header = str(request.get("expected_header", "") or "").strip()
     if expected_header:
-        header = response.content[:32].decode("ascii", errors="replace").rstrip("\x00")
+        header = source[:32].decode("ascii", errors="replace").rstrip("\x00")
         if not header.startswith(expected_header):
             raise SourceIngressError(
                 f"staged source header mismatch: expected prefix {expected_header!r}, got {header!r}"
@@ -190,7 +252,7 @@ def main() -> int:
     actual_host = host_gate(str(request["assigned_host"]))
     workspace = Path(str(request["workspace_root"])).expanduser().resolve()
     staging = Path(os.environ.get("RUNNER_TEMP", str(workspace / ".staging"))) / "openworker-engineering-source.bin"
-    fetch_private_blob(request, os.environ.get(args.source_token_env, ""), staging)
+    fetch_private_source(request, os.environ.get(args.source_token_env, ""), staging)
     process: subprocess.Popen[bytes] | None = None
     try:
         process, os_url, stdout_path, stderr_path = start_isolated_os(
@@ -221,6 +283,13 @@ def main() -> int:
         payload["runner_name"] = os.environ.get("RUNNER_NAME", "")
         payload["github_run_id"] = os.environ.get("GITHUB_RUN_ID", "")
         payload["producer_commit_sha"] = os.environ.get("GITHUB_SHA", "")
+        payload["transport"] = {
+            "repository": request["source_blob_repository"],
+            "blob_count": len(request["source_blob_shas"] or [request["source_blob_sha"]]),
+            "compression": request["source_compression"],
+            "packed_size": request.get("packed_size"),
+            "packed_sha256": request.get("packed_sha256", ""),
+        }
         payload["os_stdout"] = str(stdout_path)
         payload["os_stderr"] = str(stderr_path)
         evidence_root = workspace / "evidence" / "source-ingress"
