@@ -167,51 +167,77 @@ owning repo：`liuxb99/openworker`
 - run `31919939848` / job `95098079885`：runner `DESKTOP-O87PJNR-R030`，labels 為 `[self-hosted, Windows, X64]`，success。
 - run `31919459618` / job `95096822109`：runner `DESKTOP-ODAQN0D-R002`，labels 為 `[self-hosted, Windows, X64]`，success。
 
-### AI-Engineering-OS 成功 runner 證據
+### UL7 歷史正式成功證據
 
-- run `31919947413` / job `95098100854`：runner `DESKTOP-ODAQN0D-R003`，machine `DESKTOP-ODAQN0D`，成功完成 OpenWorker Win11 Baseline。
+在 `liuxb99/DWG_todo`：
+
+- workflow：`Golden Closed Loop`
+- run：`31316843916`
+- job：`93253413948`
+- runner：`DESKTOP-UL7V2VV-R011`
+- labels：`[self-hosted, Windows, X64, ai-ci]`
+- result：SUCCESS
+
+因此 UL7 canonical hostname 與 runner 命名並非猜測；`DESKTOP-UL7V2VV-R011` 曾真實執行成功。
 
 ### Runner API 限制
 
-嘗試直接呼叫 GitHub REST：
+嘗試直接呼叫 GitHub REST runner list endpoint 時回覆：`403 Resource not accessible by integration`。
 
-`GET /repos/liuxb99/go-tool-runtime/actions/runners?per_page=100`
+因此目前 GitHub App 權限無法直接枚舉 self-hosted runner 清單，也無法從 runner endpoint 直接讀 UL7 的 online/busy 狀態。
 
-回覆：`403 Resource not accessible by integration`。
+## 嘗試 5 — 使用已知曾可到 UL7 的跨 repo `ai-ci` 路由
 
-因此目前 GitHub App 權限無法直接枚舉 self-hosted runner 清單，也無法從 REST endpoint 直接讀 UL7 的 online/busy 狀態。
+為避免把問題侷限在 OpenWorker repo 註冊，新增純案例執行 plumbing 到 `liuxb99/DWG_todo`：
 
-### 判定
+- workflow：`.github/workflows/case-0003-yujing-ul7-probe.yml`
+- commit：`8b351993cd655800df3d63dcaab0c59ccbfe712b`
+- selector：`[self-hosted, Windows, X64, ai-ci]`
+- identity gate：`COMPUTERNAME` 必須等於 `DESKTOP-UL7V2VV`
+- checkout：最新 `liuxb99/openworker@main` 與 `liuxb99/go-tool-runtime@main`
+- readiness：go-tool full tests/build/help + Blender executable/version
+- 非 UL7：直接 fail closed，不允許執行案例 consequential work
 
-- GitHub Actions 平台正常；
-- `[self-hosted, Windows, X64]` selector 正常；
-- O87 / ODAQ runner 在同一時間窗有實際成功接單證據；
-- 0003 run `31920291957` 仍完全沒有 runner 接單；
-- 目前可取得的真實 job evidence 中尚未觀察到 `DESKTOP-UL7V2VV`。
+正式 run：`31920589306`
 
-因此 Step 1 當前 verdict：`BLOCKED`。
+job：`95099748288`
 
-blocker：**UL7 self-hosted runner 對案例執行 repo 的可見性 / 註冊 / 在線狀態尚未被證明成立。**
+目前結果：
 
-這一點不能被誤寫成 `go-tool`、Blender、街景或 SceneX readiness 失敗，因為 UL7 尚未取得任何 job。
+- status：`queued`
+- labels：`[self-hosted, Windows, X64, ai-ci]`
+- `runner_id = null`
+- `runner_name = null`
+
+### 新判定
+
+這次 probe 使用的是 **曾經由 `DESKTOP-UL7V2VV-R011` 成功接單的同 repo + 同 `ai-ci` selector**，仍未被任何 runner 接走。
+
+因此 G-0003-003 已進一步收斂：
+
+**目前主要 blocker 不是 OpenWorker repo visibility，而是 UL7 runner service / registration / online availability 本身沒有在 GitHub queue 中接工作。**
+
+仍不得把這個狀態誤寫成 go-tool、Blender、街景、terrain 或 SceneX readiness FAIL，因為 readiness steps 尚未開始。
 
 ### 下一個修復 / 驗證動作
 
-1. 優先找出 UL7 對應的實際 GitHub runner instance（預期 runner name 形如 `DESKTOP-UL7V2VV-Rxxx`，但不得猜具體 suffix）。
-2. 驗證該 runner 是否有註冊到承載案例正式 execution 的 repo，且 labels 包含 `[self-hosted, Windows, X64]`。
-3. 若 UL7 只註冊在其他 owning repo，應透過正式跨 repo execution/dispatch 能力讓案例由可見的 UL7 runner 執行，而不是改用 O87/ODAQ 代做。
-4. UL7 runner 恢復可見後，重新執行 Case 0003 Step 1。
-5. 只有拿到 `COMPUTERNAME=DESKTOP-UL7V2VV` 與實際 `RUNNER_NAME` 後，才進 `go-tool` / Blender readiness。
+1. 保留 `DWG_todo` run `31920589306` 作為 UL7 恢復後第一個 readiness gate。
+2. UL7 runner service 一旦恢復，應由 `DESKTOP-UL7V2VV-Rxxx` 接到 `95099748288` 或後續同 workflow run。
+3. identity gate 必須留下 `COMPUTERNAME=DESKTOP-UL7V2VV` 與實際 `RUNNER_NAME`。
+4. 接著同一 job 直接驗證最新 OpenWorker manual、go-tool-runtime、Blender readiness。
+5. readiness PASS 後才進 Step 2 capability discovery。
 
 ## 重跑驗收
 
-下一個 gate：
+Step 1 完成必須同時滿足：
 
-1. run `31920291957` 或後續正式重跑的任一 `[self-hosted, Windows, X64]` job 被 runner 接單；
-2. 必須留下 `COMPUTERNAME` / `RUNNER_NAME`；
-3. 非 UL7 必須只 clean skip；
-4. `DESKTOP-UL7V2VV` 接單時，才執行 `go-tool` / `blender` readiness；
-5. readiness PASS 後才進 Step 2 capability discovery。
+1. UL7 runner 實際接單；
+2. `COMPUTERNAME=DESKTOP-UL7V2VV`；
+3. 記錄實際 `RUNNER_NAME`；
+4. OpenWorker 0003 manual 存在且為最新 main；
+5. go-tool-runtime 最新 main 可 test/build/執行；
+6. Blender CLI 在 UL7 可執行並輸出版本；
+7. 所有結果寫回本手冊。
 
 ## 可重用操作手冊結論
 
@@ -222,6 +248,7 @@ blocker：**UL7 self-hosted runner 對案例執行 repo 的可見性 / 註冊 / 
 - 在第一個 step 讀 `COMPUTERNAME`；
 - 只有 canonical hostname 命中的 candidate 才執行 consequential steps；
 - 文檔/evidence 更新不得設計成會取消正在執行或等待的正式案例 run；
-- 不要用固定 concurrency group 去序列化可能長時間 queued 的 self-hosted case runs，否則新修正 run 會被歷史死 run 阻塞；
+- 不要用固定 concurrency group 去序列化可能長時間 queued 的 self-hosted case runs；
 - runner 尚未接單時，不得把 queued/pending/cancelled 解讀成工具 readiness 失敗；
-- 若其他同 selector runner 可成功接單，而指定主機始終不可見，應把問題收斂到該主機的 runner registration / online visibility，而不是繼續修改業務工具。
+- 若指定主機在某 repo 有歷史成功 runner 證據，可用同 repo + 同 selector 建立最小 cross-repo probe，checkout canonical case repo 來區分「repo registration」與「machine runner offline」；
+- 若同 repo + 同 selector 仍 queued 且 `runner_name=null`，應把 blocker 收斂到 runner service / registration / online availability，而不是繼續修改業務工具。
