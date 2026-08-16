@@ -16,6 +16,15 @@
 
 正式工作目錄由 OpenWorker / OS 決定；不得由大模型自行猜絕對路徑。
 
+本案例 temporal contract 固定為：
+
+- target duration：20 秒。
+- default shot：5 秒。
+- `expected_shots = ceil(target_duration_sec / default_shot_seconds) = 4`。
+- canonical sequence：`shot-1 → shot-2 → shot-3 → shot-4`。
+
+Director / ProductionQueue 不得因上游 story planner 對連續 prose 只回一個 action block，就把一鏡成功當成整片成功。
+
 ## 2. 執行原則
 
 - 先問工具，不先讀 owning repo 原始碼。
@@ -94,11 +103,11 @@ ComfyUI 本機 queue 也必須在 production 前 interrupt + clear + re-query，
 
 若失敗，根據正式回覆定位 owning layer，修完後再由 Step 1–6 重新建立新 execution。
 
-## 10. Step 8 — OpenWorker / OS production contract
+## 10. Step 8 — OpenWorker / OS / Director production contract
 
 正式 execution 應進入：
 
-`OpenWorker binding → AI-Engineering-OS job/workspace → Studio planning/production → audited ComfyX execution`
+`OpenWorker binding → AI-Engineering-OS job/workspace → Studio Director planning → ProductionQueue → audited ComfyX execution`
 
 驗收至少包含：
 
@@ -106,13 +115,23 @@ ComfyUI 本機 queue 也必須在 production 前 interrupt + clear + re-query，
 - contract verification 全綠；
 - 固定工作區建立；
 - ComfyUI Desktop REAL readiness；
-- 非指定 runner candidate fail-closed / clean skip。
+- 非指定 runner candidate fail-closed / clean skip；
+- Director 必須使用 duration contract 建立 shot budget：`expected_shots = ceil(target_duration_sec / default_shot_seconds)`；
+- 本案例必須精確建立 `shot-1`、`shot-2`、`shot-3`、`shot-4`，不能只有 Shot 1；
+- 若來源是連續 prose，上游 planner 只產一個 action block，Director 必須在 queue compile 前正規化成 duration contract 所要求的語意 beats。
+
+本案例預期語意 beats：
+
+1. 找到神燈。
+2. 精靈現身。
+3. 許願並召雨。
+4. 雨後城市恢復，阿拉丁帶著同一盞神燈離開。
 
 ## 11. Step 9 — REAL H3 Shot 1 + backend heartbeat
 
 Shot 1 必須由 Studio 語意一路傳到 ComfyX H3 prompt。
 
-Production waiting 期間必須持續檢查 ComfyUI backend heartbeat。若 `/object_info` 連續多次無法連線，立即把這輪視為 backend death 並留下 heartbeat evidence；不得一路等到 30 分鐘 timeout 才發現。
+Production waiting 期間必須持續檢查 ComfyUI backend heartbeat。若 `/object_info` 連續多次無法連線，立即把這輪視為 backend death並留下 heartbeat evidence；不得一路等到 30 分鐘 timeout 才發現。
 
 目前 0002 gate：連續 3 次 heartbeat failure 即 fail-fast，evidence 寫入 `03a-backend-heartbeat.json`。
 
@@ -127,9 +146,26 @@ Production waiting 期間必須持續檢查 ComfyUI backend heartbeat。若 `/ob
 
 Shot 1 視覺 semantic QC PASS 後標記 ACCEPT，不再無意義重跑。
 
-## 12. Step 10 — 完成影片
+## 12. Step 10 — 四鏡完整性與完成影片
 
-Shot 1 ACCEPT 後繼續 Shot 2–4，最後完成：
+Shot 1 ACCEPT 後不是直接把 queue 判成功，而是繼續 Shot 2–4。
+
+案例級 `04a-case-shot-contract.json` 必須證明精確存在：
+
+- `shot.generate:shot-1`
+- `shot.generate:shot-2`
+- `shot.generate:shot-3`
+- `shot.generate:shot-4`
+
+每一鏡都必須同時具有：
+
+- `status == succeeded`
+- 非空 `execution_id`
+- 非空 `prompt_id`
+- 非空 `tool_id`
+- 至少一個非空 physical artifact
+
+缺任一鏡或任一 provenance 欄位都 fail-closed。四鏡通過後完成：
 
 `shots → 1280×720 Final Assembly → subtitles → semantic/technical QC → OS Artifact Registry → Delivery Revision → delivery/website/index.html`
 
@@ -143,21 +179,23 @@ Shot 1 ACCEPT 後繼續 Shot 2–4，最後完成：
 2. 使用者故事由 canonical input 傳入，沒有腳本寫死。
 3. Dispatch 前 execution hygiene 已確認無 conflicting workflow queue。
 4. OpenWorker / OS / Studio / ComfyX 走唯一正式 production path。
-5. Production 期間 backend heartbeat 可辨識 ComfyUI death，不會只靠長 timeout。
-6. REAL H3 physical MP4 存在且可追溯。
-7. Studio / OS workspace 與 artifact registry 有 canonical artifact。
-8. 視覺與技術 QC PASS。
-9. Final Assembly / subtitles 完成。
-10. Delivery Revision 完成。
-11. `delivery/website/index.html` 存在且引用 accepted delivery。
-12. `STATUS.md` 與 `evidence/README.md` 記錄本次真實證據。
+5. Director 依 20/5 duration contract 物化精確四鏡。
+6. Production 期間 backend heartbeat 可辨識 ComfyUI death，不會只靠長 timeout。
+7. Shot 1–4 每一鏡都有 fresh REAL H3 physical MP4 與完整 execution provenance。
+8. `04a-case-shot-contract.json` PASS。
+9. Studio / OS workspace 與 artifact registry 有 canonical artifact。
+10. 視覺與技術 QC PASS。
+11. Final Assembly / subtitles 完成。
+12. Delivery Revision 完成。
+13. `delivery/website/index.html` 存在且引用 accepted delivery。
+14. `STATUS.md` 與 `evidence/README.md` 記錄本次真實證據。
 
 ## 14. 相關 owning repos
 
 - OpenWorker：案例入口、worker binding、workspace / mission / execution governance。
 - go-tool-runtime：能力發現、schema、readiness、queue hygiene、dispatch、execution query 的資訊權威。
 - AI-Engineering-OS：Job、workspace、artifact、delivery lifecycle，以及案例 production heartbeat/evidence。
-- Comfyx-Studio：故事、劇本、分鏡、production semantics、final assembly。
+- Comfyx-Studio：故事、劇本、分鏡、duration-driven shot budget、production semantics、final assembly。
 - ComfyX：ComfyUI / MiniMax H3 真實生成、execution ledger、physical artifact provenance。
 
 這些 repo 可以保存 implementation 文件，但**案例操作手冊的 canonical copy 固定在 OpenWorker**。
