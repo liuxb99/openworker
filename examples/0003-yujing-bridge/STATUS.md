@@ -2,98 +2,75 @@
 
 更新時間：2026-08-16 Asia/Taipei
 
-狀態：`BLOCKED / UL7 RUNNER OFFLINE-OR-UNAVAILABLE / MANUAL-EVOLVING / GAP-FIX-CLOSURE / OS WEBSITE DELIVERY REQUIRED`
+狀態：`IMPLEMENTING / UL7 VERIFIED / STEP 2 GO-TOOL CAPABILITY CLOSURE`
 
-## 任務
+## Canonical execution contract
 
-固定由 UL7（Windows `DESKTOP-UL7V2VV`）執行 consequential work：
+- 固定主機：`DESKTOP-UL7V2VV`
+- canonical workspace：`D:\AI-Work\jobs\0003-YUJING-BRIDGE`
+- case mirror：`D:\AI-Example\0003`
+- canonical input：`location_text = 臺南市玉井橋`
+- REAL / consequential work：一律由本機 self-hosted GitHub Action 執行
+- OpenWorker persisted JobBinding / workspace 是 host/workspace authority；Action labels / matrix 只負責 transport fan-out。
 
-`臺南市玉井橋 → 真實位置解析 → 真實街景/地形參考 → Blender 3D 場景 → SceneX 匯入 → SceneX REAL 瀏覽 → OS Artifact Registry → Delivery Revision → delivery/website/index.html`
+## 已確認
 
-## 文檔即操作手冊
+1. UL7 並非 offline。
+   - cross-repo readiness run：`31921072421`
+   - UL7 job：`95100919549` / `readiness (4)`
+   - runner：`DESKTOP-UL7V2VV-R002`
+   - machine：`DESKTOP-UL7V2VV`
+   - identity gate：`CASE0003_UL7_IDENTITY_PASS`
 
-本案例每一步都必須詳實記錄，文檔不是事後摘要，而是後續大模型直接照著執行的正式操作手冊。
+2. 舊的「UL7 runner offline/unavailable」結論已被上述 REAL evidence 取代。
 
-每一步至少記錄：canonical input、tool/capability/workflow、owning repo/SHA、run/job/runner/COMPUTERNAME、輸入/輸出、artifact path/size/mtime/SHA256、PASS/FAIL/BLOCKED 依據、缺口根因、修復 commit/tests、修復後 REAL rerun、最終 accepted 操作方式。
+3. run `31921072421` 的真正失敗點不是 runner，而是直接從外層 workflow checkout private `liuxb99/go-tool-runtime`：
+   - `actions/checkout@v4`
+   - error：`Repository not found`
+   - 原因：該 workflow 的 `GITHUB_TOKEN` 僅有自身 repo scope，不能當成跨 private repo 的正式 operator credential。
 
-## 缺口修復規則
+4. go-tool-runtime 最新設計已經解決這類 credential / dispatch 問題：
+   - `auth_mode: auto`
+   - priority：local shared credential DB → GitHub App → `GITHUB_TOKEN`
+   - shared DB：`C:\ProgramData\go-tool-runtime\runtime.db`
+   - key：`GH_TOKEN`
+   - capability registry / readiness / dispatch / run/jobs/artifacts query 已正式實作。
 
-案例執行時若發現正式能力缺口：保存原始 evidence → 確認 owning repo → 寫入 STATUS/evidence → 修真正 owning repo → tests/build/CI → 使用最新 commit 回原 Step → 固定 UL7 REAL 重跑 → PASS 後寫回手冊。
+因此 Case 0003 不再用案例 workflow 自己 checkout/build 每個 private owning repo；正式路徑改成：
 
-不得用案例特例、舊 commit、人工替代或臨時 script 掩蓋正式能力缺口。
+`OpenWorker state/binding → UL7 上既有 go-tool-runtime → capability discovery/schema/readiness → go-tool formal dispatch → owning repo Operator Action → go-tool run/jobs/artifacts query → OpenWorker ledger/evidence`
 
-## 固定執行邊界
+## 目前真正缺口
 
-- consequential case steps 只允許 `DESKTOP-UL7V2VV`。
-- OpenWorker routing workflow：`.github/workflows/case-0003-yujing-bridge-ul7.yml`。
-- 已新增跨 repo UL7 probe：`liuxb99/DWG_todo/.github/workflows/case-0003-yujing-ul7-probe.yml`。
-- 不 fallback 到 O87/ODAQ 產生成果。
+### G-0003-004 — Case workflow 繞過 go-tool formal operator layer
 
-## OS 最終交付規則
+舊 CASE-0003 probe 自己 checkout `go-tool-runtime`，導致 private repo credential scope failure。這是 orchestration 層錯誤，不是 runner availability 問題。
 
-- SceneX REAL browse 是中間 gate。
-- accepted artifacts 必須進 OS Artifact Registry。
-- 必須建立 Delivery Revision。
-- 最終 physical delivery：`delivery/website/index.html`。
+**修正方向：** Case 0003 只負責 bootstrap / state / evidence；工具執行全部透過 UL7 上 go-tool-runtime 正式 capability provider。
 
-## 已完成 / 已證實
+### G-0003-005 — Street View / geolocation 最新能力尚未完整暴露為 go-tool capabilities
 
-1. canonical 案例入口與完整主流程已建立於 `examples/0003-yujing-bridge/`。
-2. OS 成果網站已列為硬性最終交付 gate。
-3. 已修 G-0003-001：文檔更新不再自動取消正式案例 run。
-4. 已修 G-0003-002：移除固定 concurrency，避免舊 queued run 阻塞新驗證。
-5. OpenWorker 最新正式 routing run `31920291957` 已能正常建立 8 個 `[self-hosted, Windows, X64]` jobs，但仍全部 queued、沒有 runner identity。
-6. 已確認同時間 O87、ODAQ self-hosted runners 可在其他 repo 正常接單，因此 GitHub Actions 平台與 Windows selector 並未整體故障。
-7. 已找到 UL7 歷史正式成功證據：`DWG_todo` run `31316843916`、job `93253413948`、runner `DESKTOP-UL7V2VV-R011`、labels `[self-hosted, Windows, X64, ai-ci]`、SUCCESS。
-8. 已新增使用同 repo + 同 `ai-ci` selector 的 Case 0003 readiness probe，commit `8b351993cd655800df3d63dcaab0c59ccbfe712b`。
-9. 新 probe run `31920589306`、job `95099748288` 目前仍 `queued`，`runner_id=null`、`runner_name=null`。
+`Terrain_To_DXF` main 已具有 Street View provider-neutral metadata、Google metadata lookup、snapshot、route scan、headless browser renderer、highest-resolution acquisition policy、master tile acquisition、native-resolution panorama stitch 與 checksum evidence。
 
-## 目前 gate
+目前 go-tool `config.yaml` 已正式註冊 `terrain.dxf.generate`，但尚未看到上述 Street View / location acquisition 對應的 production capability entries。
 
-**Step 1 — UL7 runner identity / readiness：BLOCKED。**
+這代表 Case 0003 Step 2 的第一個產品缺口是：
 
-最新權威 probe：
+`owning repo capability exists → go-tool capability registry / Operator contract 尚未完整暴露`
 
-- repo：`liuxb99/DWG_todo`
-- workflow：`Case 0003 Yujing UL7 Readiness`
-- run：`31920589306`
-- job：`95099748288`
-- selector：`[self-hosted, Windows, X64, ai-ci]`
-- current status：`queued`
-- runner：尚未指派
+修復後必須由 UL7 本機 Action 重新執行 Step 2 discovery/readiness，不能只用 unit test 宣稱完成。
 
-由於這是曾經能由 `DESKTOP-UL7V2VV-R011` 成功接單的同 repo + 同 selector，現在仍 queued，因此 G-0003-003 已收斂為：
+## 下一步
 
-**UL7 runner service / registration / online availability 當前未能接 GitHub queue。**
-
-這不是 go-tool、Blender、街景、terrain 或 SceneX readiness FAIL；那些 steps 尚未開始。
-
-## UL7 一恢復後，同一 probe 會直接驗證
-
-1. `COMPUTERNAME == DESKTOP-UL7V2VV`；
-2. 實際 `RUNNER_NAME`；
-3. checkout 最新 `openworker@main`；
-4. checkout 最新 `go-tool-runtime@main`；
-5. go-tool `go test ./...`、build、`--help`；
-6. Blender CLI executable/version；
-7. PASS 後進 Step 2 capability discovery。
-
-## 下一個執行點
-
-- 首先看 `31920589306 / 95099748288` 是否被 UL7 接走。
-- 一旦 Step 1 PASS：立即查 go-tool capabilities/schema/readiness，接著只用 `location_text=臺南市玉井橋` 做 canonical geolocation。
-- 後續逐步取得 REAL Street View / terrain → Blender → SceneX → OS website；每一步都更新手冊。
-
-## 尚未完成
-
-- UL7 runner identity / readiness。
-- go-tool / Blender / SceneX / OS delivery readiness。
-- 玉井橋 canonical geolocation。
-- street-view physical images。
-- terrain/AOI physical data。
-- `.blend` / SceneX exchange artifacts。
-- Blender QC。
-- SceneX REAL browse evidence。
-- OS Artifact Registry。
-- Delivery Revision。
-- `delivery/website/index.html`。
+1. 查 `Terrain_To_DXF` 最新 operator workflows / CLI contract，找出 Street View / location / terrain source 的 canonical inputs 與 artifact evidence。
+2. 若已有 Operator workflow：直接在 go-tool registry 正式註冊並補測試。
+3. 若只有 library/CLI/Golden：在 `Terrain_To_DXF` 補 typed `workflow_dispatch` Operator workflow，禁止任意 shell input，輸出固定到 runner temp / canonical workspace materialization contract。
+4. go-tool 補 capability entry + schema/readiness/evidence contract。
+5. 由 UL7 上 go-tool formal dispatch 真正執行：
+   - capability discovery
+   - detail/schema
+   - readiness / queue preflight
+   - dispatch
+   - run/jobs/artifacts query
+6. 將 REAL run/job/runner/artifact/hash/缺口/修復/重跑全部寫入 `evidence/0002-capability-discovery.md`。
+7. Step 2 PASS 後進 Step 3：僅以 `臺南市玉井橋` 做正式位置解析，不硬編座標。
