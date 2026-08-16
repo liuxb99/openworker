@@ -1,0 +1,54 @@
+name: Case 0003 Yujing Bridge UL7
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/case-0003-yujing-bridge-ul7.yml'
+      - 'examples/0003-yujing-bridge/**'
+
+concurrency:
+  group: case-0003-yujing-bridge-ul7
+  cancel-in-progress: false
+
+jobs:
+  ul7-probe:
+    name: UL7 case probe
+    runs-on: [self-hosted, Windows, X64, UL7]
+    timeout-minutes: 15
+    steps:
+      - name: Report UL7 runner identity
+        shell: cmd
+        run: |
+          @echo off
+          echo CASE0003_UL7_RUNNER_OK
+          echo COMPUTERNAME=%COMPUTERNAME%
+          echo RUNNER_NAME=%RUNNER_NAME%
+          echo RUNNER_OS=%RUNNER_OS%
+          echo RUNNER_ARCH=%RUNNER_ARCH%
+          echo GITHUB_RUN_ID=%GITHUB_RUN_ID%
+          echo GITHUB_JOB=%GITHUB_JOB%
+
+      - name: Verify required local executables without modifying tools
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Continue'
+          Write-Host '=== CASE 0003 existing-tool readiness ==='
+          foreach ($name in @('go-tool','blender')) {
+            $cmd = Get-Command $name -ErrorAction SilentlyContinue
+            if ($cmd) {
+              Write-Host "$name=$($cmd.Source)"
+            } else {
+              Write-Host "$name=NOT_FOUND"
+            }
+          }
+          Write-Host 'CASE0003_READINESS_PROBE_DONE'
+
+      - name: Record case-only boundary
+        shell: cmd
+        run: |
+          @echo off
+          echo CASE0003_CASE_ONLY_NO_TOOL_DEVELOPMENT
+          echo LOCATION_TEXT=臺南市玉井橋
+          echo DELIVERY_CASE=0003
