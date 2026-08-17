@@ -4,6 +4,27 @@ on:
   push:
     branches:
       - main
+    paths:
+      - '.github/workflows/engineering-h11-workspace-bootstrap-win11.yml'
+      - 'pyproject.toml'
+      - 'coworker/engineering_cli.py'
+      - 'coworker/engineering/**'
+      - 'coworker/runtimes/tool_runtime_bootstrap.py'
+      - 'coworker/runtimes/engineering_scope.py'
+      - 'coworker/runtimes/engineering_harness_bootstrap.py'
+      - 'coworker/runtimes/engineering_host.py'
+      - 'coworker/runtimes/engineering_launch.py'
+      - 'coworker/runtimes/harness_*.py'
+      - 'coworker/runtimes/runtime_h11_policy.py'
+      - 'tests/runtimes/test_tool_runtime_bootstrap.py'
+      - 'tests/runtimes/test_engineering_scope.py'
+      - 'tests/runtimes/test_engineering_harness_bootstrap.py'
+      - 'tests/runtimes/test_engineering_host.py'
+      - 'tests/runtimes/test_engineering_launch.py'
+      - 'tests/runtimes/test_harness_*.py'
+      - 'tests/runtimes/test_runtime_h11_policy.py'
+      - 'tests/test_engineering_runtime_ab.py'
+      - 'tests/test_engineering_comfyx_long_job.py'
   workflow_dispatch:
 
 permissions:
