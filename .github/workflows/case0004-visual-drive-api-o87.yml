@@ -49,6 +49,43 @@ jobs:
         working-directory: openworker
         run: python -m pip install --disable-pip-version-check -e .
 
+      - name: Require configured Google Drive API credential
+        env:
+          OPENWORKER_GOOGLE_DRIVE_ACCESS_TOKEN: ${{ secrets.OPENWORKER_GOOGLE_DRIVE_ACCESS_TOKEN }}
+        run: |
+          if([string]::IsNullOrWhiteSpace($env:OPENWORKER_GOOGLE_DRIVE_ACCESS_TOKEN)){
+            throw 'OPENWORKER_GOOGLE_DRIVE_ACCESS_TOKEN is not configured for this repository'
+          }
+          Write-Host 'CASE0004_DRIVE_CREDENTIAL_PRESENT'
+
+      - name: Probe Google Drive review root read access
+        working-directory: openworker
+        env:
+          OPENWORKER_GOOGLE_DRIVE_ACCESS_TOKEN: ${{ secrets.OPENWORKER_GOOGLE_DRIVE_ACCESS_TOKEN }}
+          PYTHONPATH: ${{ github.workspace }}\openworker
+        run: |
+          $code = @'
+          import os
+          from coworker.review_cycle import DEFAULT_DRIVE_FOLDER_ID
+          from coworker.review_drive import GoogleDriveAPIClient, DRIVE_API_BASE
+          folder=(os.environ.get('OPENWORKER_REVIEW_DRIVE_FOLDER_ID') or DEFAULT_DRIVE_FOLDER_ID).strip()
+          c=GoogleDriveAPIClient.from_environment()
+          try:
+              payload=c._json_request('GET', f'{DRIVE_API_BASE}/files/{folder}', params={'fields':'id,name,mimeType,trashed'})
+              if str(payload.get('id') or '') != folder:
+                  raise SystemExit('Drive review root identity mismatch')
+              if str(payload.get('mimeType') or '') != 'application/vnd.google-apps.folder':
+                  raise SystemExit('Drive review root is not a folder')
+              if bool(payload.get('trashed')):
+                  raise SystemExit('Drive review root is trashed')
+              print('CASE0004_DRIVE_ROOT_READ_PASS folder_id='+folder+' name='+str(payload.get('name') or ''))
+          finally:
+              c.close()
+          '@
+          $env:OPENWORKER_REVIEW_DRIVE_FOLDER_ID = if([string]::IsNullOrWhiteSpace($env:OPENWORKER_REVIEW_DRIVE_FOLDER_ID)){'1A4BnZEcFe2WIhcperRd4QSpxoSUN_ARR'}else{$env:OPENWORKER_REVIEW_DRIVE_FOLDER_ID}
+          $code | python -
+          if($LASTEXITCODE -ne 0){ throw "Google Drive review-root probe failed: $LASTEXITCODE" }
+
       - name: Publish immutable visual bundle through Google Drive API
         id: publish
         working-directory: openworker
