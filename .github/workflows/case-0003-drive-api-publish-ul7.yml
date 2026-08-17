@@ -56,6 +56,7 @@ jobs:
           Write-Host "CASE0003_FIXED_HOST_READY host=$env:COMPUTERNAME workspace=$env:CASE0003_WORKSPACE"
 
       - name: Ensure and lease canonical Case 0003 Drive publication action
+        id: worklist
         env:
           PYTHONPATH: ${{ github.workspace }}\openworker
         run: |
@@ -65,13 +66,15 @@ jobs:
             --workspace-root $env:CASE0003_WORKSPACE `
             --manifest $manifest
           if($LASTEXITCODE -ne 0){throw 'Case 0003 worklist ensure failed'}
+          $execution="github:${{ github.run_id }}:${{ github.run_attempt }}:drive-publish"
           python openworker\scripts\case_worklist_action.py start `
             --workspace-root $env:CASE0003_WORKSPACE `
             --step-id '0003-160' `
             --action-id 'openworker.review.publish_drive' `
-            --execution-id $env:GITHUB_RUN_ID
+            --execution-id $execution
           if($LASTEXITCODE -ne 0){throw 'Case 0003 canonical Drive action lease failed'}
-          Write-Host "CASE0003_WORKLIST_RUNNING step=0003-160 execution=$env:GITHUB_RUN_ID"
+          "execution_id=$execution" >> $env:GITHUB_OUTPUT
+          Write-Host "CASE0003_WORKLIST_RUNNING step=0003-160 execution=$execution"
 
       - name: Verify existing immutable review bundle input
         run: |
@@ -203,21 +206,22 @@ jobs:
             --workspace-root $env:CASE0003_WORKSPACE `
             --step-id '0003-160' `
             --action-id 'openworker.review.publish_drive' `
-            --execution-id $env:GITHUB_RUN_ID
+            --execution-id '${{ steps.worklist.outputs.execution_id }}'
           if($LASTEXITCODE -ne 0){throw 'Case 0003 Drive action lease release failed'}
           python $script pass --workspace-root $env:CASE0003_WORKSPACE --step-id '0003-160'
           if($LASTEXITCODE -ne 0){throw 'Case 0003 Drive worklist evidence/pass failed'}
           Write-Host 'CASE0003_WORKLIST_PASS step=0003-160 next=0003-170'
 
       - name: Block active Case 0003 Drive step on failure
-        if: failure()
+        if: failure() && steps.worklist.outcome == 'success'
+        continue-on-error: true
         env:
           PYTHONPATH: ${{ github.workspace }}\openworker
         run: |
           python openworker\scripts\case_worklist_action.py block-active `
             --workspace-root $env:CASE0003_WORKSPACE `
             --step-id '0003-160' `
-            --reason "Drive publication failed in GitHub run $env:GITHUB_RUN_ID"
+            --reason "Drive publication workflow failed in GitHub run $env:GITHUB_RUN_ID attempt $env:GITHUB_RUN_ATTEMPT"
 
       - name: Upload bounded publication receipt evidence
         if: always()
