@@ -60,12 +60,16 @@ jobs:
         run: python -m pip install --disable-pip-version-check -e .
 
       - name: Gate Case 0004 canonical source ingress step
+        id: worklist
         working-directory: openworker
         run: |
+          $execution = "github:${{ github.run_id }}:${{ github.run_attempt }}:ingress"
           python scripts/case_worklist_action.py start `
             --workspace-root 'D:\AI-Work\jobs\0004-DWG-TO-3D' `
             --step-id '0004-020' `
-            --action-id 'openworker.source.ingress'
+            --action-id 'openworker.source.ingress' `
+            --execution-id $execution
+          "execution_id=$execution" >> $env:GITHUB_OUTPUT
 
       - name: Run fixed-host local source ingress
         id: ingress
@@ -86,16 +90,22 @@ jobs:
           python scripts/case_worklist_action.py record --workspace-root $workspace --step-id '0004-020' --key canonical_path --value '${{ steps.ingress.outputs.canonical_path }}'
           python scripts/case_worklist_action.py record --workspace-root $workspace --step-id '0004-020' --key sha256 --value '${{ steps.ingress.outputs.sha256 }}'
           python scripts/case_worklist_action.py record --workspace-root $workspace --step-id '0004-020' --key job_binding_path --value '${{ steps.ingress.outputs.job_binding_path }}'
+          python scripts/case_worklist_action.py complete-action `
+            --workspace-root $workspace `
+            --step-id '0004-020' `
+            --action-id 'openworker.source.ingress' `
+            --execution-id '${{ steps.worklist.outputs.execution_id }}'
           python scripts/case_worklist_action.py pass --workspace-root $workspace --step-id '0004-020'
 
-      - name: Block Case 0004 worklist when ingress fails
-        if: failure() && steps.ingress.outcome == 'failure'
+      - name: Block Case 0004 worklist when ingress workflow fails
+        if: failure() && steps.worklist.outcome == 'success'
+        continue-on-error: true
         working-directory: openworker
         run: |
-          python scripts/case_worklist_action.py block `
+          python scripts/case_worklist_action.py block-active `
             --workspace-root 'D:\AI-Work\jobs\0004-DWG-TO-3D' `
             --step-id '0004-020' `
-            --reason "local source ingress failed in GitHub run $env:GITHUB_RUN_ID"
+            --reason "local source ingress workflow failed in GitHub run $env:GITHUB_RUN_ID"
 
       - name: Upload convenience evidence
         if: always() && steps.ingress.outputs.evidence_path != ''
