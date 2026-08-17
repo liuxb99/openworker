@@ -8,6 +8,8 @@ stable across multiple Action invocations for the same job.
 Creating a fixed binding also bootstraps the Job's Git-like WorkLedger. This is a
 platform invariant: every real OpenWorker job has durable revision/rework history
 from the moment it is created, rather than relying on individual cases to opt in.
+Loading/resuming a binding also replays any unsynced ProjectKnowledge events into
+the ledger, so crashes cannot leave work progress permanently outside history.
 """
 
 from __future__ import annotations
@@ -72,6 +74,15 @@ class JobBindingStore:
         except TypeError as exc:
             raise JobBindingError(f"unsupported OpenWorker job binding schema: {exc}") from exc
         self.assert_current(binding)
+
+        from .work_ledger_bridge import WorkLedgerBridge
+
+        try:
+            bridge = WorkLedgerBridge(self.workspace)
+            bridge.ensure(binding)
+            bridge.sync_pending_project_events(binding)
+        except Exception as exc:
+            raise JobBindingError(f"cannot synchronize mandatory work ledger: {exc}") from exc
         return binding
 
     def assert_current(self, binding: JobBinding) -> None:
@@ -110,15 +121,11 @@ class JobBindingStore:
         temp.write_text(json.dumps(asdict(binding), ensure_ascii=False, indent=2), encoding="utf-8")
         temp.replace(self.path)
 
-        # Local import avoids making JobBinding depend on the ledger implementation
-        # at import time while still making ledger creation a hard Job invariant.
         from .work_ledger_bridge import WorkLedgerBridge
 
         try:
             WorkLedgerBridge(self.workspace).ensure(binding)
         except Exception as exc:
-            # A half-created job is unsafe: remove the binding so callers cannot
-            # resume a job that lacks its mandatory history authority.
             try:
                 self.path.unlink(missing_ok=True)
             except OSError:
