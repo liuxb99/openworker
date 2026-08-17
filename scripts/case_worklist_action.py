@@ -24,11 +24,15 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "command",
-        choices=["ensure", "show", "start", "complete-action", "record", "pass", "block-active"],
+        choices=["ensure", "show", "add-repair", "start", "complete-action", "record", "pass", "block-active"],
     )
     parser.add_argument("--workspace-root", required=True)
     parser.add_argument("--manifest")
     parser.add_argument("--step-id")
+    parser.add_argument("--parent-step-id")
+    parser.add_argument("--title")
+    parser.add_argument("--allowed-action", action="append", default=[])
+    parser.add_argument("--acceptance", action="append", default=[])
     parser.add_argument("--action-id")
     parser.add_argument("--execution-id")
     parser.add_argument("--key")
@@ -58,7 +62,21 @@ def main() -> int:
     if not args.step_id:
         raise CaseWorklistError("--step-id is required")
 
-    if args.command == "start":
+    if args.command == "add-repair":
+        if not args.parent_step_id:
+            raise CaseWorklistError("--parent-step-id is required for add-repair")
+        if not args.title:
+            raise CaseWorklistError("--title is required for add-repair")
+        if not args.allowed_action:
+            raise CaseWorklistError("at least one --allowed-action is required for add-repair")
+        worklist = runtime.add_repair(
+            parent_step_id=args.parent_step_id,
+            step_id=args.step_id,
+            title=args.title,
+            allowed_actions=args.allowed_action,
+            acceptance=args.acceptance,
+        )
+    elif args.command == "start":
         if not args.action_id:
             raise CaseWorklistError("--action-id is required for start")
         if not args.execution_id:
