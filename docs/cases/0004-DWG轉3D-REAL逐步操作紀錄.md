@@ -6,7 +6,8 @@
 > CAD owning repo：`liuxb99/DWG_todo`  
 > 固定 REAL 主機：`DESKTOP-O87PJNR`（O87）  
 > 開始時間：2026-08-16（Asia/Taipei）  
-> 狀態：`IMPLEMENTING / REAL USER DWG RECEIVED / TOOL-GAP-DRIVEN CLOSURE`
+> 最後同步：2026-08-17 15:58（Asia/Taipei）  
+> 狀態：`IMPLEMENTING / CASE WORKLIST GOVERNED / LOCATOR REPAIR IN PROGRESS`
 
 ---
 
@@ -49,6 +50,16 @@ OpenWorker 真正做專案
 → 直到 OS Artifact / Review / Delivery 閉環
 ```
 
+從 2026-08-17 起增加第二條治理鐵律：
+
+```text
+案例狀態不能只存在聊天或 GitHub Actions 歷史中。
+每個已完成、失敗、修復、重跑的動作，都必須同步到：
+1. O87 workspace 內 canonical CaseWorklist；
+2. 本逐步操作紀錄；
+3. 穩定後再提煉回 REAL 完整閉環手冊。
+```
+
 ---
 
 # Part A — 真實輸入接收
@@ -72,13 +83,11 @@ S1-1140926(1).dwg
 
 ```text
 filename: 378建照圖(核准版) (1)(1).dwg
-DWG header: AC1018
 size: 1,435,765 bytes
-SHA256: 1ce944040d1001cd06ef15c7f8fc815bcf68cf196c3bffc22de61cd8f15d0fd6
-basic gate: PASS
+role: backup compatibility source
 ```
 
-`AC1018` 對應較舊 DWG 格式。保留為第二份 REAL compatibility / regression case，不與主案例 geometry 混合。
+保留為第二份 REAL compatibility / regression case，不與主案例 geometry 混合。
 
 #### Input 2 — Case 0004 主輸入
 
@@ -106,15 +115,6 @@ assigned_host  = DESKTOP-O87PJNR
 canonical source = D:\AI-Work\jobs\0004-DWG-TO-3D\input\source.dwg
 ```
 
-此時只代表 ChatGPT 會話已收到 binary；**尚未宣稱檔案已 materialize 到 O87**。
-
-### Step 結果
-
-```text
-REAL USER INPUT RECEIVED = PASS
-O87 CANONICAL MATERIALIZATION = PENDING
-```
-
 ---
 
 # Part B — OpenWorker 先查 go tool，不靠模型記憶
@@ -135,256 +135,539 @@ LLM / OpenWorker
 
 重要邊界：go-tool-runtime 是資訊/Action guidance plane，不取代 `DWG_todo` 做 CAD。
 
-### 判讀
-
-Case 0004 不應建立一個硬編碼巨型 driver 幫模型假裝做完所有 CAD 判斷；OpenWorker 應逐步查工具、看結果、再決定下一步。
-
----
-
 ## Step B-002｜查 `dwg.cad.execute` 主入口
 
-查到：
-
-```text
-repo: liuxb99/DWG_todo
-workflow: .github/workflows/operator-dwg-cad.yml
-ref: master
-inputs:
-  method
-  params_json
-  workspace_root
-  assigned_host
-```
-
-舊 `0003_dwg.cad.execute_ZH.md` 文件只列到 generic：
-
-```text
-cad.build_3d
-cad.export_glb
-cad.validate_3d
-```
-
-但後續 capability guides / `config.yaml` 已存在：
-
-```text
-cad.design_story_structure
-cad.materialize_story_structure
-cad.set_story_anchor
-cad.list_story_anchors
-cad.register_stories
-cad.validate_story_registration
-cad.list_story_registrations
-cad.build_building_3d
-cad.export_building_glb
-cad.validate_building_3d
-cad.build_building_dwg
-cad.export_building_dwg
-cad.validate_building_dwg
-```
+查到 owning repo 為 `liuxb99/DWG_todo`，並確認 Building 3D / native DWG family 已存在。
 
 ### 發現缺口 GTR-0001
 
-```text
-類型: AI-facing information drift
-owning repo: liuxb99/go-tool-runtime
-影響: OpenWorker 查主入口手冊時會得到過期 method family，可能錯過正式 Building 3D / native DWG 工具
-```
+舊 guide 與 runtime registry 有資訊漂移；OpenWorker 可能只看到舊 generic methods。
 
-這不是 DWG_todo 業務缺口，而是 go tool 資訊平面漂移。
-
----
-
-## Step B-003｜逐項核對 DWG capability guides
-
-已核對：
+### 修復
 
 ```text
-0004 dwg.cad.3d
-0005 dwg.cad.visual-search
-0006 dwg.cad.story-design
-0007 dwg.cad.story-materialize
-0008 dwg.cad.story-registration
-0009 dwg.cad.building-3d
-0010 dwg.cad.building-dwg
+repo: liuxb99/go-tool-runtime
+commit: c8e0f59576d1d722f973e6202528761e9ef7e7c7
+result: GTR-0001 FIXED
 ```
-
-其中完整主線已明確：
-
-```text
-cad.open_dwg
-→ get_model_extents
-→ render_png / candidate regions / query_bounds
-→ set_story_region
-→ design_story_structure
-→ human/LLM visual review design.png
-→ materialize_story_structure approved=true
-→ set_story_anchor
-→ register_stories
-→ validate_story_registration
-→ build/export/validate Building GLB
-→ Blender REAL reopen/render
-→ export/validate native Building DWG
-```
-
-### config.yaml authority
-
-`go-tool-runtime/config.yaml` 的 `dwg.cad.execute` capability registry 已包含完整 family，並明確把：
-
-```text
-workspace_root
-assigned_host
-```
-
-列為 canonical required inputs。
-
-所以本次 root cause 是「guide 漂移」，不是 registry 缺能力。
-
----
-
-## Step B-004｜修復 GTR-0001
-
-修復 repo：
-
-```text
-liuxb99/go-tool-runtime
-branch: main
-```
-
-修復內容：
-
-- 把 `0003 dwg.cad.execute` 主入口更新成完整 method family；
-- 明確指到 0004～0010 method-specific guides；
-- 加入 OpenWorker 標準專案循環；
-- 明確禁止跳過 Story review / registration；
-- 加入 Building GLB / Blender / native ACIS Solid3D DWG evidence contract；
-- 明確要求工具/參數不確定時重新查 go tool，不靠模型記憶猜。
-
-修復 commit：
-
-```text
-c8e0f59576d1d722f973e6202528761e9ef7e7c7
-```
-
-### Step 結果
-
-```text
-GTR-0001 = FIXED
-```
-
-後續仍需 Win11 / runtime query gate 驗證此 commit 被實際 runtime 讀到；不能只因 Markdown commit 存在就宣稱 runtime LIVE 已更新。
 
 ---
 
 # Part C — 真實檔案進 O87 workspace
 
-## Step C-001｜確認目前缺口
+## Step C-001｜固定機器路由定案
 
-ChatGPT 會話已持有真實 DWG binary，但 Case 0004 的權威 source 必須在：
+2026-08-17 最新固定機器文檔已定案：
+
+```yaml
+runs-on: [self-hosted, Windows, X64, O87]
+```
+
+GitHub runner label 負責排程；`COMPUTERNAME` 僅做 fail-closed 第二層驗證。
+
+Case 0004 O87 hostname：
+
+```text
+DESKTOP-O87PJNR
+```
+
+不再使用 shared-provider / shared-queue 當固定機器主路由。
+
+## Step C-002｜真實 source 已 materialize 到 canonical workspace
+
+截至 2026-08-17，O87 canonical source 已存在：
 
 ```text
 D:\AI-Work\jobs\0004-DWG-TO-3D\input\source.dwg
+size: 1,385,583
+SHA256: aaadbd84e8a5b2e1b0b8f54c16901a69085c7501aeec602929fd994f3192f5b6
+header: AC1032
 ```
 
-而且必須由 OS/OpenWorker 建立：
-
-```text
-Project / Job
-JobBinding
-workspace_root
-assigned_host=DESKTOP-O87PJNR
-immutable source provenance
-```
-
-目前尚未找到已證明可將「外部使用者上傳 binary」安全 materialize 到 assigned O87 canonical workspace 的正式 OpenWorker/OS intake capability。
-
-### 目前狀態
-
-```text
-BLOCKER: OW/OS INPUT MATERIALIZATION CONTRACT NOT YET VERIFIED
-```
-
-這是下一個要查清楚的工具/平台缺口。若現有能力存在就使用；若不存在，應補在真正擁有 input/workspace lifecycle 的 OpenWorker/AI-Engineering-OS，而不是塞進 DWG_todo。
+並且先前已有 REAL `cad.open_dwg` 成功證據。因 2026-08-17 新增 CaseWorklist 治理，這些已完成成果必須「治理重放 / evidence reconciliation」，不能只靠聊天歷史宣稱完成。
 
 ---
 
-# Part D — 後續每一個 REAL Step 的固定紀錄模板
+# Part D — CaseWorklist 成為案例 canonical execution state
 
-以下模板每跑一個工具就追加一節，不覆蓋歷史。
+## Step D-001｜建立 0004 CaseWorklist
 
-## Step X-XXX｜<時間>｜<目的>
-
-### OpenWorker 當下狀態
+seed：
 
 ```text
-stage:
-accepted evidence:
-blocked evidence:
-current revision:
-next_action_before_query:
+repo path: case-worklists/0004.json
+workspace canonical state:
+D:\AI-Work\jobs\0004-DWG-TO-3D\.openworker\case-worklist.json
 ```
 
-### go-tool 查詢
+主要順序：
 
 ```text
-query:
-capability:
-repo:
-workflow:
-ref:
-method:
-canonical params:
-success criteria:
+0004-010 locate exact source
+0004-020 canonical ingress + OS Project/Job/JobBinding
+0004-030 cad.open_dwg
+0004-040 extents + raw overview
+0004-050 story region discovery
+0004-060 structural design
+0004-070 reviewed materialization
+0004-080 story anchors / registration
+0004-090 Building World Coordinates
+0004-100 GLB export/validate
+0004-110 Blender reopen/render
+0004-120 native AC1032 ACIS Solid3D DWG
+0004-130 OpenCAD reopen/second validation
+0004-140 OS artifact registry
+0004-150 Drive Review Bundle
+0004-160 ChatGPT semantic/visual review receipt
+0004-170 Delivery Revision
+0004-180 final package / website validation
 ```
 
-### Dispatch
+CaseWorklist 規則：
 
 ```text
-workspace_root:
-assigned_host:
-normalized inputs:
-run_id:
-job_id:
-runner:
-runner COMPUTERNAME:
+- 只能執行 canonical_next_step_id。
+- action 必須在該 step allowed_actions。
+- RUNNING 時需綁 execution_id。
+- acceptance evidence 未齊不能 PASS。
+- FAIL/BLOCKED 不得偷跑後續。
+- 修復必須建立 repair child，不手工竄改主線狀態。
 ```
 
-### Physical outputs
+---
+
+# Part E — 2026-08-17 治理重放：0004-010 真實缺口與 repair 閉環
+
+## Step E-001｜15:48｜觸發 0004-010 evidence reconciliation
+
+### 目的
+
+不重做使用者成果，只把已完成的 source materialization / source identity 重新經由 CaseWorklist 正式驗證，讓 canonical state 與真實 workspace 一致。
+
+### request
 
 ```text
-path:
-size:
-SHA256:
-schema/version:
-revision:
+case_id: 0004
+assigned_host: DESKTOP-O87PJNR
+workspace_root: D:\AI-Work\jobs\0004-DWG-TO-3D
+original_name: S1-1140926(1).dwg
+canonical_name: source.dwg
+expected_size: 1385583
+expected_sha256: aaadbd84e8a5b2e1b0b8f54c16901a69085c7501aeec602929fd994f3192f5b6
+expected_header: AC1032
+```
+
+觸發 commit：
+
+```text
+a5795db9fdd57f6a7bf885e44ee44cd2a43b4d3b
+```
+
+workflow 已固定：
+
+```text
+.github/workflows/engineering-source-locator-win11.yml
+runs-on: [self-hosted, Windows, X64, O87]
+```
+
+### REAL run
+
+```text
+run_id: 32007538536
+job_id: 95320022875
+runner: DESKTOP-O87PJNR-R002
+machine: DESKTOP-O87PJNR
+fixed-machine gate: PASS
+```
+
+### 實際結果
+
+locator 找到 3 份 **內容完全相同** 的 exact source：
+
+```text
+same expected_size
+same SHA256
+same AC1032 header
+```
+
+原 locator 規則為多個 exact physical path 時 fail-closed，因此：
+
+```text
+SOURCE_LOCATOR_FAIL: ambiguous exact source: 3 matching files
+0004-010 => BLOCKED
 ```
 
 ### OpenWorker 判讀
 
+這不是 source identity 錯誤，也不是 O87 路由錯誤。
+
+真正 root cause：
+
 ```text
-what was observed:
-why accepted/rejected:
+首次 source discovery 的「多副本即歧義」規則是正確的；
+但在 canonical source 已經 materialize 完成後，治理重放應優先以 workspace/input/source.dwg
+作為 canonical authority，而不是把備份副本重新當來源競爭。
 ```
 
 ### 結果
 
 ```text
-PASS / FAIL / BLOCKED
+O87 routing = PASS
+source identity = 已知正確
+0004-010 = BLOCKED
+root cause = locator 缺少 explicit canonical reconciliation mode
 ```
 
-### 若 FAIL
+---
+
+## Step E-002｜15:52～15:54｜補 locator canonical reconciliation 模式
+
+### 設計原則
+
+**不放寬普通 locator 的 ambiguity gate。**
+
+新增顯式 request flag：
+
+```json
+"prefer_existing_canonical": true
+```
+
+只有此旗標存在時才先檢查：
 
 ```text
-root cause:
-owning repo:
-fix commit:
-rerun id:
+workspace_root\input\canonical_name
 ```
 
-### 下一步
+而且必須：
 
 ```text
-...
+size == expected_size
+SHA256 == expected_sha256
+header startswith expected_header
 ```
+
+全部通過才建立：
+
+```text
+authority = canonical_workspace
+```
+
+canonical 不存在時，仍回到原本 discovery；普通首次 locator 仍維持多副本 exact match => fail-closed。
+
+### 修復 commit
+
+```text
+6e28736c8a644b334516f05c5f1b30d651196df3
+message: fix(locator): support explicit canonical reconciliation without weakening ambiguity gate
+```
+
+---
+
+## Step E-003｜15:54｜CaseWorklist 暴露 repair 操作缺口
+
+0004-010 已 BLOCKED。核心 `CaseWorklist.add_repair()` 已存在，但 runtime/CLI 沒有可供 Action 正式呼叫的 repair-step 建立入口。
+
+### 缺口
+
+```text
+BLOCKED step 有修復模型，但沒有正式 CLI 入口建立 durable repair child。
+若直接手改 JSON，會破壞治理目的。
+```
+
+### 修復
+
+新增：
+
+```text
+scripts/case_worklist_add_repair.py
+```
+
+commit：
+
+```text
+5832927435b862df3ae2a4e1ef9f829bc2c43938
+message: feat(worklist): expose durable repair-step creation
+```
+
+### 建立 repair workflow
+
+```text
+.github/workflows/case-0004-source-locator-repair.yml
+runs-on: [self-hosted, Windows, X64, O87]
+repair step: R-0004-010-001
+parent: 0004-010
+action: openworker.source.locator.repair.canonical-reconcile
+```
+
+commit：
+
+```text
+8d5f311742272504db6e1c7a18650cbc4b6d3e09
+```
+
+---
+
+## Step E-004｜15:54｜Repair attempt 1：cp950 console encoding 缺口
+
+### REAL run
+
+```text
+run_id: 32007844823
+job_id: 95320927156
+runner: DESKTOP-O87PJNR-R002
+machine: DESKTOP-O87PJNR
+```
+
+### CaseWorklist 行為
+
+```text
+0004-010 = BLOCKED
+R-0004-010-001 = READY → RUNNING
+canonical_next_step_id = R-0004-010-001
+```
+
+證明 repair child 確實成為唯一 canonical next step，沒有偷跑 020。
+
+### failure
+
+```text
+SOURCE_LOCATOR_FAIL: 'cp950' codec can't encode character '\ufffd'
+```
+
+原因：DWG header 前 32 bytes 含非文字 binary；Python 以 replacement char `�` 印到 Windows cp950 console 時失敗。
+
+### Worklist fail-closed
+
+```text
+R-0004-010-001 => BLOCKED
+0004-020 仍 PENDING
+```
+
+### 判讀
+
+產品檔案沒有錯；是 evidence/console serialization 缺口。
+
+---
+
+## Step E-005｜15:55～15:56｜補 blocked repair 的窄重試入口
+
+Repair 本身 BLOCKED 後，需要可受控重試，但不能提供一個能任意 reset 主線 work step 的危險入口。
+
+新增：
+
+```text
+scripts/case_worklist_retry_repair.py
+```
+
+限制：
+
+```text
+- only step.kind == repair
+- only BLOCKED repair may reset to PENDING/READY
+- 清掉 active action/execution
+- 寫 repair_retry_reason
+- 主線 work step 不能藉此 reset
+```
+
+commit：
+
+```text
+da7510b09dd139a0b21efea90cddd84d86c9c5dd
+```
+
+workflow 同時加入：
+
+```text
+PYTHONIOENCODING=utf-8
+```
+
+commit：
+
+```text
+34f8db406d41be5023683efd341341dd4b4503cc
+```
+
+---
+
+## Step E-006｜15:56｜Repair attempt 2：canonical identity 已 PASS，但 GitHub output 混合編碼失敗
+
+### REAL run
+
+```text
+run_id: 32007993397
+job_id: 95321373162
+runner: DESKTOP-O87PJNR-R002
+machine: DESKTOP-O87PJNR
+```
+
+### canonical source 真實驗證結果
+
+這一輪最重要的產品證據其實已經成功：
+
+```text
+schema_version: openworker.source-locator-evidence.v4
+authority: canonical_workspace
+matched: true
+physical_checked_count: 1
+path: D:\AI-Work\jobs\0004-DWG-TO-3D\input\source.dwg
+size: 1385583
+size_match: true
+sha256: aaadbd84e8a5b2e1b0b8f54c16901a69085c7501aeec602929fd994f3192f5b6
+sha256_match: true
+header_match: true
+actual_host: DESKTOP-O87PJNR
+```
+
+因此可以確認：
+
+```text
+canonical source identity = REAL PASS
+```
+
+### 為何 workflow 還是 FAIL
+
+同一 step 中：
+
+1. Python `engineering_source_locator.py` 已用 UTF-8 寫 `GITHUB_OUTPUT`；
+2. 後續 Windows PowerShell 使用 `>> $env:GITHUB_OUTPUT`；
+3. Windows PowerShell 5.1 追加時使用 UTF-16；
+4. 同一 output file 變成 UTF-8 + UTF-16 混合；
+5. GitHub runner 解析時遇到 NUL。
+
+錯誤：
+
+```text
+Unable to process file command 'output' successfully.
+Invalid format '\u0000'
+```
+
+### 判讀
+
+這不是 canonical validator 失敗；是 GitHub Actions output protocol encoding 缺口。
+
+### Worklist
+
+仍正確 fail-closed：
+
+```text
+R-0004-010-001 => BLOCKED
+0004-010 => BLOCKED
+0004-020 => PENDING
+```
+
+---
+
+## Step E-007｜15:57｜修 GitHub output 為 UTF-8 no BOM
+
+所有 PowerShell 寫 `GITHUB_OUTPUT` 改成：
+
+```powershell
+[IO.File]::AppendAllText(
+  $env:GITHUB_OUTPUT,
+  "key=value`n",
+  [Text.UTF8Encoding]::new($false)
+)
+```
+
+不再使用 PowerShell 5.1 `>>`。
+
+commit：
+
+```text
+df921bd7268d3a4027d88c5450270b05471b7f34
+message: fix(case0004): write repair outputs as UTF-8 without BOM
+```
+
+第三次受控 repair 已自動觸發：
+
+```text
+run_id: 32008072886
+workflow: Case 0004 Source Locator Repair O87
+status at documentation sync: in_progress
+head_sha: df921bd7268d3a4027d88c5450270b05471b7f34
+```
+
+### 當前 canonical 狀態
+
+截至本次文檔同步時：
+
+```text
+REAL source.dwg 本體：已驗證 size/SHA/header 全 PASS
+CaseWorklist repair：第三次 attempt 執行中
+0004-010：尚未標 PASS
+0004-020：不得開始
+```
+
+這個區分很重要：**實體產品證據已 PASS，不等於治理 step 已 PASS。**
+
+---
+
+# Part F — 這次案例已驗證的通用手冊規則
+
+本段是未來可提煉進正式手冊的穩定規則。
+
+## F-001 固定機器
+
+```text
+runs-on runner label 負責排程
+COMPUTERNAME 只做 fail-closed identity evidence
+```
+
+## F-002 canonical source 已存在時的 reconciliation
+
+```text
+首次 discovery：多個 exact physical source => fail-closed
+已完成 ingress 的治理重放：可顯式 prefer_existing_canonical
+但 canonical 必須重新驗 size + SHA + header，不能只因路徑存在就信任
+```
+
+## F-003 BLOCKED 後修復不能手改主線
+
+```text
+work step BLOCKED
+→ 建 repair child
+→ repair 成為 canonical next step
+→ repair PASS
+→ parent 回 READY
+→ 同一路徑重跑 parent
+```
+
+## F-004 Windows GitHub Actions output
+
+PowerShell 5.1 不應用 `>>` 追加到已由 UTF-8 writer 建立的 `$GITHUB_OUTPUT`。
+
+固定使用 UTF-8 no BOM AppendAllText，避免 NUL / mixed encoding。
+
+## F-005 文件與 state 必須雙軌同步
+
+```text
+workspace CaseWorklist = 機器可執行的 canonical state
+本逐步操作紀錄 = 人與模型可閱讀的完整歷史 / 手冊原稿
+```
+
+兩者都不能缺。
+
+---
+
+# Part G — 下一步固定路線
+
+repair run `32008072886` 若 PASS：
+
+```text
+R-0004-010-001 PASS
+→ 0004-010 回 READY
+→ 用 repaired locator 正式重跑 0004-010
+→ evidence 齊全後 0004-010 PASS
+→ 0004-020 READY
+```
+
+之後只照 CaseWorklist canonical next step 往前，不跳步：
+
+```text
+010 → 020 → 030 → 040 → ... → 180
+```
+
+已存在的舊 REAL `cad.open_dwg` 成果，若要納入 030，也必須走 evidence reconciliation 或正式重跑，不直接靠聊天狀態標 PASS。
 
 ---
 
@@ -394,10 +677,10 @@ rerun id:
 
 ```text
 [PASS] 使用者真 DWG received + SHA256
-[ ] OS Project / Job / workspace / JobBinding
-[ ] source.dwg materialized on O87 + hash equals uploaded source
-[ ] go-tool runtime query returns current full DWG tool family
-[ ] cad.open_dwg REAL
+[PASS] canonical source.dwg 實體存在且 size/SHA/header 已於 repair attempt 2 REAL 驗證
+[ ] CaseWorklist 0004-010 governance PASS
+[ ] OS Project / Job / workspace / JobBinding reconciliation PASS
+[ ] cad.open_dwg governance PASS
 [ ] raw Model Space overview PNG
 [ ] candidate regions / repeated visual windows
 [ ] confirmed real Story Regions
@@ -417,6 +700,8 @@ rerun id:
 [ ] 3DSOLID/layer count validation
 [ ] second validate/reopen
 [ ] OS Artifact Registry current revisions
+[ ] bounded Drive Review Bundle
+[ ] ChatGPT semantic / visual review receipt
 [ ] Review approval
 [ ] Delivery Revision
 [ ] final delivery package / website
