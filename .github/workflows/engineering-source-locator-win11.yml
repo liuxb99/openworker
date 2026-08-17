@@ -33,15 +33,19 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Gate Case 0004 through canonical worklist
+        id: worklist
         run: |
           $workspace = 'D:\AI-Work\jobs\0004-DWG-TO-3D'
+          $execution = "github:${{ github.run_id }}:${{ github.run_attempt }}:locator"
           python scripts/case_worklist_action.py ensure `
             --workspace-root $workspace `
             --manifest 'case-worklists\0004.json'
           python scripts/case_worklist_action.py start `
             --workspace-root $workspace `
             --step-id '0004-010' `
-            --action-id 'openworker.source.locate'
+            --action-id 'openworker.source.locate' `
+            --execution-id $execution
+          "execution_id=$execution" >> $env:GITHUB_OUTPUT
 
       - name: Locate exact immutable source
         id: locate
@@ -58,16 +62,22 @@ jobs:
           python scripts/case_worklist_action.py record --workspace-root $workspace --step-id '0004-010' --key run_id --value "$env:GITHUB_RUN_ID"
           python scripts/case_worklist_action.py record --workspace-root $workspace --step-id '0004-010' --key source_path --value '${{ steps.locate.outputs.source_path }}'
           python scripts/case_worklist_action.py record --workspace-root $workspace --step-id '0004-010' --key sha256 --value 'aaadbd84e8a5b2e1b0b8f54c16901a69085c7501aeec602929fd994f3192f5b6'
-          python scripts/case_worklist_action.py pass --workspace-root $workspace --step-id '0004-010'
-
-      - name: Block Case 0004 worklist when locator fails
-        if: failure() && steps.locate.outcome == 'failure'
-        run: |
-          $workspace = 'D:\AI-Work\jobs\0004-DWG-TO-3D'
-          python scripts/case_worklist_action.py block `
+          python scripts/case_worklist_action.py complete-action `
             --workspace-root $workspace `
             --step-id '0004-010' `
-            --reason "source locator failed in GitHub run $env:GITHUB_RUN_ID"
+            --action-id 'openworker.source.locate' `
+            --execution-id '${{ steps.worklist.outputs.execution_id }}'
+          python scripts/case_worklist_action.py pass --workspace-root $workspace --step-id '0004-010'
+
+      - name: Block Case 0004 worklist when locator workflow fails
+        if: failure() && steps.worklist.outcome == 'success'
+        continue-on-error: true
+        run: |
+          $workspace = 'D:\AI-Work\jobs\0004-DWG-TO-3D'
+          python scripts/case_worklist_action.py block-active `
+            --workspace-root $workspace `
+            --step-id '0004-010' `
+            --reason "source locator workflow failed in GitHub run $env:GITHUB_RUN_ID"
 
       - name: Upload locator evidence
         if: always() && steps.locate.outputs.evidence_path != ''
