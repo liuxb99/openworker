@@ -47,7 +47,7 @@ jobs:
           python scripts/case_worklist_retry_repair.py `
             --workspace-root 'D:\AI-Work\jobs\0004-DWG-TO-3D' `
             --step-id 'R-0004-010-001' `
-            --reason "retry after ASCII-safe locator evidence fix"
+            --reason "retry after UTF-8 GitHub output fix"
 
       - name: Start governed repair action
         id: repairgate
@@ -58,7 +58,7 @@ jobs:
             --step-id 'R-0004-010-001' `
             --action-id 'openworker.source.locator.repair.canonical-reconcile' `
             --execution-id $execution
-          "execution_id=$execution" >> $env:GITHUB_OUTPUT
+          [IO.File]::AppendAllText($env:GITHUB_OUTPUT, "execution_id=$execution`n", [Text.UTF8Encoding]::new($false))
 
       - name: Validate existing canonical source with repaired locator
         id: validate
@@ -75,8 +75,9 @@ jobs:
           $r = Get-Content -LiteralPath $evidence -Raw | ConvertFrom-Json
           if (-not $r.matched -or $r.authority -ne 'canonical_workspace') { throw 'canonical reconciliation did not establish canonical_workspace authority' }
           if ($r.expected_sha256 -ne 'aaadbd84e8a5b2e1b0b8f54c16901a69085c7501aeec602929fd994f3192f5b6') { throw 'unexpected canonical SHA' }
-          "canonical_path=$($r.source_path)" >> $env:GITHUB_OUTPUT
-          "canonical_sha256=$($r.expected_sha256)" >> $env:GITHUB_OUTPUT
+          $utf8 = [Text.UTF8Encoding]::new($false)
+          [IO.File]::AppendAllText($env:GITHUB_OUTPUT, "canonical_path=$($r.source_path)`n", $utf8)
+          [IO.File]::AppendAllText($env:GITHUB_OUTPUT, "canonical_sha256=$($r.expected_sha256)`n", $utf8)
 
       - name: Complete repair and return parent step to READY
         run: |
