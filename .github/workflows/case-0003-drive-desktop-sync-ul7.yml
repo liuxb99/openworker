@@ -58,7 +58,14 @@ jobs:
             $candidates += (Join-Path $d.Root '我的雲端硬碟')
           }
           $root=$null
-          foreach($c in $candidates|Select-Object -Unique){if(-not [string]::IsNullOrWhiteSpace($c) -and (Test-Path -LiteralPath $c -PathType Container)){$root=(Resolve-Path -LiteralPath $c).Path;break}}
+          foreach($c in $candidates|Select-Object -Unique){
+            if([string]::IsNullOrWhiteSpace($c)){continue}
+            try{
+              if(Test-Path -LiteralPath $c -PathType Container -ErrorAction Stop){$root=(Resolve-Path -LiteralPath $c -ErrorAction Stop).Path;break}
+            }catch{
+              Write-Host "CASE0003_DRIVE_DISCOVERY_SKIP candidate=$c reason=$($_.Exception.Message)"
+            }
+          }
           if([string]::IsNullOrWhiteSpace($root)){
             Write-Host 'Available filesystem drives:'
             Get-PSDrive -PSProvider FileSystem|Format-Table Name,Root,Description -AutoSize|Out-String|Write-Host
