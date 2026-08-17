@@ -26,7 +26,7 @@ jobs:
       run:
         shell: powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ". '{0}'"
     steps:
-      - name: Prepare exact PNG and PDF proxy
+      - name: Prepare exact PNG, PDF proxy, and SceneX diagnostics
         run: |
           $ErrorActionPreference='Stop'
           if($env:COMPUTERNAME -ine $env:CASE0003_ASSIGNED_HOST){throw 'host mismatch'}
@@ -39,6 +39,16 @@ jobs:
           $outPng=Join-Path $stage 'scenex-browse.png'
           $pdf=Join-Path $stage 'scenex-browse-review.pdf'
           Copy-Item -LiteralPath $png -Destination $outPng -Force
+          foreach($pair in @(
+            @((Join-Path $env:CASE0003_WORKSPACE 'scenex\terrain-browse-evidence.json'),'terrain-browse-evidence.json'),
+            @((Join-Path $env:CASE0003_WORKSPACE 'scenex\terrain.region.json'),'terrain.region.json'),
+            @((Join-Path $env:CASE0003_WORKSPACE 'scenex\scenex-workspace.json'),'scenex-workspace.json'),
+            @((Join-Path $bundle 'manifest.json'),'review-manifest.json'),
+            @((Join-Path $bundle 'manifest.sha256'),'review-manifest.sha256')
+          )){
+            if(-not (Test-Path -LiteralPath $pair[0] -PathType Leaf)){throw ('diagnostic missing '+$pair[0])}
+            Copy-Item -LiteralPath $pair[0] -Destination (Join-Path $stage $pair[1]) -Force
+          }
           $env:CASE0003_SRC_PNG=$png; $env:CASE0003_DST_PDF=$pdf
           @'
           from PIL import Image
@@ -52,10 +62,9 @@ jobs:
       - name: Upload exact visual review artifact
         uses: actions/upload-artifact@v4
         with:
-          name: case0003-rev61-exact-visual-review-${{ github.run_id }}
-          path: |
-            ${{ env.CASE0003_STAGE }}\scenex-browse.png
-            ${{ env.CASE0003_STAGE }}\scenex-browse-review.pdf
-            ${{ env.CASE0003_STAGE }}\review-artifact-manifest.json
+          name: case0003-rev61-exact-diagnostic-review-${{ github.run_id }}
+          path: ${{ env.CASE0003_STAGE }}\*
           if-no-files-found: error
           retention-days: 3
+
+# trigger nonce: diagnostics-20260817-1
