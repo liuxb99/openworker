@@ -13,17 +13,24 @@ permissions:
   contents: read
 
 concurrency:
-  group: engineering-local-source-ingress
+  group: engineering-local-source-ingress-o87
   cancel-in-progress: false
 
 jobs:
   local-source-ingress:
-    runs-on: [self-hosted, Windows, X64]
+    runs-on: [self-hosted, Windows, X64, O87]
     timeout-minutes: 30
     defaults:
       run:
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
     steps:
+      - name: Verify fixed O87 machine
+        run: |
+          if ($env:COMPUTERNAME -ine 'DESKTOP-O87PJNR') {
+            throw "wrong fixed machine: expected DESKTOP-O87PJNR, actual $env:COMPUTERNAME"
+          }
+          Write-Host "FIXED_MACHINE_OK label=O87 computer=$env:COMPUTERNAME runner=$env:RUNNER_NAME"
+
       - name: Checkout OpenWorker
         uses: actions/checkout@v4
         with:
