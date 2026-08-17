@@ -24,7 +24,7 @@ def build_worklist(tmp_path):
             CaseStep(
                 step_id="0004-010",
                 title="Locate exact DWG on O87",
-                allowed_actions=["openworker.source.locate"],
+                allowed_actions=["openworker.source.locate", "openworker.source.verify"],
                 acceptance=["run_id", "source_path", "sha256"],
             ),
             CaseStep(
@@ -52,6 +52,32 @@ def test_only_manifest_first_step_is_canonical_next(tmp_path):
     assert worklist.step("0004-020").status == StepStatus.PENDING
 
 
+def test_running_multi_action_step_remains_canonical(tmp_path):
+    worklist = build_worklist(tmp_path)
+    worklist.start("0004-010", "openworker.source.locate")
+    assert worklist.next_step().step_id == "0004-010"
+    revision = worklist.revision
+    worklist.start("0004-010", "openworker.source.verify")
+    assert worklist.step("0004-010").status == StepStatus.RUNNING
+    assert worklist.revision == revision
+
+
+def test_future_step_stays_blocked_while_current_step_running(tmp_path):
+    worklist = build_worklist(tmp_path)
+    worklist.start("0004-010", "openworker.source.locate")
+    with pytest.raises(CaseWorklistError, match="case drift blocked"):
+        worklist.assert_action_allowed("0004-020", "openworker.source.ingress")
+
+
+def test_multiple_running_steps_are_rejected_on_load(tmp_path):
+    worklist = build_worklist(tmp_path)
+    payload = worklist.as_dict()
+    payload["steps"][0]["status"] = "RUNNING"
+    payload["steps"][1]["status"] = "RUNNING"
+    with pytest.raises(CaseWorklistError, match="multiple RUNNING"):
+        CaseWorklist.from_dict(payload)
+
+
 def test_drift_to_later_step_is_fail_closed(tmp_path):
     worklist = build_worklist(tmp_path)
     with pytest.raises(CaseWorklistError, match="case drift blocked"):
@@ -62,6 +88,14 @@ def test_wrong_action_for_current_step_is_fail_closed(tmp_path):
     worklist = build_worklist(tmp_path)
     with pytest.raises(CaseWorklistError, match="not allowed"):
         worklist.assert_action_allowed("0004-010", "cad.open_dwg")
+
+
+def test_ready_step_cannot_record_evidence_or_pass_without_start(tmp_path):
+    worklist = build_worklist(tmp_path)
+    with pytest.raises(CaseWorklistError, match="cannot record evidence"):
+        worklist.record_evidence("0004-010", "run_id", 123)
+    with pytest.raises(CaseWorklistError, match="cannot pass"):
+        worklist.pass_step("0004-010")
 
 
 def test_step_cannot_pass_without_acceptance_evidence(tmp_path):
