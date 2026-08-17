@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 
 from coworker.work_ledger import WorkLedger
@@ -59,14 +60,17 @@ def test_case0002_pass_receipt_can_accept_and_deliver(tmp_path, monkeypatch):
     ]) == 0
     handoff = json.loads((workspace / "acceptance" / "openworker-review" / "handoff-latest.json").read_text(encoding="utf-8"))
     revision_id = handoff["revision_id"]
-    review_request = json.loads((workspace / ".openworker" / "reviews" / revision_id / "review-request.json").read_text(encoding="utf-8"))
+    review_root = workspace / ".openworker" / "reviews" / revision_id
+    review_request = json.loads((review_root / "review-request.json").read_text(encoding="utf-8"))
     reviewed_artifacts = [
         {"logical_name": item["logical_name"]}
         for item in review_request["artifacts"]
     ]
+    manifest_sha = hashlib.sha256((review_root / "manifest.json").read_bytes()).hexdigest()
     receipt = workspace / "chatgpt-review.json"
     receipt.write_text(json.dumps({
         "verdict": "PASS",
+        "bundle_manifest_sha256": manifest_sha,
         "summary": "storyboard artifacts are coherent and ready for video",
         "reviewed_artifacts": reviewed_artifacts,
     }), encoding="utf-8")
