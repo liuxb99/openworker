@@ -4,7 +4,12 @@ import argparse
 import json
 from pathlib import Path
 
-from coworker.engineering.case_worklist import CaseWorklist, CaseWorklistError, CaseWorklistStore
+from coworker.engineering.case_worklist import (
+    CaseWorklist,
+    CaseWorklistError,
+    CaseWorklistStore,
+    StepStatus,
+)
 
 
 def load_manifest(path: Path) -> CaseWorklist:
@@ -16,7 +21,10 @@ def load_manifest(path: Path) -> CaseWorklist:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=["ensure", "show", "start", "record", "pass", "block"])
+    parser.add_argument(
+        "command",
+        choices=["ensure", "show", "start", "record", "pass", "block", "block-active"],
+    )
     parser.add_argument("--workspace-root", required=True)
     parser.add_argument("--manifest")
     parser.add_argument("--step-id")
@@ -67,6 +75,19 @@ def main() -> int:
         if not args.reason:
             raise CaseWorklistError("--reason is required for block")
         worklist.block(args.step_id, args.reason)
+    elif args.command == "block-active":
+        if not args.reason:
+            raise CaseWorklistError("--reason is required for block-active")
+        step = worklist.step(args.step_id)
+        if step.status in {StepStatus.RUNNING, StepStatus.READY}:
+            worklist.block(args.step_id, args.reason)
+        elif step.status == StepStatus.BLOCKED:
+            pass
+        else:
+            print(
+                f"CASE_WORKLIST_BLOCK_ACTIVE_NOOP step={step.step_id} status={step.status.value}"
+            )
+            return 0
 
     store.save(worklist)
     print(json.dumps(worklist.as_dict(), ensure_ascii=False, indent=2))
