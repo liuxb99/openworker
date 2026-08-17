@@ -43,17 +43,71 @@ jobs:
           if($env:COMPUTERNAME -ine $env:CASE0003_ASSIGNED_HOST){ throw "CASE0003_DRIVE_ASSIGNED_HOST_MISMATCH host=$env:COMPUTERNAME assigned=$env:CASE0003_ASSIGNED_HOST" }
           if(-not (Test-Path -LiteralPath $env:CASE0003_WORKSPACE -PathType Container)){ throw "CASE0003_WORKSPACE_UNAVAILABLE $env:CASE0003_WORKSPACE" }
 
-      - name: Ensure and lease canonical Case 0003 Drive publication action
+      - name: Ensure, repair if needed, and lease canonical Drive publication action
         id: worklist
         env:
           PYTHONPATH: ${{ github.workspace }}\openworker
         run: |
           $ErrorActionPreference='Stop'
+          $script='openworker\scripts\case_worklist_action.py'
           $manifest=Join-Path $env:GITHUB_WORKSPACE 'openworker\case-worklists\0003.json'
-          python openworker\scripts\case_worklist_action.py ensure --workspace-root $env:CASE0003_WORKSPACE --manifest $manifest
+          python $script ensure --workspace-root $env:CASE0003_WORKSPACE --manifest $manifest
           if($LASTEXITCODE -ne 0){throw 'Case 0003 worklist ensure failed'}
+
+          # A previous publication failure leaves 0003-160 BLOCKED by design.
+          # It may only return to READY through a governed repair whose evidence
+          # proves that a new immutable rework revision/bundle now exists.
+          $worklistPath=Join-Path $env:CASE0003_WORKSPACE '.openworker\case-worklist.json'
+          $statePath=Join-Path $env:CASE0003_WORKSPACE 'acceptance\openworker-final\work-ledger-final-acceptance.json'
+          if(-not (Test-Path -LiteralPath $statePath -PathType Leaf)){throw 'Case 0003 final acceptance state unavailable for repair gate'}
+          $ev=Get-Content -LiteralPath $statePath -Raw|ConvertFrom-Json
+          $revision=[string]$ev.revision_id
+          if([string]::IsNullOrWhiteSpace($revision)){throw 'Case 0003 revision_id missing for repair gate'}
+          if([string]$ev.status -ne 'WAITING_DRIVE_HANDOFF' -and [string]$ev.status -ne 'WAITING_LLM_REVIEW'){throw ('Case 0003 revision is not review-publishable: '+[string]$ev.status)}
+          $bundle=Join-Path $env:CASE0003_WORKSPACE ('.openworker\reviews\'+$revision)
+          $manifestShaPath=Join-Path $bundle 'manifest.sha256'
+          if(-not (Test-Path -LiteralPath $bundle -PathType Container)){throw ('Case 0003 review bundle unavailable: '+$bundle)}
+          if(-not (Test-Path -LiteralPath $manifestShaPath -PathType Leaf)){throw 'Case 0003 manifest.sha256 missing'}
+          $manifestSha=(Get-Content -LiteralPath $manifestShaPath -Raw).Trim()
+          if($manifestSha -notmatch '^[0-9a-fA-F]{64}$'){throw 'Case 0003 manifest SHA is invalid'}
+
+          $wl=Get-Content -LiteralPath $worklistPath -Raw|ConvertFrom-Json
+          $parent=@($wl.steps|Where-Object{$_.step_id -eq '0003-160'})[0]
+          if($null -eq $parent){throw 'Case 0003 worklist parent step 0003-160 missing'}
+          if([string]$parent.status -eq 'BLOCKED'){
+            $short=($revision -replace '^rev_','')
+            if($short.Length -gt 12){$short=$short.Substring(0,12)}
+            $repairId='R-0003-160-'+$short
+            $existing=@($wl.steps|Where-Object{$_.step_id -eq $repairId})
+            if($existing.Count -eq 0){
+              python $script add-repair --workspace-root $env:CASE0003_WORKSPACE --parent-step-id '0003-160' --step-id $repairId --title 'Bind fresh rework revision for Drive publication' --allowed-action 'openworker.review.repair' --acceptance 'rework_revision' --acceptance 'review_bundle' --acceptance 'bundle_manifest_sha256'
+              if($LASTEXITCODE -ne 0){throw 'Case 0003 governed Drive repair insertion failed'}
+            }
+            $wl=Get-Content -LiteralPath $worklistPath -Raw|ConvertFrom-Json
+            $repair=@($wl.steps|Where-Object{$_.step_id -eq $repairId})[0]
+            if($null -eq $repair){throw 'Case 0003 governed Drive repair step missing after insertion'}
+            if([string]$repair.status -eq 'READY'){
+              $repairExecution="github:${{ github.run_id }}:${{ github.run_attempt }}:review-repair"
+              python $script start --workspace-root $env:CASE0003_WORKSPACE --step-id $repairId --action-id 'openworker.review.repair' --execution-id $repairExecution
+              if($LASTEXITCODE -ne 0){throw 'Case 0003 governed Drive repair lease failed'}
+              python $script record --workspace-root $env:CASE0003_WORKSPACE --step-id $repairId --key rework_revision --value $revision
+              python $script record --workspace-root $env:CASE0003_WORKSPACE --step-id $repairId --key review_bundle --value $bundle
+              python $script record --workspace-root $env:CASE0003_WORKSPACE --step-id $repairId --key bundle_manifest_sha256 --value $manifestSha
+              python $script complete-action --workspace-root $env:CASE0003_WORKSPACE --step-id $repairId --action-id 'openworker.review.repair' --execution-id $repairExecution
+              if($LASTEXITCODE -ne 0){throw 'Case 0003 governed Drive repair release failed'}
+              python $script pass --workspace-root $env:CASE0003_WORKSPACE --step-id $repairId
+              if($LASTEXITCODE -ne 0){throw 'Case 0003 governed Drive repair pass failed'}
+              Write-Host "CASE0003_DRIVE_REPAIR_PASS repair=$repairId revision=$revision manifest_sha256=$manifestSha"
+            } elseif([string]$repair.status -ne 'PASSED'){
+              throw ('Case 0003 governed Drive repair is not executable: '+[string]$repair.status)
+            }
+          }
+
+          $wl=Get-Content -LiteralPath $worklistPath -Raw|ConvertFrom-Json
+          $parent=@($wl.steps|Where-Object{$_.step_id -eq '0003-160'})[0]
+          if([string]$parent.status -ne 'READY' -and [string]$parent.status -ne 'RUNNING'){throw ('Case 0003 Drive parent not ready after repair gate: '+[string]$parent.status)}
           $execution="github:${{ github.run_id }}:${{ github.run_attempt }}:review-publish"
-          python openworker\scripts\case_worklist_action.py start --workspace-root $env:CASE0003_WORKSPACE --step-id '0003-160' --action-id 'openworker.review.publish' --execution-id $execution
+          python $script start --workspace-root $env:CASE0003_WORKSPACE --step-id '0003-160' --action-id 'openworker.review.publish' --execution-id $execution
           if($LASTEXITCODE -ne 0){throw 'Case 0003 canonical Drive action lease failed'}
           "execution_id=$execution" >> $env:GITHUB_OUTPUT
 
