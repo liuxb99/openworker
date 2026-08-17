@@ -14,9 +14,12 @@ on:
 permissions:
   contents: read
 
+# Final Acceptance is a single protected pointer update. A newer attempt must
+# supersede an older queued/running attempt rather than allowing two revisions
+# to race for accepted/delivered pointers.
 concurrency:
   group: case-0003-openworker-final-acceptance-ul7
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 env:
   CASE0003_ASSIGNED_HOST: DESKTOP-UL7V2VV
