@@ -1,0 +1,71 @@
+name: Engineering Local Source Ingress Win11
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'local-source-ingress-requests/request.json'
+      - '.github/workflows/engineering-local-source-ingress-win11.yml'
+      - 'scripts/engineering_local_source_ingress_action.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: engineering-local-source-ingress
+  cancel-in-progress: false
+
+jobs:
+  local-source-ingress:
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+    steps:
+      - name: Checkout OpenWorker
+        uses: actions/checkout@v4
+        with:
+          path: openworker
+
+      - name: Checkout AI-Engineering-OS
+        uses: actions/checkout@v4
+        with:
+          repository: liuxb99/AI-Engineering-OS
+          ref: main
+          path: ai-engineering-os
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: ai-engineering-os/go.mod
+          cache: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install OpenWorker
+        working-directory: openworker
+        run: python -m pip install --disable-pip-version-check -e .
+
+      - name: Run fixed-host local source ingress
+        id: ingress
+        working-directory: openworker
+        run: |
+          python scripts/engineering_local_source_ingress_action.py `
+            --request 'local-source-ingress-requests\request.json' `
+            --os-root '..\ai-engineering-os'
+
+      - name: Upload convenience evidence
+        if: always() && steps.ingress.outputs.evidence_path != ''
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: engineering-local-source-ingress-${{ github.run_id }}
+          path: ${{ steps.ingress.outputs.evidence_path }}
+          if-no-files-found: warn
+          retention-days: 14
