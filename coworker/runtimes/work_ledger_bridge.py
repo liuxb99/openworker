@@ -6,7 +6,9 @@ artifacts, verification failures and rework without case-specific bookkeeping.
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Mapping, Sequence
 
 from ..work_ledger import WorkLedger, WorkLedgerError
@@ -20,7 +22,10 @@ _REPAIR_KINDS = {"repaired", "repair", "progress", "executing", "retry"}
 class WorkLedgerBridge:
     def __init__(self, workspace: str | Path) -> None:
         self.workspace = Path(workspace).expanduser().resolve()
-        self.path = self.workspace / ".openworker" / "work-ledger.sqlite"
+        self.root = self.workspace / ".openworker"
+        self.path = self.root / "work-ledger.sqlite"
+        self.project_events_path = self.root / "project-knowledge.jsonl"
+        self.synced_events_path = self.root / "work-ledger-project-events.jsonl"
 
     def ensure(self, binding: JobBinding, *, goal: str = "") -> dict[str, Any]:
         ledger = WorkLedger(self.path)
@@ -51,12 +56,54 @@ class WorkLedgerBridge:
         finally:
             ledger.close()
 
-    def sync_project_event(self, binding: JobBinding, event: Any) -> dict[str, Any]:
-        """Project a ProjectKnowledge event into the authoritative revision chain.
+    def sync_pending_project_events(self, binding: JobBinding) -> int:
+        """Replay unsynced ProjectKnowledge events into the WorkLedger.
 
-        This deliberately does not auto-accept a revision. Completion/accepted
-        natural-language events may move a mutable revision to verifying, but only
-        the WorkLedger required-check gate may move the protected accepted pointer.
+        The sidecar contains only successfully projected event IDs. A crash between
+        source append and ledger projection is therefore repaired on the next job
+        load/resume/query instead of silently losing lifecycle history.
+        """
+        if not self.project_events_path.is_file():
+            return 0
+        synced: set[str] = set()
+        if self.synced_events_path.is_file():
+            for line in self.synced_events_path.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    payload = json.loads(line)
+                except ValueError as exc:
+                    raise WorkLedgerError(f"invalid work-ledger event sync sidecar: {exc}") from exc
+                event_id = str(payload.get("event_id") or "").strip()
+                if event_id:
+                    synced.add(event_id)
+
+        count = 0
+        for number, line in enumerate(self.project_events_path.read_text(encoding="utf-8").splitlines(), start=1):
+            if not line.strip():
+                continue
+            try:
+                raw = json.loads(line)
+            except ValueError as exc:
+                raise WorkLedgerError(f"invalid project knowledge event at line {number}: {exc}") from exc
+            event_id = str(raw.get("event_id") or "").strip()
+            if not event_id:
+                raise WorkLedgerError(f"project knowledge event at line {number} has no event_id")
+            if event_id in synced:
+                continue
+            self.sync_project_event(binding, SimpleNamespace(**raw))
+            self.root.mkdir(parents=True, exist_ok=True)
+            with self.synced_events_path.open("a", encoding="utf-8", newline="\n") as handle:
+                handle.write(json.dumps({"event_id": event_id}, ensure_ascii=False, sort_keys=True) + "\n")
+            synced.add(event_id)
+            count += 1
+        return count
+
+    def sync_project_event(self, binding: JobBinding, event: Any) -> dict[str, Any]:
+        """Project one ProjectKnowledge event into the authoritative revision chain.
+
+        Completion text never auto-accepts a revision. Only WorkLedger required
+        checks may move the protected accepted pointer.
         """
         ledger = WorkLedger(self.path)
         try:
@@ -78,8 +125,6 @@ class WorkLedgerBridge:
             summary = str(getattr(event, "summary", "") or "").strip()
             details = dict(getattr(event, "details", {}) or {})
 
-            # A new progress/repair event after a recorded failure must create a
-            # child revision first. The failed revision is never mutated in place.
             if head["status"] == "rework_required" and kind in _REPAIR_KINDS:
                 head = ledger.open_rework(
                     head_id,
@@ -90,8 +135,6 @@ class WorkLedgerBridge:
                 )
                 head_id = head["revision_id"]
 
-            # Materialize physical artifact refs into the current revision. Only
-            # paths that actually exist as non-empty files are authoritative.
             for index, ref in enumerate(tuple(getattr(event, "artifact_refs", ()) or ())):
                 candidate = Path(str(ref)).expanduser()
                 if not candidate.is_absolute():
@@ -113,9 +156,6 @@ class WorkLedgerBridge:
                         verification_status="passed",
                     )
                 except WorkLedgerError as exc:
-                    # Re-recording exactly the same logical artifact in one
-                    # revision is not a new tree; any real replacement still
-                    # requires a child revision and remains fail-closed elsewhere.
                     if "already exists in revision" not in str(exc):
                         raise
 
