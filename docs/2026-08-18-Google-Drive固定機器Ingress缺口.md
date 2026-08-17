@@ -2,7 +2,7 @@
 
 日期：2026-08-18
 
-狀態：**IMPLEMENTED — DRIVE INGRESS CODE GREEN / ODA CREDENTIAL PROVISIONING BLOCKED**
+狀態：**IMPLEMENTED — DRIVE INGRESS CODE/OWNING-CI GREEN / ODA CREDENTIAL PROVISIONING BLOCKED**
 
 ## 目的
 
@@ -107,6 +107,34 @@ request：
 
 ODA REAL runs 中 targeted gate 已實際達到 **6 passed**。
 
+## Drive Ingress owning CI
+
+為避免全倉既存 Case 0003 / scheduler regression 混淆本能力狀態，新增獨立 blocking workflow：
+
+`.github/workflows/drive-ingress-ci.yml`
+
+第一輪 Run `32070932795`：failure。`py_compile` 已 PASS，真正原因是 global `tests/conftest.py` 需要 `pytest-asyncio`，最小測試環境未安裝；不是 Drive ingress test failure。
+
+第二輪 Run `32071138118`：failure。補 `pytest-asyncio` 後又由 global conftest 暴露 `uvicorn` 未安裝；同樣是 test harness dependency drift，不是功能失敗。
+
+修正策略不再逐套件硬編碼，改為直接依 repository authoritative `pyproject.toml`：
+
+```text
+python -m pip install -e ".[dev]"
+```
+
+第三輪 Run **`32071211423` = success**：
+
+- project + dev dependencies：PASS。
+- `coworker/drive_ingress.py` compile：PASS。
+- `scripts/download_drive_file_atomic.py` compile：PASS。
+- `scripts/resolve_drive_credential_store.py` compile：PASS。
+- Drive ingress blocking tests：PASS。
+
+因此 **Drive ingress code / unit / owning CI 已正式 GREEN**。後續 ODA REAL failure 不再歸因於此模組程式品質，而只看 credential / transport execution evidence。
+
+全倉一般 CI 仍另有既存 regressions：最近一次 Python suite 顯示 `1498 passed / 4 failed / 4 skipped`；四個 failure 分別屬 Case 0003 workflow contract 與 standing-approvals scheduler，與本 Drive ingress owning gate 分離保留，不隱藏也不拿來覆蓋本模組的 GREEN status。
+
 ## 本次 REAL source
 
 KnowGraphGo engineering standards immutable source bundle：
@@ -204,7 +232,7 @@ workflow 已新增 credential preflight。在 source download 前先解析 crede
 
 ## 現在真正的 owning gap
 
-程式、request contract、fixed-machine routing、SHA/size/atomic publish、receipt、targeted tests 都已完成。
+程式、request contract、fixed-machine routing、SHA/size/atomic publish、receipt、targeted tests、owning CI 都已完成。
 
 唯一未通過的 REAL gate 是：
 
