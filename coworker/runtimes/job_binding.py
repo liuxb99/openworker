@@ -4,6 +4,10 @@ A job is assigned once, at creation. Subsequent OpenWorker resumes must use the
 same host and workspace unless an explicit migration mechanism is introduced.
 This keeps local models, ComfyUI state, paths, evidence and delivery ownership
 stable across multiple Action invocations for the same job.
+
+Creating a fixed binding also bootstraps the Job's Git-like WorkLedger. This is a
+platform invariant: every real OpenWorker job has durable revision/rework history
+from the moment it is created, rather than relying on individual cases to opt in.
 """
 
 from __future__ import annotations
@@ -105,6 +109,21 @@ class JobBindingStore:
         temp = self.path.with_suffix(".tmp")
         temp.write_text(json.dumps(asdict(binding), ensure_ascii=False, indent=2), encoding="utf-8")
         temp.replace(self.path)
+
+        # Local import avoids making JobBinding depend on the ledger implementation
+        # at import time while still making ledger creation a hard Job invariant.
+        from .work_ledger_bridge import WorkLedgerBridge
+
+        try:
+            WorkLedgerBridge(self.workspace).ensure(binding)
+        except Exception as exc:
+            # A half-created job is unsafe: remove the binding so callers cannot
+            # resume a job that lacks its mandatory history authority.
+            try:
+                self.path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise JobBindingError(f"cannot bootstrap mandatory work ledger: {exc}") from exc
         return binding
 
 
