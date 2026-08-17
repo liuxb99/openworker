@@ -30,11 +30,45 @@ def _force_utf8_runtime() -> None:
             reconfigure(encoding="utf-8", errors="backslashreplace")
 
 
+def _inspect_identity(path: Path, request: dict) -> bool:
+    try:
+        item = inspect(path, int(request["expected_size"]))
+    except (OSError, PermissionError):
+        return False
+    if not item.get("size_match"):
+        return False
+    if str(item.get("sha256", "")).lower() != str(request["expected_sha256"]).lower():
+        return False
+    expected_header = str(request.get("expected_header", "") or "")
+    if expected_header and not str(item.get("header", "")).startswith(expected_header):
+        return False
+    return True
+
+
 def _resolve_exact_source(request: dict) -> Path:
     actual = JobBindingStore.current_host().strip()
     assigned = str(request["assigned_host"]).strip()
     if not actual or actual.casefold() != assigned.casefold():
         raise SourceIngressError(f"wrong self-hosted machine: expected {assigned}, got {actual or '<unknown>'}")
+
+    # Exact retries are idempotent. Once the governed canonical source exists,
+    # it is the authority for subsequent ingress replays. Multiple identical
+    # user-side copies must not turn a successful replay into an ambiguity.
+    workspace_raw = str(request.get("workspace_root", "") or "").strip()
+    canonical_name = str(request.get("canonical_name", "") or "source.dwg").strip() or "source.dwg"
+    canonical_leaf = Path(canonical_name).name
+    if not canonical_leaf or canonical_leaf in {".", ".."}:
+        raise SourceIngressError(f"invalid canonical_name: {canonical_name!r}")
+    if workspace_raw:
+        canonical = (Path(workspace_raw).expanduser().resolve() / "input" / canonical_leaf).resolve()
+        if canonical.exists():
+            if not canonical.is_file():
+                raise SourceIngressError(f"canonical source path exists but is not a file: {canonical}")
+            if not _inspect_identity(canonical, request):
+                raise SourceIngressError(
+                    f"canonical source already exists with different identity: {canonical}"
+                )
+            return canonical
 
     paths: list[Path] = []
     for candidate in request["candidate_paths"]:
@@ -50,24 +84,13 @@ def _resolve_exact_source(request: dict) -> Path:
 
     matches: list[Path] = []
     seen: set[str] = set()
-    expected_sha = str(request["expected_sha256"]).lower()
-    expected_header = str(request.get("expected_header", "") or "")
     for path in paths:
         key = os.path.normcase(str(path))
         if key in seen:
             continue
         seen.add(key)
-        try:
-            item = inspect(path, int(request["expected_size"]))
-        except (OSError, PermissionError):
-            continue
-        if not item.get("size_match"):
-            continue
-        if str(item.get("sha256", "")).lower() != expected_sha:
-            continue
-        if expected_header and not str(item.get("header", "")).startswith(expected_header):
-            continue
-        matches.append(path)
+        if _inspect_identity(path, request):
+            matches.append(path)
     if not matches:
         raise SourceIngressError("exact local source was not found on the assigned host")
     unique = {os.path.normcase(str(path.resolve())): path.resolve() for path in matches}
