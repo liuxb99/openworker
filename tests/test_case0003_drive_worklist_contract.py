@@ -13,9 +13,9 @@ def test_case0003_remaining_worklist_starts_at_drive_publish() -> None:
     payload = json.loads((ROOT / "case-worklists" / "0003.json").read_text(encoding="utf-8"))
     worklist = CaseWorklist.from_dict(payload)
 
+    assert payload["workspace_root"] == r"D:\AI-Work\jobs\0003-YUJING-BRIDGE"
     assert worklist.case_id == "0003"
     assert worklist.assigned_host == "DESKTOP-UL7V2VV"
-    assert Path(worklist.workspace_root) == Path(r"D:\AI-Work\jobs\0003-YUJING-BRIDGE")
     assert worklist.next_step() is not None
     assert worklist.next_step().step_id == "0003-160"
     assert worklist.next_step().allowed_actions == ["openworker.review.publish_drive"]
