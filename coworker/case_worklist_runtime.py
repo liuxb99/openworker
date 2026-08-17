@@ -10,7 +10,7 @@ import json
 import os
 from pathlib import Path
 import time
-from typing import Iterator
+from typing import Iterable, Iterator
 
 from .case_worklist import CaseWorklist, CaseWorklistError, CaseWorklistStore, StepStatus
 
@@ -82,6 +82,28 @@ class CaseWorklistRuntime:
                 raise CaseWorklistError("manifest is required when creating a worklist")
             self.store.save(manifest)
             return manifest
+
+    def add_repair(
+        self,
+        *,
+        parent_step_id: str,
+        step_id: str,
+        title: str,
+        allowed_actions: Iterable[str],
+        acceptance: Iterable[str] = (),
+    ) -> CaseWorklist:
+        """Insert one repair step while holding the cross-process mutation lock."""
+        with self.lock():
+            worklist = self.store.load()
+            worklist.add_repair(
+                parent_step_id=parent_step_id,
+                step_id=step_id,
+                title=title,
+                allowed_actions=allowed_actions,
+                acceptance=acceptance,
+            )
+            self.store.save(worklist)
+            return worklist
 
     def start_action(self, step_id: str, action_id: str, *, execution_id: str) -> CaseWorklist:
         execution = execution_id.strip()
