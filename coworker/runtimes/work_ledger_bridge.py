@@ -6,6 +6,7 @@ artifacts, verification failures and rework without case-specific bookkeeping.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -55,6 +56,62 @@ class WorkLedgerBridge:
             return ledger.snapshot(work["work_id"])
         finally:
             ledger.close()
+
+    @staticmethod
+    def _file_identity(path: Path) -> tuple[str, int, str]:
+        resolved = path.expanduser().resolve()
+        if not resolved.is_file():
+            raise WorkLedgerError(f"artifact does not exist: {resolved}")
+        size = resolved.stat().st_size
+        if size <= 0:
+            raise WorkLedgerError(f"artifact is empty: {resolved}")
+        digest = hashlib.sha256()
+        with resolved.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest(), int(size), str(resolved)
+
+    @staticmethod
+    def _existing_artifact(ledger: WorkLedger, work_id: str, revision_id: str, logical_name: str) -> dict[str, Any] | None:
+        snapshot = ledger.snapshot(work_id)
+        revision = next((item for item in snapshot["revisions"] if item["revision_id"] == revision_id), None)
+        if revision is None:
+            raise WorkLedgerError(f"revision disappeared during artifact replay: {revision_id}")
+        matches = [item for item in revision["artifacts"] if item["logical_name"] == logical_name]
+        if len(matches) > 1:
+            raise WorkLedgerError(f"ledger invariant broken: duplicate logical artifact records for {logical_name!r}")
+        return matches[0] if matches else None
+
+    def _assert_replay_identity(
+        self,
+        ledger: WorkLedger,
+        *,
+        work_id: str,
+        revision_id: str,
+        logical_name: str,
+        candidate: Path,
+    ) -> None:
+        existing = self._existing_artifact(ledger, work_id, revision_id, logical_name)
+        if existing is None:
+            raise WorkLedgerError(
+                f"artifact {logical_name!r} reported duplicate but authoritative record is unavailable"
+            )
+        sha256, size_bytes, canonical_path = self._file_identity(candidate)
+        expected_path = str(Path(str(existing["path"])).expanduser().resolve())
+        if (
+            str(existing["sha256"]).lower() == sha256.lower()
+            and int(existing["size_bytes"]) == size_bytes
+            and expected_path == canonical_path
+        ):
+            return
+        raise WorkLedgerError(
+            "ARTIFACT_REPLAY_CONFLICT: same logical artifact changed within one revision; "
+            f"logical_name={logical_name!r} "
+            f"existing_sha256={existing['sha256']} candidate_sha256={sha256} "
+            f"existing_size={existing['size_bytes']} candidate_size={size_bytes} "
+            f"existing_path={expected_path!r} candidate_path={canonical_path!r}; "
+            "create a child revision for replacement bytes"
+        )
 
     def sync_pending_project_events(self, binding: JobBinding) -> int:
         """Replay unsynced ProjectKnowledge events into the WorkLedger.
@@ -158,6 +215,13 @@ class WorkLedgerBridge:
                 except WorkLedgerError as exc:
                     if "already exists in revision" not in str(exc):
                         raise
+                    self._assert_replay_identity(
+                        ledger,
+                        work_id=work["work_id"],
+                        revision_id=head_id,
+                        logical_name=logical_name,
+                        candidate=candidate,
+                    )
 
             if kind in _FAILURE_KINDS or status in _FAILURE_STATUSES:
                 current = ledger.get_revision(head_id)
