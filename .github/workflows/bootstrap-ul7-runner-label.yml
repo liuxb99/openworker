@@ -1,4 +1,4 @@
-name: Bootstrap UL7 Runner Label
+name: Drain OpenWorker Queue Through Go Tool
 
 on:
   workflow_dispatch:
@@ -12,46 +12,59 @@ permissions:
   actions: write
 
 concurrency:
-  group: bootstrap-ul7-runner-label
+  group: openworker-queue-drain
   cancel-in-progress: true
 
 jobs:
-  probe:
+  drain:
     runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 5
     defaults:
       run:
         shell: powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ". '{0}'"
     steps:
-      - name: Probe one machine and repair UL7 label when possible
+      - name: Drain every other OpenWorker Action run through gtr-actions-queue
         env:
-          GH_REPO: liuxb99/openworker
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference='Stop'
-          Write-Host "UL7_BOOTSTRAP_PROBE machine=$env:COMPUTERNAME runner=$env:RUNNER_NAME"
-          if($env:COMPUTERNAME -ine 'DESKTOP-UL7V2VV'){
-            Write-Host 'UL7_BOOTSTRAP_NOT_TARGET'
-            exit 0
+          $goToolRoot='D:\AI-Tools\AI Tool Runtime'
+          if(-not (Test-Path -LiteralPath (Join-Path $goToolRoot 'cmd\gtr-actions-queue\main.go') -PathType Leaf)){
+            throw "go-tool-runtime queue CLI unavailable: $goToolRoot"
           }
-          Write-Host 'UL7_BOOTSTRAP_TARGET_FOUND'
-          if(-not (Get-Command gh -ErrorAction SilentlyContinue)){throw 'gh CLI unavailable on UL7'}
-          gh auth status
-          if($LASTEXITCODE -ne 0){throw 'gh CLI is not authenticated on UL7'}
-          $raw = gh api "repos/$env:GH_REPO/actions/runners?per_page=100"
-          if($LASTEXITCODE -ne 0){throw 'cannot list repository runners with UL7 gh authority'}
-          $payload = $raw | ConvertFrom-Json
-          $matches = @($payload.runners | Where-Object { $_.name -eq $env:RUNNER_NAME -or $_.name -like 'DESKTOP-UL7V2VV*' })
-          if($matches.Count -lt 1){throw "UL7 runner registration not found for RUNNER_NAME=$env:RUNNER_NAME"}
-          foreach($runner in $matches){
-            $existing=@($runner.labels | ForEach-Object { [string]$_.name })
-            if($existing -contains 'UL7'){
-              Write-Host "UL7_LABEL_ALREADY_PRESENT runner=$($runner.name) id=$($runner.id)"
-              continue
-            }
-            $labels=@($existing + 'UL7' | Sort-Object -Unique)
-            $body=@{labels=$labels}|ConvertTo-Json -Compress
-            $body | gh api --method PUT -H 'Accept: application/vnd.github+json' "repos/$env:GH_REPO/actions/runners/$($runner.id)/labels" --input - | Out-Host
-            if($LASTEXITCODE -ne 0){throw "failed to set UL7 label on runner $($runner.name) id=$($runner.id)"}
-            Write-Host "UL7_LABEL_SET runner=$($runner.name) id=$($runner.id) labels=$($labels -join ',')"
+          $cfg=Join-Path $env:RUNNER_TEMP 'openworker-queue-admin.yaml'
+          @'
+          actions:
+            enabled: true
+            api_base: https://api.github.com
+            auth_mode: auto
+            token_env: GITHUB_TOKEN
+            capabilities:
+              - id: openworker.queue.admin
+                description: Administrative queue scope for OpenWorker only.
+                repository: liuxb99/openworker
+                workflow: case-0003-drive-api-publish-ul7.yml
+                ref: main
+                inputs: {}
+                artifacts: []
+                runner_labels: [self-hosted, Windows, X64]
+          '@ | Set-Content -LiteralPath $cfg -Encoding utf8
+
+          Push-Location $goToolRoot
+          try {
+            $report = & go run ./cmd/gtr-actions-queue --config $cfg --capability openworker.queue.admin --cancel-active --workflow-scoped=false --exclude-run-id $env:GITHUB_RUN_ID --verify-seconds 15
+            if($LASTEXITCODE -ne 0){ throw "gtr-actions-queue drain failed exit=$LASTEXITCODE`n$report" }
+            $report | Write-Host
+            $parsed = ($report -join "`n") | ConvertFrom-Json
+            if(-not $parsed.clean){ throw 'OpenWorker queue is not clean after drain' }
+
+            $verify = & go run ./cmd/gtr-actions-queue --config $cfg --capability openworker.queue.admin --workflow-scoped=false --exclude-run-id $env:GITHUB_RUN_ID
+            if($LASTEXITCODE -ne 0){ throw "gtr-actions-queue verify failed exit=$LASTEXITCODE`n$verify" }
+            $verify | Write-Host
+            $v = ($verify -join "`n") | ConvertFrom-Json
+            if(-not $v.clean -or @($v.active).Count -ne 0){ throw 'OpenWorker queue verification is not empty' }
+            Write-Host "OPENWORKER_QUEUE_DRAIN_PASS current_run=$env:GITHUB_RUN_ID machine=$env:COMPUTERNAME"
           }
-          Write-Host 'UL7_BOOTSTRAP_PASS'
+          finally {
+            Pop-Location
+          }
