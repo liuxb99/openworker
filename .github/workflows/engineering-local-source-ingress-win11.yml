@@ -51,31 +51,30 @@ jobs:
       - name: Resolve O87 local AI-Engineering-OS authority
         id: osroot
         run: |
-          $candidates = @(
-            'D:\AI-Civil\AI-Engineering-OS',
-            'D:\AI\AI-Engineering-OS',
-            'D:\AI-Engineering-OS',
-            'D:\AIWork\AI-Engineering-OS',
-            'D:\PyWork\AI-Engineering-OS'
-          )
-          $root = $null
-          foreach ($candidate in $candidates) {
-            if ((Test-Path -LiteralPath (Join-Path $candidate 'go.mod') -PathType Leaf) -and
-                (Test-Path -LiteralPath (Join-Path $candidate 'cmd') -PathType Container)) {
-              $root = (Resolve-Path -LiteralPath $candidate).Path
-              break
-            }
+          $markerPath = Join-Path $env:ProgramData 'go-tool-runtime\work-agent\authorities\ai-engineering-os-current.json'
+          if (-not (Test-Path -LiteralPath $markerPath -PathType Leaf)) {
+            throw "AI-Engineering-OS authority marker missing: $markerPath"
           }
-          if (-not $root) {
-            throw 'AI-Engineering-OS local authority not found on O87 in canonical candidate roots'
-          }
-          $sha = ''
+          $marker = Get-Content -LiteralPath $markerPath -Raw | ConvertFrom-Json
+          if ($marker.schema_version -ne 'gtr-local-authority/v1') { throw 'unsupported OS authority marker schema' }
+          if ($marker.authority -ne 'ai-engineering-os') { throw 'wrong authority marker kind' }
+          if ($marker.assigned_host -ine $env:COMPUTERNAME) { throw "OS authority marker belongs to $($marker.assigned_host), current $env:COMPUTERNAME" }
+          if ($marker.module -ne 'github.com/liuxb99/ai-engineering-os') { throw 'wrong OS authority module' }
+          $root = [string]$marker.root
+          if ([string]::IsNullOrWhiteSpace($root) -or -not (Test-Path -LiteralPath $root -PathType Container)) { throw "OS authority root missing: $root" }
+          $goMod = Join-Path $root 'go.mod'
+          if (-not (Test-Path -LiteralPath $goMod -PathType Leaf)) { throw "OS authority go.mod missing: $goMod" }
+          $moduleLine = (Get-Content -LiteralPath $goMod -TotalCount 1).Trim()
+          if ($moduleLine -ne 'module github.com/liuxb99/ai-engineering-os') { throw "OS authority module mismatch: $moduleLine" }
+          $sha = [string]$marker.commit
           if (Test-Path -LiteralPath (Join-Path $root '.git') -PathType Container) {
-            $sha = (& git -C $root rev-parse HEAD).Trim()
+            $actual = (& git -C $root rev-parse HEAD).Trim()
+            if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($actual)) { throw 'cannot resolve OS authority HEAD' }
+            if ($sha -ne $actual) { throw "OS authority marker/HEAD mismatch: marker=$sha actual=$actual" }
           }
-          Write-Host "AI_ENGINEERING_OS_LOCAL_AUTHORITY root=$root commit=$sha"
+          Write-Host "AI_ENGINEERING_OS_LOCAL_AUTHORITY root=$root commit=$sha marker=$markerPath"
           [System.IO.File]::AppendAllText($env:GITHUB_OUTPUT, "root=$root`n", (New-Object System.Text.UTF8Encoding($false)))
-          [System.IO.File]::AppendAllText($env:GITHUB_OUTPUT, "go_mod=$(Join-Path $root 'go.mod')`n", (New-Object System.Text.UTF8Encoding($false)))
+          [System.IO.File]::AppendAllText($env:GITHUB_OUTPUT, "go_mod=$goMod`n", (New-Object System.Text.UTF8Encoding($false)))
           [System.IO.File]::AppendAllText($env:GITHUB_OUTPUT, "commit=$sha`n", (New-Object System.Text.UTF8Encoding($false)))
 
       - name: Setup Go
