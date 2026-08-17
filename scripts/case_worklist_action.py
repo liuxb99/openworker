@@ -9,12 +9,8 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from coworker.case_worklist import (
-    CaseWorklist,
-    CaseWorklistError,
-    CaseWorklistStore,
-    StepStatus,
-)
+from coworker.case_worklist import CaseWorklist, CaseWorklistError, CaseWorklistStore
+from coworker.case_worklist_runtime import CaseWorklistRuntime
 
 
 def load_manifest(path: Path) -> CaseWorklist:
@@ -28,36 +24,34 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "command",
-        choices=["ensure", "show", "start", "record", "pass", "block", "block-active"],
+        choices=["ensure", "show", "start", "complete-action", "record", "pass", "block-active"],
     )
     parser.add_argument("--workspace-root", required=True)
     parser.add_argument("--manifest")
     parser.add_argument("--step-id")
     parser.add_argument("--action-id")
+    parser.add_argument("--execution-id")
     parser.add_argument("--key")
     parser.add_argument("--value")
     parser.add_argument("--reason")
     args = parser.parse_args()
 
+    runtime = CaseWorklistRuntime(args.workspace_root)
     store = CaseWorklistStore(args.workspace_root)
 
     if args.command == "ensure":
-        if store.path.is_file():
-            worklist = store.load()
-        else:
-            if not args.manifest:
-                raise CaseWorklistError("--manifest is required when creating a worklist")
-            worklist = load_manifest(Path(args.manifest).resolve())
-            if Path(worklist.workspace_root).resolve() != Path(args.workspace_root).resolve():
+        manifest = None
+        if args.manifest:
+            manifest = load_manifest(Path(args.manifest).resolve())
+            if Path(manifest.workspace_root).resolve() != Path(args.workspace_root).resolve():
                 raise CaseWorklistError("manifest workspace_root does not match --workspace-root")
-            store.save(worklist)
+        worklist = runtime.ensure(manifest)
         print(json.dumps(worklist.as_dict(), ensure_ascii=False, indent=2))
         print(f"CASE_WORKLIST_READY path={store.path} next={worklist.as_dict()['canonical_next_step_id']}")
         return 0
 
-    worklist = store.load()
-
     if args.command == "show":
+        worklist = runtime.load()
         print(json.dumps(worklist.as_dict(), ensure_ascii=False, indent=2))
         return 0
 
@@ -67,34 +61,38 @@ def main() -> int:
     if args.command == "start":
         if not args.action_id:
             raise CaseWorklistError("--action-id is required for start")
-        worklist.start(args.step_id, args.action_id)
+        if not args.execution_id:
+            raise CaseWorklistError("--execution-id is required for start")
+        worklist = runtime.start_action(
+            args.step_id,
+            args.action_id,
+            execution_id=args.execution_id,
+        )
+    elif args.command == "complete-action":
+        if not args.action_id:
+            raise CaseWorklistError("--action-id is required for complete-action")
+        if not args.execution_id:
+            raise CaseWorklistError("--execution-id is required for complete-action")
+        worklist = runtime.complete_action(
+            args.step_id,
+            args.action_id,
+            execution_id=args.execution_id,
+        )
     elif args.command == "record":
         if not args.key:
             raise CaseWorklistError("--key is required for record")
         if args.value is None:
             raise CaseWorklistError("--value is required for record")
-        worklist.record_evidence(args.step_id, args.key, args.value)
+        worklist = runtime.record(args.step_id, args.key, args.value)
     elif args.command == "pass":
-        worklist.pass_step(args.step_id)
-    elif args.command == "block":
-        if not args.reason:
-            raise CaseWorklistError("--reason is required for block")
-        worklist.block(args.step_id, args.reason)
+        worklist = runtime.pass_step(args.step_id)
     elif args.command == "block-active":
         if not args.reason:
             raise CaseWorklistError("--reason is required for block-active")
-        step = worklist.step(args.step_id)
-        if step.status in {StepStatus.RUNNING, StepStatus.READY}:
-            worklist.block(args.step_id, args.reason)
-        elif step.status == StepStatus.BLOCKED:
-            pass
-        else:
-            print(
-                f"CASE_WORKLIST_BLOCK_ACTIVE_NOOP step={step.step_id} status={step.status.value}"
-            )
-            return 0
+        worklist = runtime.block_active(args.step_id, args.reason)
+    else:
+        raise CaseWorklistError(f"unsupported command: {args.command}")
 
-    store.save(worklist)
     print(json.dumps(worklist.as_dict(), ensure_ascii=False, indent=2))
     print(
         f"CASE_WORKLIST_UPDATED command={args.command} step={args.step_id} "
