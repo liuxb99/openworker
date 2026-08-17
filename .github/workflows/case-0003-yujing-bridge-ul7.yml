@@ -7,6 +7,10 @@ on:
     paths:
       - '.github/workflows/case-0003-yujing-bridge-ul7.yml'
       - 'scripts/case0003_final_acceptance.py'
+      - 'scripts/case0003_review_handoff.py'
+      - 'scripts/case0003_apply_llm_review.py'
+      - 'coworker/review_cycle.py'
+      - 'coworker/review_gap.py'
       - 'coworker/work_ledger.py'
       - 'coworker/runtimes/work_ledger_bridge.py'
       - 'coworker/runtimes/job_binding.py'
@@ -14,9 +18,7 @@ on:
 permissions:
   contents: read
 
-# Final Acceptance is a single protected pointer update. A newer attempt must
-# supersede an older queued/running attempt rather than allowing two revisions
-# to race for accepted/delivered pointers.
+# Only one physical/review attempt may own the Case 0003 acceptance pointer path.
 concurrency:
   group: case-0003-openworker-final-acceptance-ul7
   cancel-in-progress: true
@@ -24,12 +26,13 @@ concurrency:
 env:
   CASE0003_ASSIGNED_HOST: DESKTOP-UL7V2VV
   CASE0003_WORKSPACE: 'D:\AI-Work\jobs\0003-YUJING-BRIDGE'
+  OPENWORKER_REVIEW_DRIVE_ROOT: ${{ vars.OPENWORKER_REVIEW_DRIVE_ROOT }}
   PYTHONUTF8: '1'
   PYTHONIOENCODING: utf-8
 
 jobs:
   final-acceptance:
-    name: OpenWorker REAL Final Acceptance
+    name: OpenWorker REAL Final Acceptance + ChatGPT Handoff
     runs-on: [self-hosted, Windows, X64, UL7]
     timeout-minutes: 20
     defaults:
@@ -161,26 +164,27 @@ jobs:
           [IO.File]::WriteAllText($manifestPath,($manifest|ConvertTo-Json -Depth 20),[Text.UTF8Encoding]::new($false))
           Write-Host "CASE0003_SCENEX_FRESH_REAL_BROWSE_PASS screenshot_sha256=$shotSha pack_sha256=$packSha"
 
-      - name: Run OpenWorker physical reopen and WorkLedger acceptance gate
+      - name: Run mechanical checks and hand off immutable Review Bundle to Google Drive
         env:
           PYTHONPATH: ${{ github.workspace }}\openworker
         run: |
           $ErrorActionPreference='Stop'
-          python openworker\scripts\case0003_final_acceptance.py --workspace $env:CASE0003_WORKSPACE
-          if($LASTEXITCODE -ne 0){throw "OpenWorker Final Acceptance failed exit=$LASTEXITCODE"}
+          python openworker\scripts\case0003_review_handoff.py --workspace $env:CASE0003_WORKSPACE --drive-sync-root $env:OPENWORKER_REVIEW_DRIVE_ROOT
+          if($LASTEXITCODE -ne 0){throw "OpenWorker review handoff failed/blocked exit=$LASTEXITCODE"}
 
-      - name: Verify WorkLedger terminal delivery evidence
+      - name: Verify WorkLedger is waiting for ChatGPT review and not accepted
         run: |
           $ErrorActionPreference='Stop'
           $path=Join-Path $env:CASE0003_WORKSPACE 'acceptance\openworker-final\work-ledger-final-acceptance.json'
           if(-not (Test-Path -LiteralPath $path) -or (Get-Item -LiteralPath $path).Length -le 0){throw 'Final Acceptance evidence missing/empty'}
           $ev=Get-Content -LiteralPath $path -Raw|ConvertFrom-Json
-          if($ev.ok -ne $true -or $ev.status -ne 'DELIVERED'){throw ('WorkLedger not delivered: '+$ev.status)}
-          if([string]::IsNullOrWhiteSpace([string]$ev.accepted_revision_id)){throw 'accepted revision missing'}
-          if($ev.accepted_revision_id -ne $ev.delivered_revision_id){throw 'delivery does not point at accepted revision'}
-          Write-Host "CASE0003_OPENWORKER_LEDGER_DELIVERY_PASS revision=$($ev.accepted_revision_id)"
+          if($ev.ok -ne $true -or $ev.status -ne 'WAITING_LLM_REVIEW'){throw ('Review handoff not ready: '+$ev.status)}
+          if(-not [string]::IsNullOrWhiteSpace([string]$ev.accepted_revision_id)){throw 'accepted pointer moved before LLM review'}
+          if(-not [string]::IsNullOrWhiteSpace([string]$ev.delivered_revision_id)){throw 'delivered pointer moved before LLM review'}
+          if([string]::IsNullOrWhiteSpace([string]$ev.drive_handoff_path)){throw 'Drive handoff path missing'}
+          Write-Host "CASE0003_OPENWORKER_WAITING_LLM_REVIEW revision=$($ev.revision_id) drive=$($ev.drive_handoff_path)"
 
-      - name: Upload bounded Final Acceptance evidence
+      - name: Upload bounded Final Acceptance and Review Bundle evidence
         if: always()
         continue-on-error: true
         uses: actions/upload-artifact@v4
@@ -188,6 +192,7 @@ jobs:
           name: case-0003-openworker-final-acceptance-${{ github.run_id }}
           path: |
             D:\AI-Work\jobs\0003-YUJING-BRIDGE\acceptance\openworker-final\**
+            D:\AI-Work\jobs\0003-YUJING-BRIDGE\.openworker\reviews\**
             D:\AI-Work\jobs\0003-YUJING-BRIDGE\scenex\terrain.region.json
             D:\AI-Work\jobs\0003-YUJING-BRIDGE\scenex\terrain-browse.png
             D:\AI-Work\jobs\0003-YUJING-BRIDGE\scenex\terrain-browse-evidence.json
