@@ -1,0 +1,57 @@
+name: Bootstrap UL7 Runner Label
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/bootstrap-ul7-runner-label.yml'
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        slot: [1,2,3,4,5,6,7,8,9,10,11,12]
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 5
+    defaults:
+      run:
+        shell: powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ". '{0}'"
+    steps:
+      - name: Probe machine and repair UL7 label when possible
+        env:
+          GH_REPO: liuxb99/openworker
+        run: |
+          $ErrorActionPreference='Stop'
+          Write-Host "UL7_BOOTSTRAP_PROBE slot=${{ matrix.slot }} machine=$env:COMPUTERNAME runner=$env:RUNNER_NAME"
+          if($env:COMPUTERNAME -ine 'DESKTOP-UL7V2VV'){
+            Write-Host 'UL7_BOOTSTRAP_NOT_TARGET'
+            exit 0
+          }
+          Write-Host 'UL7_BOOTSTRAP_TARGET_FOUND'
+          if(-not (Get-Command gh -ErrorAction SilentlyContinue)){throw 'gh CLI unavailable on UL7'}
+          gh auth status
+          if($LASTEXITCODE -ne 0){throw 'gh CLI is not authenticated on UL7'}
+          $raw = gh api "repos/$env:GH_REPO/actions/runners?per_page=100"
+          if($LASTEXITCODE -ne 0){throw 'cannot list repository runners with UL7 gh authority'}
+          $payload = $raw | ConvertFrom-Json
+          $matches = @($payload.runners | Where-Object { $_.name -eq $env:RUNNER_NAME -or $_.name -like 'DESKTOP-UL7V2VV*' })
+          if($matches.Count -lt 1){throw "UL7 runner registration not found for RUNNER_NAME=$env:RUNNER_NAME"}
+          foreach($runner in $matches){
+            $existing=@($runner.labels | ForEach-Object { [string]$_.name })
+            if($existing -contains 'UL7'){
+              Write-Host "UL7_LABEL_ALREADY_PRESENT runner=$($runner.name) id=$($runner.id)"
+              continue
+            }
+            $labels=@($existing + 'UL7' | Sort-Object -Unique)
+            $body=@{labels=$labels}|ConvertTo-Json -Compress
+            $body | gh api --method PUT -H 'Accept: application/vnd.github+json' "repos/$env:GH_REPO/actions/runners/$($runner.id)/labels" --input - | Out-Host
+            if($LASTEXITCODE -ne 0){throw "failed to set UL7 label on runner $($runner.name) id=$($runner.id)"}
+            Write-Host "UL7_LABEL_SET runner=$($runner.name) id=$($runner.id) labels=$($labels -join ',')"
+          }
+          Write-Host 'UL7_BOOTSTRAP_PASS'
