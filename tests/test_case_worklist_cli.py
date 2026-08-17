@@ -58,6 +58,8 @@ def test_block_active_blocks_running_and_is_idempotent(tmp_path: Path) -> None:
         "x-010",
         "--action-id",
         "do.first",
+        "--execution-id",
+        "test-exec-1",
     ).returncode == 0
 
     first = _run(
@@ -87,3 +89,4 @@ def test_block_active_blocks_running_and_is_idempotent(tmp_path: Path) -> None:
     state = json.loads((workspace / ".openworker" / "case-worklist.json").read_text(encoding="utf-8"))
     assert state["steps"][0]["status"] == "BLOCKED"
     assert state["steps"][0]["blocker"] == "workflow failed"
+    assert "__openworker_active_action" not in state["steps"][0]["evidence"]
