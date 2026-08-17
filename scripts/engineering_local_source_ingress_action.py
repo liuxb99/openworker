@@ -3,16 +3,13 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
 from coworker.engineering.source_ingress import EngineeringSourceIngress, SourceIngressError
 from coworker.runtimes.job_binding import JobBindingStore
 
-# The persistent assigned-host executor invokes this entrypoint with
-# `python -m scripts.engineering_local_source_ingress_action` so OpenWorker root
-# remains the import authority. Keep direct-script compatibility for the legacy
-# Action wrapper as well.
 try:
     from scripts.engineering_source_ingress_action import start_isolated_os, write_github_outputs
     from scripts.engineering_source_locator import bounded_recursive_candidates, expand_candidates, inspect, load_request
@@ -67,11 +64,22 @@ def _resolve_exact_source(request: dict) -> Path:
     return next(iter(unique.values()))
 
 
+def _stop_process(process: subprocess.Popen[bytes] | None) -> None:
+    if process is None or process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=5)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--request", required=True)
     parser.add_argument("--os-root", required=True)
-    parser.add_argument("--os-port", type=int, default=0)
+    parser.add_argument("--os-port", type=int, default=18084)
     args = parser.parse_args()
 
     request_path = Path(args.request).expanduser().resolve()
@@ -86,60 +94,62 @@ def main() -> int:
     canonical_name = str(request.get("canonical_name", "") or "source.dwg").strip() or "source.dwg"
     media_type = str(request.get("media_type", "") or "application/octet-stream").strip()
     user_request = str(request.get("user_request", "") or f"Ingest {original_name}").strip()
+    assigned_host = str(request["assigned_host"]).strip()
 
-    server = start_isolated_os(Path(args.os_root).expanduser().resolve(), args.os_port)
+    process: subprocess.Popen[bytes] | None = None
+    ingress: EngineeringSourceIngress | None = None
     try:
-        ingress = EngineeringSourceIngress(server.base_url)
-        result = ingress.ingest_local_file(
+        process, os_url, stdout_path, stderr_path = start_isolated_os(
+            Path(args.os_root).expanduser().resolve(), workspace, args.os_port
+        )
+        ingress = EngineeringSourceIngress(
+            os_url=os_url,
             workspace=workspace,
+            assigned_host=assigned_host,
             user_request=user_request,
-            source_path=source_path,
-            original_name=original_name,
+        )
+        result = ingress.ingest(
+            source_path,
             canonical_name=canonical_name,
+            original_name=original_name,
             media_type=media_type,
             expected_sha256=str(request["expected_sha256"]),
             expected_size=int(request["expected_size"]),
+            expected_header=str(request.get("expected_header", "") or ""),
+            source_run_id=os.environ.get("GITHUB_RUN_ID", ""),
+            producer_repository=os.environ.get("GITHUB_REPOSITORY", ""),
+            producer_commit_sha=os.environ.get("GITHUB_SHA", ""),
         )
     finally:
-        server.close()
+        if ingress is not None:
+            ingress.close()
+        _stop_process(process)
 
-    output = {
-        "schema_version": "openworker.local-source-ingress-result.v1",
-        "case_id": str(request.get("case_id", "") or ""),
-        "assigned_host": str(request["assigned_host"]),
-        "source_path": str(source_path),
-        "workspace_root": str(workspace),
-        "project_id": result.project_id,
-        "project_code": result.project_code,
-        "job_id": result.job_id,
-        "job_code": result.job_code,
-        "artifact_id": result.artifact_id,
-        "canonical_path": result.canonical_path,
-        "sha256": result.sha256,
-        "size_bytes": result.size_bytes,
-        "evidence_path": result.evidence_path,
-        "job_binding_path": result.job_binding_path,
-    }
+    output = result.as_dict()
+    output.update(
+        {
+            "schema_version": "openworker.local-source-ingress-result.v2",
+            "case_id": str(request.get("case_id", "") or ""),
+            "source_path": str(source_path),
+            "runner_name": os.environ.get("RUNNER_NAME", ""),
+            "github_run_id": os.environ.get("GITHUB_RUN_ID", ""),
+            "os_stdout": str(stdout_path),
+            "os_stderr": str(stderr_path),
+        }
+    )
+    evidence_root = workspace / "evidence" / "source-ingress"
+    evidence_root.mkdir(parents=True, exist_ok=True)
+    evidence_path = evidence_root / f"local-run-{os.environ.get('GITHUB_RUN_ID', 'local')}.json"
+    temp = evidence_path.with_suffix(".tmp")
+    temp.write_text(json.dumps(output, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    os.replace(temp, evidence_path)
+
     print(json.dumps(output, ensure_ascii=False, indent=2))
     print(
         f"LOCAL_SOURCE_INGRESS_REAL_PASS host={output['assigned_host']} "
         f"job_id={output['job_id']} sha256={output['sha256']} canonical={output['canonical_path']}"
     )
-    write_github_outputs(
-        {
-            "project_id": output["project_id"],
-            "project_code": output["project_code"],
-            "job_id": output["job_id"],
-            "job_code": output["job_code"],
-            "artifact_id": output["artifact_id"],
-            "canonical_path": output["canonical_path"],
-            "sha256": output["sha256"],
-            "size_bytes": output["size_bytes"],
-            "evidence_path": output["evidence_path"],
-            "job_binding_path": output["job_binding_path"],
-            "source_path": output["source_path"],
-        }
-    )
+    write_github_outputs(output, evidence_path)
     return 0
 
 
