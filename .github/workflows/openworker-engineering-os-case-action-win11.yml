@@ -79,6 +79,15 @@ jobs:
           path: ai-engineering-os
           token: ${{ secrets.GH_TOKEN }}
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install OpenWorker typed client dependencies
+        working-directory: openworker
+        run: python -m pip install --disable-pip-version-check -e .
+
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
