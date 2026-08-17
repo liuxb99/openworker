@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 from typing import Any, Callable
 
+from coworker.review_bundle_binding import write_manifest_sha256_sidecar
 from coworker.review_cycle import ReviewArtifact, ReviewCycle, ReviewCycleError
 from coworker.work_ledger import WorkLedger
 
@@ -117,8 +118,6 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"CASE0003_OPENWORKER_REWORK_REQUIRED check={name} owner={case.OWNERS[name]} reason={reason}")
                 return 2
 
-        # Mechanical checks passed. Deliberately create a pending semantic check;
-        # final acceptance remains impossible until an LLM receipt is applied.
         ledger.set_check(
             revision_id,
             name="LLM Semantic Review",
@@ -137,7 +136,6 @@ def main(argv: list[str] | None = None) -> int:
             ReviewArtifact("mechanical-acceptance", state_path),
         ]
 
-        # First persist a reviewable mechanical state; it becomes part of the immutable bundle.
         results.update(
             ok=True,
             status="MECHANICAL_PASS_PREPARING_LLM_REVIEW",
@@ -164,6 +162,7 @@ def main(argv: list[str] | None = None) -> int:
             capability_id="openworker.case0003.final_review",
             owning_repo="liuxb99/openworker",
         )
+        manifest_binding = write_manifest_sha256_sidecar(bundle)
 
         try:
             drive_target = cycle.handoff_to_drive_sync(
@@ -182,6 +181,7 @@ def main(argv: list[str] | None = None) -> int:
                 status="WAITING_DRIVE_HANDOFF",
                 reason=str(exc),
                 review_bundle=str(bundle),
+                bundle_manifest_sha256=manifest_binding,
                 ledger=ledger.snapshot(work["work_id"]),
             )
             _write_state(state_path, results)
@@ -198,6 +198,7 @@ def main(argv: list[str] | None = None) -> int:
             ok=True,
             status="WAITING_LLM_REVIEW",
             review_bundle=str(bundle),
+            bundle_manifest_sha256=manifest_binding,
             drive_handoff_path=str(drive_target),
             drive_folder_id=cycle.drive_folder_id,
             ledger=ledger.snapshot(work["work_id"]),
@@ -206,7 +207,7 @@ def main(argv: list[str] | None = None) -> int:
         _write_state(latest_path, results)
         print(
             "CASE0003_OPENWORKER_WAITING_LLM_REVIEW "
-            f"revision={revision_id} drive={drive_target}"
+            f"revision={revision_id} manifest_sha256={manifest_binding} drive={drive_target}"
         )
         return 0
     finally:
