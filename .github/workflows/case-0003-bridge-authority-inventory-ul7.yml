@@ -1,0 +1,72 @@
+name: Case 0003 Bridge Authority Inventory UL7
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/case-0003-bridge-authority-inventory-ul7.yml'
+
+permissions:
+  contents: read
+
+env:
+  CASE0003_ASSIGNED_HOST: DESKTOP-UL7V2VV
+  CASE0003_WORKSPACE: 'D:\AI-Work\jobs\0003-YUJING-BRIDGE'
+  PYTHONUTF8: '1'
+  PYTHONIOENCODING: utf-8
+
+jobs:
+  inventory:
+    runs-on: [self-hosted, Windows, X64, UL7]
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ". '{0}'"
+    steps:
+      - name: Inventory bridge-authority candidates without modifying workspace
+        run: |
+          $ErrorActionPreference='Stop'
+          if($env:COMPUTERNAME -ine $env:CASE0003_ASSIGNED_HOST){throw ('wrong host '+$env:COMPUTERNAME)}
+          $root=[IO.Path]::GetFullPath($env:CASE0003_WORKSPACE).TrimEnd('\')
+          if(-not(Test-Path -LiteralPath $root -PathType Container)){throw 'workspace missing'}
+          $extensions=@('.pdf','.dwg','.dxf','.ifc','.dgn','.rvt','.json','.geojson','.csv','.xlsx','.xls','.docx','.txt','.md','.png','.jpg','.jpeg','.tif','.tiff','.shp','.gpkg','.glb','.gltf','.blend')
+          $skip=@('.openworker','delivery','acceptance','scenex','blender')
+          $files=Get-ChildItem -LiteralPath $root -File -Recurse -ErrorAction Stop | Where-Object {
+            $rel=$_.FullName.Substring($root.Length).TrimStart('\')
+            $top=($rel -split '\')[0]
+            ($extensions -contains $_.Extension.ToLowerInvariant()) -and -not ($skip -contains $top)
+          } | Sort-Object FullName
+          $rows=@()
+          foreach($f in $files){
+            $rel=$f.FullName.Substring($root.Length).TrimStart('\')
+            $sha=(Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            $rows += [ordered]@{relative_path=$rel;extension=$f.Extension.ToLowerInvariant();bytes=$f.Length;sha256=$sha;modified_utc=$f.LastWriteTimeUtc.ToString('o')}
+          }
+          $summary=[ordered]@{schema_version='case0003-bridge-authority-inventory/v1';workspace=$root;machine=$env:COMPUTERNAME;count=$rows.Count;files=$rows}
+          $json=$summary|ConvertTo-Json -Depth 6 -Compress
+          Write-Host ('CASE0003_BRIDGE_AUTHORITY_INVENTORY '+$json)
+          if($rows.Count -eq 0){throw 'no authoritative bridge-source candidates found outside generated output folders'}
+
+      - name: Inspect small text metadata for bridge semantics only
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=[IO.Path]::GetFullPath($env:CASE0003_WORKSPACE).TrimEnd('\')
+          $patterns='橋|bridge|橋梁|bridge deck|deck|pier|墩|abutment|橋台|span|跨徑|梁|girder|width|寬|length|長'
+          $textFiles=Get-ChildItem -LiteralPath $root -File -Recurse -ErrorAction Stop | Where-Object {
+            $_.Length -le 2097152 -and @('.json','.geojson','.csv','.txt','.md') -contains $_.Extension.ToLowerInvariant() -and
+            $_.FullName -notmatch '\\.openworker\\|\\delivery\\|\\acceptance\\|\\scenex\\|\\blender\\'
+          }
+          foreach($f in $textFiles){
+            try {
+              $matches=Select-String -LiteralPath $f.FullName -Pattern $patterns -AllMatches -Encoding utf8 -ErrorAction Stop | Select-Object -First 20
+              if($matches){
+                $rel=$f.FullName.Substring($root.Length).TrimStart('\')
+                foreach($m in $matches){
+                  $line=[string]$m.Line
+                  if($line.Length -gt 500){$line=$line.Substring(0,500)}
+                  Write-Host ("CASE0003_BRIDGE_TEXT_MATCH path="+$rel+" line="+$m.LineNumber+" text="+$line)
+                }
+              }
+            } catch { Write-Host ('CASE0003_BRIDGE_TEXT_SKIP path='+$f.FullName+' reason='+$_.Exception.Message) }
+          }
