@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   locate:
-    runs-on: [self-hosted, Windows, X64, O87]
+    runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 15
     defaults:
       run:
