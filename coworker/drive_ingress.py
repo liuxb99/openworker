@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Mapping, Protocol
 
 from .review_drive import DRIVE_API_BASE, GoogleDriveAPIClient, ReviewDriveError
+from .secrets import SecretStore
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
@@ -23,6 +24,35 @@ class DriveRawDownloader(Protocol):
 
 class GoogleDriveRawDownloadClient(GoogleDriveAPIClient):
     """GoogleDriveAPIClient extension for authenticated Drive ``alt=media`` reads."""
+
+    @classmethod
+    def from_environment(cls) -> "GoogleDriveRawDownloadClient":
+        """Resolve Drive auth without making GitHub Actions secrets authoritative.
+
+        Priority is an explicit process token, then the machine-local OpenWorker
+        SecretStore connector profiles, and finally google-auth ADC. Secret values
+        are never emitted to logs or receipts.
+        """
+        token = str(os.environ.get("OPENWORKER_GOOGLE_DRIVE_ACCESS_TOKEN") or "").strip()
+        if token:
+            return cls(access_token=token)
+
+        store = SecretStore()
+        profiles = sorted(
+            row["profile"]
+            for row in store.status()
+            if str(row.get("profile") or "") == "google_drive"
+            or str(row.get("profile") or "").startswith("google_drive:")
+        )
+        for profile in profiles:
+            creds = store.get(profile)
+            if not isinstance(creds, Mapping):
+                continue
+            candidate = str(creds.get("access_token") or "").strip()
+            if candidate and not (candidate.startswith("${") and candidate.endswith("}")):
+                return cls(access_token=candidate)
+
+        return super().from_environment()
 
     def download_raw_file(self, *, file_id: str, destination: Path) -> int:
         drive_file_id = _required_text(file_id, "Google Drive file id")
