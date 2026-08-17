@@ -16,7 +16,7 @@ from typing import Any, Mapping, Sequence
 
 _TERMINAL_REVISION_STATUSES = {"accepted", "rework_required", "failed", "superseded"}
 _MUTABLE_REVISION_STATUSES = {"open", "executing", "verifying", "blocked"}
-_VALID_REVISION_KINDS = {"initial", "progress", "rework", "acceptance", "delivery", "acceptance_import"}
+_VALID_REVISION_KINDS = {"initial", "progress", "tuning", "rework", "acceptance", "delivery", "acceptance_import"}
 _VALID_CHECK_STATUSES = {"pending", "passed", "failed", "skipped", "blocked"}
 
 
