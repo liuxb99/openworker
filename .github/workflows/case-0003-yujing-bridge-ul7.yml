@@ -11,6 +11,7 @@ on:
       - 'scripts/case0003_apply_llm_review.py'
       - 'coworker/review_cycle.py'
       - 'coworker/review_gap.py'
+      - 'coworker/review_bundle_binding.py'
       - 'coworker/work_ledger.py'
       - 'coworker/runtimes/work_ledger_bridge.py'
       - 'coworker/runtimes/job_binding.py'
