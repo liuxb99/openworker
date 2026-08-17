@@ -1,0 +1,171 @@
+name: Case 0003 Google Drive API Review Publish UL7
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/case-0003-drive-api-publish-ul7.yml'
+      - 'coworker/review_drive.py'
+      - 'coworker/review_drive_ledger.py'
+      - 'scripts/publish_review_bundle_to_drive.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: case-0003-drive-api-publish-ul7
+  cancel-in-progress: true
+
+env:
+  CASE0003_ASSIGNED_HOST: DESKTOP-UL7V2VV
+  CASE0003_WORKSPACE: 'D:\AI-Work\jobs\0003-YUJING-BRIDGE'
+  OPENWORKER_REVIEW_DRIVE_FOLDER_ID: ${{ vars.OPENWORKER_REVIEW_DRIVE_FOLDER_ID }}
+  PYTHONUTF8: '1'
+  PYTHONIOENCODING: utf-8
+
+jobs:
+  publish:
+    name: Publish immutable Case 0003 review bundle to Google Drive API
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ". '{0}'"
+    steps:
+      - name: Verify assigned UL7 host and existing review bundle
+        run: |
+          $ErrorActionPreference='Stop'
+          if($env:COMPUTERNAME -ine $env:CASE0003_ASSIGNED_HOST){
+            throw "CASE0003_DRIVE_ASSIGNED_HOST_MISMATCH host=$env:COMPUTERNAME assigned=$env:CASE0003_ASSIGNED_HOST"
+          }
+          if(-not (Test-Path -LiteralPath $env:CASE0003_WORKSPACE -PathType Container)){
+            throw "CASE0003_WORKSPACE_UNAVAILABLE $env:CASE0003_WORKSPACE"
+          }
+          $state=Join-Path $env:CASE0003_WORKSPACE 'acceptance\openworker-final\work-ledger-final-acceptance.json'
+          if(-not (Test-Path -LiteralPath $state -PathType Leaf)){throw 'Case 0003 final acceptance state unavailable'}
+          $ev=Get-Content -LiteralPath $state -Raw|ConvertFrom-Json
+          if([string]::IsNullOrWhiteSpace([string]$ev.revision_id)){throw 'Case 0003 revision_id missing'}
+          $bundle=Join-Path $env:CASE0003_WORKSPACE ('.openworker\reviews\'+[string]$ev.revision_id)
+          if(-not (Test-Path -LiteralPath $bundle -PathType Container)){throw ('Case 0003 review bundle unavailable: '+$bundle)}
+          foreach($required in @('manifest.json','manifest.sha256','review-request.json')){
+            if(-not (Test-Path -LiteralPath (Join-Path $bundle $required) -PathType Leaf)){throw ('review bundle missing '+$required)}
+          }
+          "CASE0003_REVISION_ID=$($ev.revision_id)"|Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "CASE0003_REVIEW_BUNDLE=$bundle"|Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "CASE0003_DRIVE_API_INPUT_READY host=$env:COMPUTERNAME revision=$($ev.revision_id)"
+
+      - name: Checkout OpenWorker main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: openworker
+
+      - name: Resolve WorkLedger work code
+        env:
+          PYTHONPATH: ${{ github.workspace }}\openworker
+        run: |
+          $ErrorActionPreference='Stop'
+          $code = @'
+          import os, sqlite3
+          from pathlib import Path
+          workspace = Path(os.environ['CASE0003_WORKSPACE'])
+          revision_id = os.environ['CASE0003_REVISION_ID']
+          db = workspace / '.openworker' / 'work-ledger.sqlite'
+          if not db.is_file():
+              raise SystemExit(f'WorkLedger unavailable: {db}')
+          con = sqlite3.connect(db)
+          try:
+              row = con.execute('''SELECT w.code FROM works w JOIN work_revisions r ON r.work_id=w.work_id WHERE r.revision_id=?''', (revision_id,)).fetchone()
+          finally:
+              con.close()
+          if not row or not str(row[0]).strip():
+              raise SystemExit('WorkLedger work code unavailable')
+          print(str(row[0]).strip())
+          '@
+          $workCode=($code|python -).Trim()
+          if($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($workCode)){throw 'failed to resolve WorkLedger work code'}
+          "CASE0003_WORK_CODE=$workCode"|Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "CASE0003_WORK_CODE_READY code=$workCode"
+
+      - name: Publish review bundle through Google Drive API and bind receipt to WorkLedger
+        env:
+          PYTHONPATH: ${{ github.workspace }}\openworker
+          OPENWORKER_GOOGLE_DRIVE_ACCESS_TOKEN: ${{ secrets.OPENWORKER_GOOGLE_DRIVE_ACCESS_TOKEN }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $args=@(
+            'openworker\scripts\publish_review_bundle_to_drive.py',
+            '--workspace',$env:CASE0003_WORKSPACE,
+            '--revision-id',$env:CASE0003_REVISION_ID,
+            '--work-code',$env:CASE0003_WORK_CODE,
+            '--bundle',$env:CASE0003_REVIEW_BUNDLE,
+            '--machine-id',$env:COMPUTERNAME,
+            '--case-id','0003',
+            '--run-id',$env:GITHUB_RUN_ID
+          )
+          if(-not [string]::IsNullOrWhiteSpace($env:OPENWORKER_REVIEW_DRIVE_FOLDER_ID)){
+            $args += @('--drive-folder-id',$env:OPENWORKER_REVIEW_DRIVE_FOLDER_ID)
+          }
+          & python @args
+          if($LASTEXITCODE -ne 0){throw ('Google Drive API review publish failed exit='+$LASTEXITCODE)}
+
+      - name: Verify durable cloud publication receipt and waiting-review state
+        env:
+          PYTHONPATH: ${{ github.workspace }}\openworker
+        run: |
+          $ErrorActionPreference='Stop'
+          $receipt=Join-Path $env:CASE0003_REVIEW_BUNDLE 'review-publish-receipt.json'
+          if(-not (Test-Path -LiteralPath $receipt -PathType Leaf) -or (Get-Item -LiteralPath $receipt).Length -le 0){throw 'review publish receipt missing/empty'}
+          $r=Get-Content -LiteralPath $receipt -Raw|ConvertFrom-Json
+          if($r.schema_version -ne 'openworker-review-publish-receipt/v1'){throw 'review publish receipt schema mismatch'}
+          if($r.transport -ne 'google-drive-api' -or $r.status -ne 'WAITING_LLM_REVIEW'){throw 'review publish receipt state mismatch'}
+          if([string]$r.revision_id -ne [string]$env:CASE0003_REVISION_ID){throw 'review publish receipt revision mismatch'}
+          if([string]::IsNullOrWhiteSpace([string]$r.drive_revision_folder_id)){throw 'Drive revision folder id missing'}
+          if([string]::IsNullOrWhiteSpace([string]$r.drive_revision_web_view_link)){throw 'Drive revision web view link missing'}
+          if(@($r.files).Count -lt 3){throw 'Drive publication file list unexpectedly small'}
+          foreach($f in @($r.files)){
+            if([string]::IsNullOrWhiteSpace([string]$f.drive_file_id) -or [string]::IsNullOrWhiteSpace([string]$f.sha256)){
+              throw 'Drive published file is missing cloud id or SHA'
+            }
+          }
+          $code = @'
+          import os
+          from pathlib import Path
+          from coworker.work_ledger import WorkLedger
+          workspace=Path(os.environ['CASE0003_WORKSPACE'])
+          rid=os.environ['CASE0003_REVISION_ID']
+          ledger=WorkLedger(workspace/'.openworker'/'work-ledger.sqlite')
+          try:
+              rev=ledger.get_revision(rid)
+              snap=ledger.snapshot(rev['work_id'])
+              current=next(item for item in snap['revisions'] if item['revision_id']==rid)
+              checks={item['name']: item for item in current['checks']}
+              pub=checks.get('Google Drive Review Publication')
+              if not pub or pub['status']!='passed' or not pub['required']:
+                  raise SystemExit('Google Drive Review Publication required check not passed')
+              if rev['status']!='blocked':
+                  raise SystemExit(f'revision must remain blocked waiting LLM review, got {rev["status"]}')
+              if snap['work'].get('accepted_revision_id'):
+                  raise SystemExit('accepted pointer moved before LLM review')
+              if snap['work'].get('delivered_revision_id'):
+                  raise SystemExit('delivered pointer moved before LLM review')
+          finally:
+              ledger.close()
+          '@
+          $code|python -
+          if($LASTEXITCODE -ne 0){throw 'WorkLedger cloud publication verification failed'}
+          Write-Host "CASE0003_DRIVE_API_PUBLISH_PASS revision=$env:CASE0003_REVISION_ID folder=$($r.drive_revision_folder_id)"
+
+      - name: Upload bounded publication receipt evidence
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: case-0003-drive-api-publication-${{ github.run_id }}
+          path: |
+            D:\AI-Work\jobs\0003-YUJING-BRIDGE\.openworker\reviews\**\review-publish-receipt.json
+            D:\AI-Work\jobs\0003-YUJING-BRIDGE\.openworker\reviews\**\manifest.json
+            D:\AI-Work\jobs\0003-YUJING-BRIDGE\.openworker\reviews\**\manifest.sha256
+          if-no-files-found: warn
+          retention-days: 14

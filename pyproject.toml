@@ -45,6 +45,7 @@ openworker-engineering-e2e = "coworker.engineering.e2e_verify:main"
 openworker-harness-evidence = "coworker.engineering.harness_verify:main"
 openworker-project-query = "coworker.project_query_cli:main"
 openworker-work-ledger = "coworker.work_ledger_cli:main"
+openworker-review-publish-drive = "scripts.publish_review_bundle_to_drive:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
