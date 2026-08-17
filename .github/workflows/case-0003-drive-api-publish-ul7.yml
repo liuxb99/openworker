@@ -6,6 +6,9 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/case-0003-drive-api-publish-ul7.yml'
+      - 'case-worklists/0003.json'
+      - 'coworker/engineering/case_worklist.py'
+      - 'scripts/case_worklist_action.py'
       - 'coworker/review_drive.py'
       - 'coworker/review_drive_ledger.py'
       - 'scripts/publish_review_bundle_to_drive.py'
@@ -15,7 +18,7 @@ permissions:
 
 concurrency:
   group: case-0003-drive-api-publish-ul7
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   CASE0003_ASSIGNED_HOST: DESKTOP-UL7V2VV
@@ -26,14 +29,20 @@ env:
 
 jobs:
   publish:
-    name: Publish immutable Case 0003 review bundle to Google Drive API
+    name: Publish canonical Case 0003 review bundle to Google Drive API
     runs-on: [self-hosted, Windows, X64, UL7]
     timeout-minutes: 15
     defaults:
       run:
         shell: powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ". '{0}'"
     steps:
-      - name: Verify assigned UL7 host and existing review bundle
+      - name: Checkout OpenWorker main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: openworker
+
+      - name: Verify fixed UL7 host and workspace
         run: |
           $ErrorActionPreference='Stop'
           if($env:COMPUTERNAME -ine $env:CASE0003_ASSIGNED_HOST){
@@ -42,6 +51,28 @@ jobs:
           if(-not (Test-Path -LiteralPath $env:CASE0003_WORKSPACE -PathType Container)){
             throw "CASE0003_WORKSPACE_UNAVAILABLE $env:CASE0003_WORKSPACE"
           }
+          Write-Host "CASE0003_FIXED_HOST_READY host=$env:COMPUTERNAME workspace=$env:CASE0003_WORKSPACE"
+
+      - name: Ensure and start canonical Case 0003 Drive publication step
+        env:
+          PYTHONPATH: ${{ github.workspace }}\openworker
+        run: |
+          $ErrorActionPreference='Stop'
+          $manifest=Join-Path $env:GITHUB_WORKSPACE 'openworker\case-worklists\0003.json'
+          python openworker\scripts\case_worklist_action.py ensure `
+            --workspace-root $env:CASE0003_WORKSPACE `
+            --manifest $manifest
+          if($LASTEXITCODE -ne 0){throw 'Case 0003 worklist ensure failed'}
+          python openworker\scripts\case_worklist_action.py start `
+            --workspace-root $env:CASE0003_WORKSPACE `
+            --step-id '0003-160' `
+            --action-id 'openworker.review.publish_drive'
+          if($LASTEXITCODE -ne 0){throw 'Case 0003 canonical Drive step gate failed'}
+          Write-Host 'CASE0003_WORKLIST_RUNNING step=0003-160'
+
+      - name: Verify existing immutable review bundle input
+        run: |
+          $ErrorActionPreference='Stop'
           $state=Join-Path $env:CASE0003_WORKSPACE 'acceptance\openworker-final\work-ledger-final-acceptance.json'
           if(-not (Test-Path -LiteralPath $state -PathType Leaf)){throw 'Case 0003 final acceptance state unavailable'}
           $ev=Get-Content -LiteralPath $state -Raw|ConvertFrom-Json
@@ -54,12 +85,6 @@ jobs:
           "CASE0003_REVISION_ID=$($ev.revision_id)"|Out-File $env:GITHUB_ENV -Encoding utf8 -Append
           "CASE0003_REVIEW_BUNDLE=$bundle"|Out-File $env:GITHUB_ENV -Encoding utf8 -Append
           Write-Host "CASE0003_DRIVE_API_INPUT_READY host=$env:COMPUTERNAME revision=$($ev.revision_id)"
-
-      - name: Checkout OpenWorker main
-        uses: actions/checkout@v4
-        with:
-          ref: main
-          path: openworker
 
       - name: Resolve WorkLedger work code
         env:
@@ -155,7 +180,35 @@ jobs:
           '@
           $code|python -
           if($LASTEXITCODE -ne 0){throw 'WorkLedger cloud publication verification failed'}
+          "CASE0003_DRIVE_FOLDER_ID=$($r.drive_revision_folder_id)"|Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "CASE0003_DRIVE_LINK=$($r.drive_revision_web_view_link)"|Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "CASE0003_PUBLISH_RECEIPT=$receipt"|Out-File $env:GITHUB_ENV -Encoding utf8 -Append
           Write-Host "CASE0003_DRIVE_API_PUBLISH_PASS revision=$env:CASE0003_REVISION_ID folder=$($r.drive_revision_folder_id)"
+
+      - name: Commit Drive publication evidence and pass canonical step
+        env:
+          PYTHONPATH: ${{ github.workspace }}\openworker
+        run: |
+          $ErrorActionPreference='Stop'
+          $script='openworker\scripts\case_worklist_action.py'
+          python $script record --workspace-root $env:CASE0003_WORKSPACE --step-id '0003-160' --key run_id --value $env:GITHUB_RUN_ID
+          python $script record --workspace-root $env:CASE0003_WORKSPACE --step-id '0003-160' --key revision_id --value $env:CASE0003_REVISION_ID
+          python $script record --workspace-root $env:CASE0003_WORKSPACE --step-id '0003-160' --key drive_revision_folder_id --value $env:CASE0003_DRIVE_FOLDER_ID
+          python $script record --workspace-root $env:CASE0003_WORKSPACE --step-id '0003-160' --key drive_revision_web_view_link --value $env:CASE0003_DRIVE_LINK
+          python $script record --workspace-root $env:CASE0003_WORKSPACE --step-id '0003-160' --key publish_receipt --value $env:CASE0003_PUBLISH_RECEIPT
+          python $script pass --workspace-root $env:CASE0003_WORKSPACE --step-id '0003-160'
+          if($LASTEXITCODE -ne 0){throw 'Case 0003 Drive worklist evidence/pass failed'}
+          Write-Host 'CASE0003_WORKLIST_PASS step=0003-160 next=0003-170'
+
+      - name: Block active Case 0003 Drive step on failure
+        if: failure()
+        env:
+          PYTHONPATH: ${{ github.workspace }}\openworker
+        run: |
+          python openworker\scripts\case_worklist_action.py block-active `
+            --workspace-root $env:CASE0003_WORKSPACE `
+            --step-id '0003-160' `
+            --reason "Drive publication failed in GitHub run $env:GITHUB_RUN_ID"
 
       - name: Upload bounded publication receipt evidence
         if: always()
@@ -167,5 +220,6 @@ jobs:
             D:\AI-Work\jobs\0003-YUJING-BRIDGE\.openworker\reviews\**\review-publish-receipt.json
             D:\AI-Work\jobs\0003-YUJING-BRIDGE\.openworker\reviews\**\manifest.json
             D:\AI-Work\jobs\0003-YUJING-BRIDGE\.openworker\reviews\**\manifest.sha256
+            D:\AI-Work\jobs\0003-YUJING-BRIDGE\.openworker\case-worklist.json
           if-no-files-found: warn
           retention-days: 14
