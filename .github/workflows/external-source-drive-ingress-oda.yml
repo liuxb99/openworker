@@ -82,6 +82,22 @@ jobs:
           python -m pytest tests/test_drive_ingress.py -q
           if($LASTEXITCODE -ne 0){throw 'Drive ingress targeted unit gate failed'}
 
+      - name: Report bounded credential-source availability
+        env:
+          PYTHONPATH: ${{ github.workspace }}\openworker
+          OPENWORKER_GOOGLE_DRIVE_ACCESS_TOKEN: ${{ secrets.OPENWORKER_GOOGLE_DRIVE_ACCESS_TOKEN }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $code=@'
+          import os
+          from coworker.secrets import SecretStore
+          env_present=bool(str(os.environ.get('OPENWORKER_GOOGLE_DRIVE_ACCESS_TOKEN') or '').strip())
+          rows=[r for r in SecretStore().status() if str(r.get('profile') or '')=='google_drive' or str(r.get('profile') or '').startswith('google_drive:')]
+          print(f'DRIVE_INGRESS_CREDENTIAL_SOURCES env_present={str(env_present).lower()} local_profiles={len(rows)} local_unexpired={sum(not bool(r.get("expired")) for r in rows)}')
+          '@
+          $code|python -
+          if($LASTEXITCODE -ne 0){throw 'Drive ingress credential-source inspection failed'}
+
       - name: Download and atomically publish immutable Drive file
         env:
           PYTHONPATH: ${{ github.workspace }}\openworker
@@ -95,7 +111,6 @@ jobs:
           $size=[int64](Decode '${{ steps.request.outputs.size }}')
           $destination=Decode '${{ steps.request.outputs.destination }}'
           $receipt=Decode '${{ steps.request.outputs.receipt }}'
-          if([string]::IsNullOrWhiteSpace($env:OPENWORKER_GOOGLE_DRIVE_ACCESS_TOKEN)){throw 'OPENWORKER_GOOGLE_DRIVE_ACCESS_TOKEN unavailable'}
           $args=@(
             'openworker\scripts\download_drive_file_atomic.py',
             '--file-id',$fileId,
