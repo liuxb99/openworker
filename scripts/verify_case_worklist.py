@@ -9,7 +9,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from coworker.engineering.case_worklist import (
+from coworker.case_worklist import (
     CaseStep,
     CaseWorklist,
     CaseWorklistError,
