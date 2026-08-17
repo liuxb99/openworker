@@ -50,5 +50,14 @@ jobs:
           )) {
             if (-not (Test-Path -LiteralPath (Join-Path $dest $required))) { throw "OpenWorker snapshot missing $required" }
           }
-          [Environment]::SetEnvironmentVariable('OPENWORKER_ROOT', $dest, 'Machine')
-          Write-Host "OPENWORKER_O87_AUTHORITY_READY host=$env:COMPUTERNAME commit=$sha root=$dest"
+          $receipt = [ordered]@{
+            schema_version = 'gtr-local-authority/v1'
+            authority = 'openworker'
+            assigned_host = $env:COMPUTERNAME
+            commit = $sha
+            root = $dest
+            installed_at = [DateTime]::UtcNow.ToString('o')
+          }
+          $receiptPath = Join-Path $base 'openworker-current.json'
+          [IO.File]::WriteAllText($receiptPath, ($receipt | ConvertTo-Json -Depth 4), [Text.UTF8Encoding]::new($false))
+          Write-Host "OPENWORKER_O87_AUTHORITY_READY host=$env:COMPUTERNAME commit=$sha root=$dest receipt=$receiptPath"
