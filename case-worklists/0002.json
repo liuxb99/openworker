@@ -3,7 +3,7 @@
   "case_id": "0002",
   "workspace_root": "D:\\AI-Example\\0002",
   "assigned_host": "DESKTOP-ODAQN0D",
-  "revision": 1,
+  "revision": 2,
   "steps": [
     {
       "step_id": "0002-010",
@@ -20,7 +20,7 @@
     },
     {
       "step_id": "0002-020",
-      "title": "Materialize storyboard and reference-bound visual requirements",
+      "title": "Materialize storyboard presentation request and visual requirements",
       "kind": "work",
       "dependencies": ["0002-010"],
       "allowed_actions": ["comfyx-studio.storyboard.plan"],
@@ -32,10 +32,36 @@
       "allow_skip": false
     },
     {
-      "step_id": "0002-030",
-      "title": "Generate REAL character master images on fixed ODA host",
+      "step_id": "0002-025",
+      "title": "Generate text-only storyboard PPTX through OpenMAIC",
       "kind": "work",
       "dependencies": ["0002-020"],
+      "allowed_actions": ["presentation.openmaic"],
+      "acceptance": ["storyboard_pptx", "storyboard_manifest", "storyboard_pptx_sha256", "slide_count", "reopen_receipt", "image_count"],
+      "status": "PENDING",
+      "evidence": {},
+      "blocker": "",
+      "repair_parent_step": "",
+      "allow_skip": false
+    },
+    {
+      "step_id": "0002-027",
+      "title": "Wait for user approval of text-only storyboard PPTX",
+      "kind": "approval",
+      "dependencies": ["0002-025"],
+      "allowed_actions": ["openworker.user.approval"],
+      "acceptance": ["approved_storyboard_pptx_sha256", "approval_decision", "approval_receipt"],
+      "status": "PENDING",
+      "evidence": {},
+      "blocker": "",
+      "repair_parent_step": "",
+      "allow_skip": false
+    },
+    {
+      "step_id": "0002-030",
+      "title": "Generate REAL character master images after storyboard approval",
+      "kind": "work",
+      "dependencies": ["0002-027"],
       "allowed_actions": ["comfyx.storyboard.image.real"],
       "acceptance": ["character_receipts", "character_images", "character_sha256"],
       "status": "PENDING",
@@ -71,10 +97,23 @@
       "allow_skip": false
     },
     {
+      "step_id": "0002-055",
+      "title": "Generate illustrated storyboard PPTX through OpenMAIC",
+      "kind": "work",
+      "dependencies": ["0002-050"],
+      "allowed_actions": ["presentation.openmaic"],
+      "acceptance": ["illustrated_storyboard_pptx", "illustrated_storyboard_manifest", "illustrated_storyboard_sha256", "slide_count", "reopen_receipt", "bound_image_count"],
+      "status": "PENDING",
+      "evidence": {},
+      "blocker": "",
+      "repair_parent_step": "",
+      "allow_skip": false
+    },
+    {
       "step_id": "0002-060",
       "title": "Generate four REAL video shots through audited ComfyX production",
       "kind": "work",
-      "dependencies": ["0002-050"],
+      "dependencies": ["0002-055"],
       "allowed_actions": ["comfyx.production.video.real"],
       "acceptance": ["shot_video_receipts", "shot_videos", "shot_video_sha256", "execution_ledger"],
       "status": "PENDING",
