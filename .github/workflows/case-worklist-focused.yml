@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - 'coworker/case_worklist.py'
+      - 'coworker/case_worklist_runtime.py'
       - 'coworker/engineering/case_worklist.py'
       - 'scripts/case_worklist_action.py'
       - 'scripts/verify_case_worklist.py'
@@ -33,4 +34,4 @@ jobs:
       - name: Run isolated worklist state-machine verifier
         run: python scripts/verify_case_worklist.py
       - name: Compile worklist surface
-        run: python -m py_compile coworker/case_worklist.py coworker/engineering/case_worklist.py scripts/case_worklist_action.py scripts/verify_case_worklist.py
+        run: python -m py_compile coworker/case_worklist.py coworker/case_worklist_runtime.py coworker/engineering/case_worklist.py scripts/case_worklist_action.py scripts/verify_case_worklist.py
