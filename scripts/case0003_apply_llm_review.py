@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 from coworker.review_cycle import ReviewCycle
-from coworker.review_gap import normalize_review_finding
+from coworker.review_gap import apply_review_finding
 from coworker.work_ledger import WorkLedger
 
 JOB_CODE = "OWJ-20260816030152-03D90D"
@@ -37,18 +37,7 @@ def main(argv: list[str] | None = None) -> int:
         raise RuntimeError(f"review receipt unavailable: {receipt_path}")
     receipt = json.loads(receipt_path.read_text(encoding="utf-8-sig"))
     revision_id = str(args.revision_id).strip()
-
-    # TOOL_GAP is normalized into the existing FAIL/rework path, but preserves
-    # explicit gap metadata in the immutable receipt and verification plan.
-    verdict = str(receipt.get("verdict") or "").strip().upper()
-    if verdict == "TOOL_GAP":
-        gap = normalize_review_finding(receipt)
-        receipt = dict(receipt)
-        receipt["verdict"] = "FAIL"
-        receipt["summary"] = gap["gap_description"]
-        receipt["owning_repo"] = gap["owning_repo"]
-        receipt["verification_plan"] = gap["verification_plan"]
-        receipt["tool_gap"] = gap
+    original_verdict = str(receipt.get("verdict") or "").strip().upper()
 
     ledger = WorkLedger(workspace / ".openworker" / "work-ledger.sqlite")
     try:
@@ -62,7 +51,8 @@ def main(argv: list[str] | None = None) -> int:
         request = json.loads(bundle_request.read_text(encoding="utf-8"))
 
         cycle = ReviewCycle(workspace)
-        result = cycle.apply_receipt(
+        result = apply_review_finding(
+            cycle,
             ledger,
             revision_id,
             receipt,
@@ -70,7 +60,6 @@ def main(argv: list[str] | None = None) -> int:
             current_parameters=request.get("current_parameters") or {},
         )
 
-        original_verdict = verdict
         if result["verdict"] == "PASS":
             accepted = ledger.accept_revision(revision_id)
             delivered = ledger.deliver_revision(
@@ -91,7 +80,7 @@ def main(argv: list[str] | None = None) -> int:
             accepted_revision_id = ""
             delivered_revision_id = ""
         else:
-            status = "TOOL_GAP_REWORK_REQUIRED" if original_verdict == "TOOL_GAP" else "REWORK_REQUIRED"
+            status = "TOOL_GAP_REWORK_REQUIRED" if result.get("finding_type") == "TOOL_GAP" else "REWORK_REQUIRED"
             accepted_revision_id = ""
             delivered_revision_id = ""
 
@@ -100,12 +89,16 @@ def main(argv: list[str] | None = None) -> int:
             "case_id": "0003",
             "reviewed_revision_id": revision_id,
             "verdict": original_verdict,
+            "finding_type": result.get("finding_type", original_verdict),
             "status": status,
             "accepted_revision_id": accepted_revision_id,
             "delivered_revision_id": delivered_revision_id,
             "next_revision_id": result.get("next_revision_id", ""),
             "parameters": result.get("parameters", {}),
             "parameter_delta": result.get("parameter_delta", []),
+            "gap_capability": result.get("gap_capability", ""),
+            "owning_repo": result.get("owning_repo", ""),
+            "verification_plan": result.get("verification_plan", []),
             "ledger": ledger.snapshot(work["work_id"]),
         }
         out = workspace / "acceptance" / "openworker-final" / f"llm-review-apply-{revision_id}.json"
