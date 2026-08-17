@@ -51,7 +51,7 @@ jobs:
           "CASE0003_EXACT_PNG=$png"|Out-File $env:GITHUB_ENV -Encoding utf8 -Append
           "CASE0003_MANIFEST_SHA=$manifestSha"|Out-File $env:GITHUB_ENV -Encoding utf8 -Append
 
-      - name: Stage exact binary review handoff and bounded chunks
+      - name: Stage exact binary review handoff and PDF proxy
         working-directory: openworker
         run: |
           $ErrorActionPreference='Stop'
@@ -63,8 +63,24 @@ jobs:
           Compress-Archive -Path (Join-Path $env:CASE0003_EXACT_BUNDLE '*') -DestinationPath $zip -CompressionLevel Optimal
           if(-not (Test-Path -LiteralPath $zip -PathType Leaf)){throw 'exact review ZIP missing'}
 
-          Copy-Item -LiteralPath $env:CASE0003_EXACT_PNG -Destination (Join-Path $root 'scenex-browse.png') -Force
-          Copy-Item -LiteralPath $zip -Destination (Join-Path $root 'review-bundle.zip') -Force
+          $directPng=Join-Path $root 'scenex-browse.png'
+          $directZip=Join-Path $root 'review-bundle.zip'
+          $pdf=Join-Path $root 'scenex-browse-review.pdf'
+          Copy-Item -LiteralPath $env:CASE0003_EXACT_PNG -Destination $directPng -Force
+          Copy-Item -LiteralPath $zip -Destination $directZip -Force
+
+          $py=@'
+          from PIL import Image
+          import os
+          src=os.environ['CASE0003_EXACT_PNG']
+          dst=os.environ['CASE0003_REVIEW_PDF']
+          im=Image.open(src).convert('RGB')
+          im.save(dst,'PDF',resolution=144.0,quality=95,subsampling=0)
+          '@
+          "CASE0003_REVIEW_PDF=$pdf"|Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          $env:CASE0003_REVIEW_PDF=$pdf
+          try { $py|python - } catch { python -m pip install --user Pillow; if($LASTEXITCODE -ne 0){throw}; $py|python - }
+          if($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $pdf -PathType Leaf)){throw 'failed to create SceneX review PDF proxy'}
 
           function Write-Chunked([string]$source,[string]$name){
             $bytes=[IO.File]::ReadAllBytes($source)
@@ -77,15 +93,14 @@ jobs:
             for($i=0;$i -lt $partCount;$i++){
               $start=$i*$chunkSize
               $len=[Math]::Min($chunkSize,$b64.Length-$start)
-              $part=$b64.Substring($start,$len)
-              $partPath=Join-Path $dir ('part-{0:D3}.txt' -f $i)
-              [IO.File]::WriteAllText($partPath,$part,[Text.UTF8Encoding]::new($false))
+              [IO.File]::WriteAllText((Join-Path $dir ('part-{0:D3}.txt' -f $i)),$b64.Substring($start,$len),[Text.UTF8Encoding]::new($false))
             }
             return [ordered]@{name=$name;sha256=$sha;byte_length=$bytes.Length;base64_length=$b64.Length;chunk_size=$chunkSize;part_count=[int]$partCount}
           }
 
           $pngMeta=Write-Chunked $env:CASE0003_EXACT_PNG 'scenex-png'
           $zipMeta=Write-Chunked $zip 'review-bundle-zip'
+          $pdfSha=(Get-FileHash -LiteralPath $pdf -Algorithm SHA256).Hash.ToLowerInvariant()
           $manifest=[ordered]@{
             schema_version='openworker-private-review-handoff/v1'
             case_id='0003'
@@ -99,9 +114,10 @@ jobs:
             review_bundle_zip=$zipMeta
             direct_png='scenex-browse.png'
             direct_review_bundle_zip='review-bundle.zip'
+            review_pdf_proxy=[ordered]@{path='scenex-browse-review.pdf';sha256=$pdfSha;source_png_sha256=$pngMeta.sha256}
           }
           [IO.File]::WriteAllText((Join-Path $root 'handoff-manifest.json'),($manifest|ConvertTo-Json -Depth 10),[Text.UTF8Encoding]::new($false))
-          Write-Host "CASE0003_PRIVATE_HANDOFF_STAGED png_parts=$($pngMeta.part_count) zip_parts=$($zipMeta.part_count) png_sha=$($pngMeta.sha256) zip_sha=$($zipMeta.sha256) manifest=$env:CASE0003_MANIFEST_SHA"
+          Write-Host "CASE0003_PRIVATE_HANDOFF_STAGED png_sha=$($pngMeta.sha256) zip_sha=$($zipMeta.sha256) pdf_sha=$pdfSha manifest=$env:CASE0003_MANIFEST_SHA"
 
       - name: Publish private review handoff branch
         working-directory: openworker
@@ -111,10 +127,10 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git checkout -B $env:CASE0003_HANDOFF_BRANCH
           git add -- review-handoff/case0003/$env:CASE0003_REVISION_ID
-          git commit -m "case0003: stage exact binary review handoff $env:CASE0003_REVISION_ID"
+          git commit -m "case0003: stage exact review PDF handoff $env:CASE0003_REVISION_ID"
           if($LASTEXITCODE -ne 0){throw 'failed to commit private review handoff'}
           git push --force-with-lease origin ("HEAD:refs/heads/"+$env:CASE0003_HANDOFF_BRANCH)
           if($LASTEXITCODE -ne 0){throw 'failed to publish private review handoff branch'}
           Write-Host "CASE0003_PRIVATE_HANDOFF_PUBLISHED branch=$env:CASE0003_HANDOFF_BRANCH revision=$env:CASE0003_REVISION_ID"
 
-# trigger nonce: 2026-08-17 exact-binary-review-handoff-2
+# trigger nonce: 2026-08-17 exact-review-pdf-proxy-3
