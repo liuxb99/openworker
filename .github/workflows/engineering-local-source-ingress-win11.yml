@@ -69,11 +69,13 @@ jobs:
             --step-id '0004-020' `
             --action-id 'openworker.source.ingress' `
             --execution-id $execution
-          "execution_id=$execution" >> $env:GITHUB_OUTPUT
+          [System.IO.File]::AppendAllText($env:GITHUB_OUTPUT, "execution_id=$execution`n", (New-Object System.Text.UTF8Encoding($false)))
 
       - name: Run fixed-host local source ingress
         id: ingress
         working-directory: openworker
+        env:
+          PYTHONIOENCODING: utf-8
         run: |
           python scripts/engineering_local_source_ingress_action.py `
             --request 'local-source-ingress-requests\request.json' `
