@@ -1,0 +1,59 @@
+name: Case 0002 Sync Storyboard Review Gates Win11
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'case-worklists/0002.json'
+      - 'scripts/case_worklist_sync_manifest.py'
+      - '.github/workflows/case0002-sync-storyboard-review-gates-win11.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openworker-case0002-worklist-sync
+  cancel-in-progress: false
+
+env:
+  CASE0002_WORKSPACE: D:\AI-Example\0002
+
+jobs:
+  sync-worklist:
+    runs-on: [self-hosted, Windows, X64, ODA]
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ". '{0}'"
+    steps:
+      - name: Verify fixed ODA machine authority
+        run: |
+          $ErrorActionPreference='Stop'
+          if($env:COMPUTERNAME -ne 'DESKTOP-ODAQN0D'){
+            throw "CASE0002_HOST_MISMATCH expected=DESKTOP-ODAQN0D actual=$env:COMPUTERNAME runner=$env:RUNNER_NAME"
+          }
+          Write-Host "CASE0002_HOST_OK machine=$env:COMPUTERNAME runner=$env:RUNNER_NAME"
+
+      - name: Checkout OpenWorker main
+        uses: actions/checkout@v4
+
+      - name: Sync durable CaseWorklist to latest manifest
+        run: |
+          $ErrorActionPreference='Stop'
+          python scripts\case_worklist_sync_manifest.py --workspace-root $env:CASE0002_WORKSPACE --manifest case-worklists\0002.json
+          if($LASTEXITCODE -ne 0){throw 'CASE0002 manifest sync failed'}
+
+      - name: Assert text-only PPTX gate precedes IMAGE
+        run: |
+          $ErrorActionPreference='Stop'
+          $path=Join-Path $env:CASE0002_WORKSPACE '.openworker\case-worklist.json'
+          $w=Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
+          $s025=@($w.steps|Where-Object {$_.step_id -eq '0002-025'})|Select-Object -First 1
+          $s027=@($w.steps|Where-Object {$_.step_id -eq '0002-027'})|Select-Object -First 1
+          $s030=@($w.steps|Where-Object {$_.step_id -eq '0002-030'})|Select-Object -First 1
+          $s055=@($w.steps|Where-Object {$_.step_id -eq '0002-055'})|Select-Object -First 1
+          if($null -eq $s025 -or $null -eq $s027 -or $null -eq $s030 -or $null -eq $s055){throw 'CASE0002 storyboard review gates missing'}
+          if(-not(@($s030.dependencies) -contains '0002-027')){throw 'IMAGE step is not gated by user storyboard approval'}
+          if(-not(@($s055.dependencies) -contains '0002-050')){throw 'illustrated PPTX is not gated by completed image binding'}
+          Write-Host "CASE0002_STORYBOARD_GATES_OK next=$($w.canonical_next_step_id)"
