@@ -36,12 +36,14 @@ jobs:
           $ErrorActionPreference='Stop'; $s='openworker\scripts\case_worklist_action.py'; $wlPath=Join-Path $env:CASE0003_WORKSPACE '.openworker\case-worklist.json'; $wl=Get-Content $wlPath -Raw|ConvertFrom-Json; $step=@($wl.steps|?{$_.step_id -eq '0003-170'})[0]; $receipt=Join-Path $env:CASE0003_WORKSPACE ('.openworker\reviews\'+$env:CASE0003_REVISION_ID+'\connector-llm-review-receipt.json')
           if([string]$step.status -eq 'RUNNING'){ $exec=[string]$step.evidence.__openworker_active_execution; python $s complete-action --workspace-root $env:CASE0003_WORKSPACE --step-id 0003-170 --action-id openworker.review.inspect_drive --execution-id $exec; python $s pass --workspace-root $env:CASE0003_WORKSPACE --step-id 0003-170 }
           elseif([string]$step.status -ne 'PASSED'){throw ('unexpected step170 '+$step.status)}
-          python openworker\scripts\case0003_apply_connector_review.py --workspace $env:CASE0003_WORKSPACE --revision-id $env:CASE0003_REVISION_ID --receipt $receipt
-          if($LASTEXITCODE -ne 4){throw ('expected TOOL_GAP exit 4 got '+$LASTEXITCODE)}
+          $args=@('openworker\scripts\case0003_apply_connector_review.py','--workspace',$env:CASE0003_WORKSPACE,'--revision-id',$env:CASE0003_REVISION_ID,'--receipt',$receipt)
+          $p=Start-Process -FilePath 'python' -ArgumentList $args -NoNewWindow -Wait -PassThru
+          if([int]$p.ExitCode -ne 4){throw ('expected TOOL_GAP exit 4 got '+$p.ExitCode)}
       - name: Govern step 180
         run: |
           $ErrorActionPreference='Stop'; $s='openworker\scripts\case_worklist_action.py'; $wlPath=Join-Path $env:CASE0003_WORKSPACE '.openworker\case-worklist.json'; $wl=Get-Content $wlPath -Raw|ConvertFrom-Json; $step=@($wl.steps|?{$_.step_id -eq '0003-180'})[0]; $receipt=Join-Path $env:CASE0003_WORKSPACE ('.openworker\reviews\'+$env:CASE0003_REVISION_ID+'\connector-llm-review-receipt.json')
           if([string]$step.status -eq 'READY'){ $exec="github:$env:GITHUB_RUN_ID:$env:GITHUB_RUN_ATTEMPT:apply-review"; python $s start --workspace-root $env:CASE0003_WORKSPACE --step-id 0003-180 --action-id openworker.review.apply --execution-id $exec; python $s record --workspace-root $env:CASE0003_WORKSPACE --step-id 0003-180 --key review_receipt --value $receipt; python $s record --workspace-root $env:CASE0003_WORKSPACE --step-id 0003-180 --key ledger_status --value TOOL_GAP_REWORK_REQUIRED; python $s record --workspace-root $env:CASE0003_WORKSPACE --step-id 0003-180 --key review_decision --value TOOL_GAP; python $s complete-action --workspace-root $env:CASE0003_WORKSPACE --step-id 0003-180 --action-id openworker.review.apply --execution-id $exec; python $s pass --workspace-root $env:CASE0003_WORKSPACE --step-id 0003-180 }
+          elseif([string]$step.status -ne 'PASSED'){throw ('unexpected step180 '+$step.status)}
           Write-Host 'CASE0003_REVIEW_CLOSED verdict=TOOL_GAP delivery_forbidden=true'
       - name: Upload governance evidence
         if: always()
