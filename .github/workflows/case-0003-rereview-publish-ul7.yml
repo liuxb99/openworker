@@ -82,7 +82,7 @@ jobs:
           if(Test-Path -LiteralPath $stage){Remove-Item -LiteralPath $stage -Recurse -Force}
           New-Item -ItemType Directory -Force $stage|Out-Null
           $zip=Join-Path $stage ('case-0003-'+$env:CASE0003_REVISION_ID+'-review-bundle.zip')
-          Compress-Archive -LiteralPath (Join-Path $env:CASE0003_REVIEW_BUNDLE '*') -DestinationPath $zip -CompressionLevel Optimal
+          Compress-Archive -Path (Join-Path $env:CASE0003_REVIEW_BUNDLE '*') -DestinationPath $zip -CompressionLevel Optimal
           if(-not (Test-Path -LiteralPath $zip -PathType Leaf) -or (Get-Item -LiteralPath $zip).Length -le 0){throw 'connector handoff ZIP missing/empty'}
           $zipSha=(Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
           $handoff=Join-Path $stage 'connector-handoff.json'
