@@ -1,0 +1,117 @@
+name: OpenWorker Apply LLM Review Receipt Win11
+
+on:
+  workflow_dispatch:
+    inputs:
+      workspace:
+        description: Absolute OpenWorker workspace path
+        required: true
+        type: string
+      work_code:
+        description: Authoritative WorkLedger work code
+        required: true
+        type: string
+      revision_id:
+        description: Exact reviewed WorkLedger revision id
+        required: true
+        type: string
+      receipt_path:
+        description: Absolute path to llm-review receipt JSON synchronized from Google Drive
+        required: true
+        type: string
+      assigned_host:
+        description: Exact COMPUTERNAME allowed to mutate this WorkLedger
+        required: true
+        type: string
+      runner_label:
+        description: Self-hosted runner routing label, for example UL7 or ODA
+        required: true
+        type: string
+      delivery_json:
+        description: Optional absolute delivery metadata JSON; blank means accept only
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openworker-llm-review-${{ inputs.work_code }}
+  cancel-in-progress: false
+
+jobs:
+  apply-review:
+    name: Apply immutable LLM review receipt
+    runs-on: [self-hosted, Windows, X64, '${{ inputs.runner_label }}']
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ". '{0}'"
+    steps:
+      - name: Verify assigned computer and bounded inputs
+        env:
+          OW_WORKSPACE: ${{ inputs.workspace }}
+          OW_ASSIGNED_HOST: ${{ inputs.assigned_host }}
+          OW_RECEIPT: ${{ inputs.receipt_path }}
+          OW_DELIVERY: ${{ inputs.delivery_json }}
+        run: |
+          $ErrorActionPreference='Stop'
+          if($env:COMPUTERNAME -ine $env:OW_ASSIGNED_HOST){
+            throw "OPENWORKER_ASSIGNED_HOST_MISMATCH host=$env:COMPUTERNAME assigned=$env:OW_ASSIGNED_HOST"
+          }
+          if(-not (Test-Path -LiteralPath $env:OW_WORKSPACE -PathType Container)){
+            throw "OPENWORKER_WORKSPACE_UNAVAILABLE $env:OW_WORKSPACE"
+          }
+          if(-not (Test-Path -LiteralPath $env:OW_RECEIPT -PathType Leaf) -or (Get-Item -LiteralPath $env:OW_RECEIPT).Length -le 0){
+            throw "OPENWORKER_RECEIPT_UNAVAILABLE $env:OW_RECEIPT"
+          }
+          if($env:OW_DELIVERY -and (-not (Test-Path -LiteralPath $env:OW_DELIVERY -PathType Leaf) -or (Get-Item -LiteralPath $env:OW_DELIVERY).Length -le 0)){
+            throw "OPENWORKER_DELIVERY_METADATA_UNAVAILABLE $env:OW_DELIVERY"
+          }
+          Write-Host "OPENWORKER_REVIEW_APPLY_HOST_OK host=$env:COMPUTERNAME runner=$env:RUNNER_NAME"
+
+      - name: Checkout OpenWorker main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: openworker
+
+      - name: Apply exact manifest-bound review receipt
+        env:
+          PYTHONPATH: ${{ github.workspace }}\openworker
+          OW_WORKSPACE: ${{ inputs.workspace }}
+          OW_WORK_CODE: ${{ inputs.work_code }}
+          OW_REVISION_ID: ${{ inputs.revision_id }}
+          OW_RECEIPT: ${{ inputs.receipt_path }}
+          OW_DELIVERY: ${{ inputs.delivery_json }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $args=@(
+            'openworker\scripts\openworker_apply_llm_review.py',
+            '--workspace',$env:OW_WORKSPACE,
+            '--work-code',$env:OW_WORK_CODE,
+            '--revision-id',$env:OW_REVISION_ID,
+            '--receipt',$env:OW_RECEIPT
+          )
+          if($env:OW_DELIVERY){$args += @('--delivery-json',$env:OW_DELIVERY)}
+          & python @args
+          $code=$LASTEXITCODE
+          if($code -eq 4){
+            Write-Host 'OPENWORKER_REVIEW_APPLY_NONPASS_RECORDED'
+            exit 0
+          }
+          if($code -ne 0){throw "OpenWorker review apply failed exit=$code"}
+          Write-Host 'OPENWORKER_REVIEW_APPLY_PASS'
+
+      - name: Upload bounded review apply evidence
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: openworker-llm-review-apply-${{ inputs.revision_id }}-${{ github.run_id }}
+          path: |
+            ${{ inputs.workspace }}\acceptance\openworker-review\llm-review-apply-${{ inputs.revision_id }}.json
+            ${{ inputs.workspace }}\.openworker\reviews\${{ inputs.revision_id }}\llm-review-receipt.json
+          if-no-files-found: warn
+          retention-days: 14
