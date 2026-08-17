@@ -2,10 +2,6 @@ name: Drain OpenWorker Queue Through Go Tool
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/bootstrap-ul7-runner-label.yml'
 
 permissions:
   contents: read
@@ -13,7 +9,7 @@ permissions:
 
 concurrency:
   group: openworker-queue-drain
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   drain:
