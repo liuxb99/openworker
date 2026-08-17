@@ -5,6 +5,7 @@ loop and preserve the diagnosis in the WorkLedger review receipt/rework event.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Any, Mapping, Sequence
 
@@ -14,6 +15,38 @@ from .work_ledger import WorkLedger
 
 class ReviewGapError(ReviewCycleError):
     pass
+
+
+def bundle_manifest_sha256(cycle: ReviewCycle, revision_id: str) -> str:
+    """Return the authoritative SHA256 of the immutable bundle manifest."""
+    manifest_path = cycle.review_dir / revision_id / "manifest.json"
+    if not manifest_path.is_file():
+        raise ReviewGapError(f"review manifest unavailable: {manifest_path}")
+    digest = hashlib.sha256()
+    try:
+        with manifest_path.open("rb") as fh:
+            for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except OSError as exc:
+        raise ReviewGapError(f"cannot hash review manifest: {exc}") from exc
+    return digest.hexdigest()
+
+
+def _bind_exact_bundle(cycle: ReviewCycle, revision_id: str, finding: Mapping[str, Any]) -> dict[str, Any]:
+    """Reject receipts that are missing or stale for the exact review bundle."""
+    expected = bundle_manifest_sha256(cycle, revision_id)
+    supplied = str(finding.get("bundle_manifest_sha256") or "").strip().lower()
+    if not supplied:
+        raise ReviewGapError("review finding requires bundle_manifest_sha256")
+    if len(supplied) != 64 or any(c not in "0123456789abcdef" for c in supplied):
+        raise ReviewGapError("bundle_manifest_sha256 must be a 64-character hex digest")
+    if supplied != expected:
+        raise ReviewGapError(
+            f"review finding is bound to a different bundle manifest: expected={expected} got={supplied}"
+        )
+    normalized = dict(finding)
+    normalized["bundle_manifest_sha256"] = expected
+    return normalized
 
 
 def _normalize_pass_coverage(cycle: ReviewCycle, revision_id: str, finding: Mapping[str, Any]) -> dict[str, Any]:
@@ -89,12 +122,14 @@ def apply_review_finding(
 ) -> dict[str, Any]:
     """Apply PASS/TUNE/TOOL_GAP with a strict semantic boundary.
 
-    PASS must cover every immutable artifact in the review request. TOOL_GAP
-    requires an owning repository, affected capability and a concrete
-    verification plan. It is normalized to the ReviewCycle FAIL path so the
-    authoritative WorkLedger enters REWORK_REQUIRED rather than pretending a
-    parameter-only rerun can repair missing capability.
+    Every finding must bind to the SHA256 of the exact immutable manifest for
+    this revision. PASS must additionally cover every immutable artifact in the
+    review request. TOOL_GAP requires an owning repository, affected capability
+    and a concrete verification plan. It is normalized to the ReviewCycle FAIL
+    path so the authoritative WorkLedger enters REWORK_REQUIRED rather than
+    pretending a parameter-only rerun can repair missing capability.
     """
+    finding = _bind_exact_bundle(cycle, revision_id, finding)
     verdict = str(finding.get("verdict") or "").strip().upper()
     if verdict == "PASS":
         finding = _normalize_pass_coverage(cycle, revision_id, finding)
@@ -156,4 +191,4 @@ def apply_review_finding(
     return result
 
 
-__all__ = ["ReviewGapError", "apply_review_finding"]
+__all__ = ["ReviewGapError", "apply_review_finding", "bundle_manifest_sha256"]
