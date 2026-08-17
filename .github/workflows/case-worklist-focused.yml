@@ -7,6 +7,7 @@ on:
     paths:
       - 'coworker/engineering/case_worklist.py'
       - 'scripts/case_worklist_action.py'
+      - 'scripts/verify_case_worklist.py'
       - 'case-worklists/**'
       - 'tests/test_case_worklist.py'
       - 'tests/test_case_worklist_cli.py'
@@ -28,9 +29,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install focused dependencies
-        run: python -m pip install pytest pytest-asyncio
-      - name: Run worklist regression
-        run: pytest tests/test_case_worklist.py tests/test_case_worklist_cli.py -q
+      - name: Run isolated worklist state-machine verifier
+        run: python scripts/verify_case_worklist.py
       - name: Compile worklist surface
-        run: python -m py_compile coworker/engineering/case_worklist.py scripts/case_worklist_action.py
+        run: python -m py_compile coworker/engineering/case_worklist.py scripts/case_worklist_action.py scripts/verify_case_worklist.py
