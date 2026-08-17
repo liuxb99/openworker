@@ -1,0 +1,57 @@
+name: Bootstrap O87 Runner Label
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/bootstrap-o87-runner-label.yml'
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        slot: [1,2,3,4,5,6,7,8,9,10,11,12]
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 5
+    defaults:
+      run:
+        shell: powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ". '{0}'"
+    steps:
+      - name: Probe machine and repair O87 label when possible
+        env:
+          GH_REPO: liuxb99/openworker
+        run: |
+          $ErrorActionPreference='Stop'
+          Write-Host "O87_BOOTSTRAP_PROBE slot=${{ matrix.slot }} machine=$env:COMPUTERNAME runner=$env:RUNNER_NAME"
+          if($env:COMPUTERNAME -ine 'DESKTOP-O87PJNR'){
+            Write-Host 'O87_BOOTSTRAP_NOT_TARGET'
+            exit 0
+          }
+          Write-Host 'O87_BOOTSTRAP_TARGET_FOUND'
+          if(-not (Get-Command gh -ErrorAction SilentlyContinue)){throw 'gh CLI unavailable on O87'}
+          gh auth status
+          if($LASTEXITCODE -ne 0){throw 'gh CLI is not authenticated on O87'}
+          $raw = gh api "repos/$env:GH_REPO/actions/runners?per_page=100"
+          if($LASTEXITCODE -ne 0){throw 'cannot list repository runners with O87 gh authority'}
+          $payload = $raw | ConvertFrom-Json
+          $matches = @($payload.runners | Where-Object { $_.name -eq $env:RUNNER_NAME -or $_.name -like 'DESKTOP-O87PJNR*' })
+          if($matches.Count -lt 1){throw "O87 runner registration not found for RUNNER_NAME=$env:RUNNER_NAME"}
+          foreach($runner in $matches){
+            $existing=@($runner.labels | ForEach-Object { [string]$_.name })
+            if($existing -contains 'O87'){
+              Write-Host "O87_LABEL_ALREADY_PRESENT runner=$($runner.name) id=$($runner.id)"
+              continue
+            }
+            $labels=@($existing + 'O87' | Sort-Object -Unique)
+            $body=@{labels=$labels}|ConvertTo-Json -Compress
+            $body | gh api --method PUT -H 'Accept: application/vnd.github+json' "repos/$env:GH_REPO/actions/runners/$($runner.id)/labels" --input - | Out-Host
+            if($LASTEXITCODE -ne 0){throw "failed to set O87 label on runner $($runner.name) id=$($runner.id)"}
+            Write-Host "O87_LABEL_SET runner=$($runner.name) id=$($runner.id) labels=$($labels -join ',')"
+          }
+          Write-Host 'O87_BOOTSTRAP_PASS'
