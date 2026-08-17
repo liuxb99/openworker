@@ -118,7 +118,7 @@ def main(argv: list[str] | None = None) -> int:
                 return 2
 
         # Mechanical checks passed. Deliberately create a pending semantic check;
-        # accept_revision() must therefore remain impossible until an LLM receipt is applied.
+        # final acceptance remains impossible until an LLM receipt is applied.
         ledger.set_check(
             revision_id,
             name="LLM Semantic Review",
