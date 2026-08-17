@@ -27,7 +27,7 @@ env:
 jobs:
   publish:
     name: Publish immutable Case 0003 review bundle to Google Drive API
-    runs-on: [self-hosted, Windows, X64]
+    runs-on: [self-hosted, Windows, X64, UL7]
     timeout-minutes: 15
     defaults:
       run:
