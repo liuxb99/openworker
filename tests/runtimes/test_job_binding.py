@@ -26,7 +26,6 @@ def test_job_binding_persists_host_workspace_and_scope(tmp_path: Path, monkeypat
     payload = json.loads(store.path.read_text(encoding="utf-8"))
     assert payload["schema_version"] == "openworker.job-binding.v1"
 
-    # Every fixed OpenWorker job is born with its durable mini-Git ledger.
     ledger_path = tmp_path / ".openworker" / "work-ledger.sqlite"
     assert ledger_path.is_file()
     snapshot = WorkLedgerBridge(tmp_path).snapshot(loaded)
@@ -85,3 +84,77 @@ def test_work_ledger_bridge_tracks_physical_artifact_and_rework(tmp_path: Path, 
     assert snapshot["revisions"][0]["artifacts"][0]["logical_name"] == "terrain-render"
     assert snapshot["revisions"][0]["status"] == "rework_required"
     assert snapshot["revisions"][1]["parent_revision_id"] == snapshot["revisions"][0]["revision_id"]
+
+
+def test_resume_replays_project_knowledge_failure_and_repair_into_revisions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("COMPUTERNAME", "DESKTOP-A")
+    store = JobBindingStore(tmp_path)
+    binding = store.create(EngineeringScope("prj-3", "CASE-0003", "job-3", "0003-YUJING-BRIDGE"))
+    root = tmp_path / ".openworker"
+    events = root / "project-knowledge.jsonl"
+
+    failure = {
+        "schema_version": "openworker.project-knowledge-event.v1",
+        "sequence": 1,
+        "timestamp": "2026-08-17T00:00:00+00:00",
+        "project_id": "prj-3",
+        "job_id": "job-3",
+        "kind": "failed",
+        "stage": "final-acceptance",
+        "summary": "SceneX reopen verification failed",
+        "status": "failed",
+        "owner": "OpenWorker",
+        "capability_id": "scenex.region.reopen",
+        "evidence": [],
+        "blockers": ["SceneX reopen failed"],
+        "decisions": [],
+        "next_actions": ["repair SceneX"],
+        "details": {
+            "gap_owner_repo": "liuxb99/SceneX",
+            "changed_contracts": ["scenex.region.reopen"],
+            "verification_plan": ["rerun REAL reopen"],
+        },
+        "event_id": "evt-fail",
+        "runtime": "github-actions",
+        "session_id": "",
+        "runtime_job_id": "951",
+        "execution_id": "",
+        "prompt_id": "",
+        "artifact_refs": [],
+        "artifact_disposition": "",
+    }
+    events.write_text(json.dumps(failure) + "\n", encoding="utf-8")
+
+    # Loading/resuming the fixed job replays unsynced history before returning.
+    store.load()
+    snapshot = WorkLedgerBridge(tmp_path).snapshot(binding)
+    assert snapshot["revisions"][0]["status"] == "rework_required"
+    assert snapshot["revisions"][0]["gap_owner_repo"] == "liuxb99/SceneX"
+
+    repair = dict(failure)
+    repair.update(
+        sequence=2,
+        kind="progress",
+        status="running",
+        summary="repair SceneX and rerun",
+        event_id="evt-repair",
+        blockers=[],
+        details={},
+    )
+    with events.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(repair) + "\n")
+
+    store.load()
+    snapshot = WorkLedgerBridge(tmp_path).snapshot(binding)
+    assert len(snapshot["revisions"]) == 2
+    assert snapshot["revisions"][0]["status"] == "rework_required"
+    assert snapshot["revisions"][1]["kind"] == "rework"
+    assert snapshot["revisions"][1]["parent_revision_id"] == snapshot["revisions"][0]["revision_id"]
+    assert snapshot["revisions"][1]["status"] == "executing"
+
+    # Repeated resumes are idempotent: already-projected events do not fork again.
+    store.load()
+    again = WorkLedgerBridge(tmp_path).snapshot(binding)
+    assert len(again["revisions"]) == 2
+    synced_lines = (root / "work-ledger-project-events.jsonl").read_text(encoding="utf-8").splitlines()
+    assert len(synced_lines) == 2
