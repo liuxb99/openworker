@@ -111,3 +111,5 @@ jobs:
           git push --force-with-lease origin ("HEAD:refs/heads/"+$env:CASE0003_HANDOFF_BRANCH)
           if($LASTEXITCODE -ne 0){throw 'failed to publish private review handoff branch'}
           Write-Host "CASE0003_PRIVATE_HANDOFF_PUBLISHED branch=$env:CASE0003_HANDOFF_BRANCH revision=$env:CASE0003_REVISION_ID"
+
+# trigger nonce: 2026-08-17 exact-review-branch-handoff-1
