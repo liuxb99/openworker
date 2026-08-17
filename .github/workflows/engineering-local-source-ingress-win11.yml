@@ -83,10 +83,13 @@ jobs:
           go-version-file: ${{ steps.osroot.outputs.go_mod }}
           cache: false
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
+      - name: Verify O87 system Python
+        run: |
+          $version = python -c "import sys; print('.'.join(map(str, sys.version_info[:3])))"
+          if ($LASTEXITCODE -ne 0) { throw 'system python unavailable on O87' }
+          python -c "import sys; assert sys.version_info >= (3,10), sys.version"
+          if ($LASTEXITCODE -ne 0) { throw "O87 system Python too old: $version" }
+          Write-Host "O87_SYSTEM_PYTHON_OK version=$version"
 
       - name: Install OpenWorker
         working-directory: openworker
