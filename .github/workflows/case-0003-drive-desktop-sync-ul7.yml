@@ -81,7 +81,7 @@ jobs:
           $temp=$dest+'.partial'
           if(Test-Path -LiteralPath $temp){Remove-Item -LiteralPath $temp -Recurse -Force}
           New-Item -ItemType Directory -Path $temp -Force|Out-Null
-          Copy-Item -LiteralPath (Join-Path $env:CASE0003_REVIEW_BUNDLE '*') -Destination $temp -Recurse -Force
+          Copy-Item -Path (Join-Path $env:CASE0003_REVIEW_BUNDLE '*') -Destination $temp -Recurse -Force
           $sourceFiles=Get-ChildItem -LiteralPath $env:CASE0003_REVIEW_BUNDLE -File -Recurse
           foreach($src in $sourceFiles){
             $rel=$src.FullName.Substring($env:CASE0003_REVIEW_BUNDLE.Length).TrimStart('\')
@@ -116,3 +116,5 @@ jobs:
           path: D:\AI-Work\jobs\0003-YUJING-BRIDGE\.openworker\reviews\**\drive-desktop-handoff.json
           if-no-files-found: warn
           retention-days: 14
+
+# trigger nonce: 2026-08-17 latest-repaired-revision
