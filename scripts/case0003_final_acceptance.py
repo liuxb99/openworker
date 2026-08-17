@@ -1,9 +1,9 @@
 """Case 0003 玉井橋 OpenWorker REAL final acceptance.
 
 This is intentionally a consumer-side acceptance gate. It does not trust old
-workflow conclusions. It re-opens/reads physical outputs, records them in the
-Git-like WorkLedger, and fails closed into REWORK_REQUIRED on the first rejected
-required check.
+workflow conclusions. It re-opens/reads physical outputs, records them in a
+fresh Git-like WorkLedger child revision, and fails closed into REWORK_REQUIRED
+on the first rejected required check.
 """
 from __future__ import annotations
 
@@ -20,7 +20,6 @@ from typing import Any, Callable
 
 from coworker.runtimes.engineering_scope import EngineeringScope
 from coworker.runtimes.job_binding import JobBindingStore
-from coworker.runtimes.work_ledger_bridge import WorkLedgerBridge
 from coworker.work_ledger import WorkLedger, WorkLedgerError
 
 PROJECT_ID = "prj_ba726e251d380d72507e2172d4946d78"
@@ -124,6 +123,12 @@ def _ensure_binding(workspace: Path):
 
 
 def _prepare_revision(workspace: Path, binding) -> tuple[WorkLedger, dict[str, Any], str]:
+    """Create one immutable child revision per Final Acceptance attempt.
+
+    Never mix fresh acceptance artifacts/checks into the current progress revision.
+    If HEAD is REWORK_REQUIRED, the new attempt is a rework child; otherwise it is
+    an acceptance child. This keeps every physical re-check comparable and auditable.
+    """
     ledger = WorkLedger(workspace / ".openworker" / "work-ledger.sqlite")
     work = ledger.get_work_by_code(binding.job_code)
     head_id = str(work["head_revision_id"] or "")
@@ -131,47 +136,47 @@ def _prepare_revision(workspace: Path, binding) -> tuple[WorkLedger, dict[str, A
         ledger.close()
         raise AcceptanceFailure("WorkLedger has no HEAD")
     head = ledger.get_revision(head_id)
+    plan = {
+        "case_id": "0003",
+        "gate": "REAL_FINAL_ACCEPTANCE",
+        "github_run_id": os.environ.get("GITHUB_RUN_ID", ""),
+        "assigned_host": ASSIGNED_HOST,
+    }
     if head["status"] == "rework_required":
-        head = ledger.open_rework(
+        attempt = ledger.open_rework(
             head_id,
             goal="Case 0003 OpenWorker REAL Final Acceptance after rework",
-            plan={"case_id": "0003", "gate": "REAL_FINAL_ACCEPTANCE"},
+            plan=plan,
+            reason=head.get("reason", ""),
+            gap_owner_repo=head.get("gap_owner_repo", ""),
         )
-        head_id = head["revision_id"]
-    elif head["status"] == "accepted":
-        head = ledger.open_revision(
+    else:
+        attempt = ledger.open_revision(
             work["work_id"],
-            kind="progress",
-            goal="Case 0003 OpenWorker fresh REAL regression acceptance",
-            plan={"case_id": "0003", "gate": "REAL_FINAL_ACCEPTANCE"},
+            kind="acceptance",
+            goal="Case 0003 OpenWorker fresh REAL Final Acceptance",
+            plan=plan,
+            parent_revision_id=head_id,
         )
-        head_id = head["revision_id"]
-    elif head["status"] in {"failed", "superseded"}:
-        head = ledger.open_revision(
-            work["work_id"],
-            kind="progress",
-            goal="Case 0003 OpenWorker REAL Final Acceptance",
-            plan={"case_id": "0003", "gate": "REAL_FINAL_ACCEPTANCE"},
-        )
-        head_id = head["revision_id"]
-    current = ledger.get_revision(head_id)
-    if current["status"] in {"open", "executing", "blocked"}:
-        ledger.set_revision_status(head_id, "verifying", reason="OpenWorker REAL Final Acceptance running")
-    return ledger, work, head_id
+    revision_id = str(attempt["revision_id"])
+    ledger.set_revision_status(
+        revision_id,
+        "verifying",
+        reason="OpenWorker REAL Final Acceptance running",
+    )
+    return ledger, work, revision_id
 
 
 def _record_artifact(ledger: WorkLedger, revision_id: str, name: str, path: Path, **provenance: Any) -> None:
-    try:
-        ledger.add_file_artifact(
-            revision_id,
-            logical_name=name,
-            path=path,
-            provenance={"case_id": "0003", **provenance},
-            verification_status="passed",
-        )
-    except WorkLedgerError as exc:
-        if "already exists in revision" not in str(exc):
-            raise
+    # A Final Acceptance attempt owns a fresh child revision, so duplicate names in
+    # that revision are programming errors rather than something to silently ignore.
+    ledger.add_file_artifact(
+        revision_id,
+        logical_name=name,
+        path=path,
+        provenance={"case_id": "0003", **provenance},
+        verification_status="passed",
+    )
 
 
 def _check_dtm(workspace: Path, ledger: WorkLedger, revision_id: str) -> dict[str, Any]:
@@ -185,7 +190,7 @@ def _check_dtm(workspace: Path, ledger: WorkLedger, revision_id: str) -> dict[st
         raise AcceptanceFailure(f"DTM SQLite reopen failed: {exc}") from exc
     if quick.lower() != "ok" or table_count <= 0:
         raise AcceptanceFailure(f"DTM SQLite rejected quick_check={quick} tables={table_count}")
-    _record_artifact(ledger, revision_id, "dtm-catalog.sqlite", path, historical_run=HISTORICAL_RUNS["DTM"])
+    _record_artifact(ledger, revision_id, "dtm-catalog.sqlite", path, historical_run=HISTORICAL_RUNS["DTM"], scope="shared-canonical-external")
     return {"quick_check": quick, "table_count": table_count, "path": str(path)}
 
 
@@ -220,8 +225,8 @@ def _check_blender(workspace: Path, ledger: WorkLedger, revision_id: str, accept
     if width <= 0 or height <= 0:
         raise AcceptanceFailure("Blender render dimensions invalid")
 
-    evidence = acceptance_dir / "blender-reopen-evidence.json"
-    probe = acceptance_dir / "blender_reopen_probe.py"
+    evidence = acceptance_dir / f"blender-reopen-evidence-{revision_id}.json"
+    probe = acceptance_dir / f"blender_reopen_probe_{revision_id}.py"
     probe.write_text(
         "import bpy,json,os\n"
         "out=os.environ['CASE0003_BLENDER_REOPEN_EVIDENCE']\n"
@@ -247,7 +252,7 @@ def _check_blender(workspace: Path, ledger: WorkLedger, revision_id: str, accept
         )
     except subprocess.TimeoutExpired as exc:
         raise AcceptanceFailure("Blender REAL reopen exceeded 300 seconds") from exc
-    (acceptance_dir / "blender-reopen.log").write_text(completed.stdout or "", encoding="utf-8")
+    (acceptance_dir / f"blender-reopen-{revision_id}.log").write_text(completed.stdout or "", encoding="utf-8")
     if completed.returncode != 0:
         raise AcceptanceFailure(f"Blender REAL reopen failed exit={completed.returncode}")
     ev = _json_file(evidence)
@@ -318,18 +323,21 @@ def main(argv: list[str] | None = None) -> int:
         raise AcceptanceFailure(f"workspace unavailable: {workspace}")
     acceptance_dir = workspace / "acceptance" / "openworker-final"
     acceptance_dir.mkdir(parents=True, exist_ok=True)
-    result_path = acceptance_dir / "work-ledger-final-acceptance.json"
 
     binding = _ensure_binding(workspace)
-    # Resuming the binding also replays unsynced ProjectKnowledge events into the ledger.
+    # Loading again is intentional: it proves resume/replay is idempotent before
+    # creating the dedicated Final Acceptance child revision.
     JobBindingStore(workspace).load()
     ledger, work, revision_id = _prepare_revision(workspace, binding)
+    result_path = acceptance_dir / f"work-ledger-final-acceptance-{revision_id}.json"
+    latest_path = acceptance_dir / "work-ledger-final-acceptance.json"
     results: dict[str, Any] = {
         "schema_version": "openworker-case0003-final-acceptance/v1",
         "case_id": "0003",
         "workspace": str(workspace),
         "computer_name": JobBindingStore.current_host(),
         "revision_id": revision_id,
+        "parent_revision_id": ledger.get_revision(revision_id).get("parent_revision_id"),
         "checks": {},
         "ok": False,
     }
@@ -371,7 +379,9 @@ def main(argv: list[str] | None = None) -> int:
                 results["gap_owner_repo"] = OWNERS[name]
                 results["reason"] = reason
                 results["ledger"] = ledger.snapshot(work["work_id"])
-                result_path.write_text(json.dumps(results, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+                payload = json.dumps(results, ensure_ascii=False, indent=2, default=str)
+                result_path.write_text(payload, encoding="utf-8")
+                latest_path.write_text(payload, encoding="utf-8")
                 print(f"CASE0003_OPENWORKER_REWORK_REQUIRED check={name} owner={OWNERS[name]} reason={reason}")
                 return 2
 
@@ -391,7 +401,9 @@ def main(argv: list[str] | None = None) -> int:
         results["accepted_revision_id"] = accepted["revision_id"]
         results["delivered_revision_id"] = delivered["delivered_revision_id"]
         results["ledger"] = ledger.snapshot(work["work_id"])
-        result_path.write_text(json.dumps(results, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+        payload = json.dumps(results, ensure_ascii=False, indent=2, default=str)
+        result_path.write_text(payload, encoding="utf-8")
+        latest_path.write_text(payload, encoding="utf-8")
         print(f"CASE0003_OPENWORKER_FINAL_ACCEPTANCE_PASS revision={revision_id}")
         return 0
     finally:
