@@ -45,6 +45,7 @@ def load_request(path: Path) -> dict[str, Any]:
     data["name_patterns"] = [str(v) for v in name_patterns if str(v).strip()]
     data["max_depth"] = int(data.get("max_depth", 8))
     data["max_size_matches"] = int(data.get("max_size_matches", 256))
+    data["prefer_existing_canonical"] = bool(data.get("prefer_existing_canonical", False))
     if data["max_depth"] < 0 or data["max_depth"] > 20:
         raise RuntimeError("max_depth must be between 0 and 20")
     if data["max_size_matches"] <= 0 or data["max_size_matches"] > 4096:
@@ -89,13 +90,6 @@ def bounded_recursive_candidates(
     max_depth: int,
     max_size_matches: int,
 ) -> tuple[list[Path], list[dict[str, Any]]]:
-    """Discover only name+size candidates before any SHA256 work.
-
-    A broad pattern such as *.dwg is safe here because every matching file is
-    stat'ed, but only files whose byte length exactly equals expected_size are
-    returned for hashing.  This prevents the candidate cap from being consumed
-    by unrelated DWGs and avoids hashing whole engineering roots.
-    """
     found: list[Path] = []
     roots_evidence: list[dict[str, Any]] = []
     for raw_root in roots:
@@ -160,6 +154,48 @@ def inspect(path: Path, expected_size: int) -> dict[str, Any]:
     return item
 
 
+def exact_match(item: dict[str, Any], expected_sha: str, expected_header: str) -> bool:
+    if not item.get("size_match"):
+        return False
+    item["sha256_match"] = item.get("sha256") == expected_sha
+    item["header_match"] = (not expected_header) or str(item.get("header", "")).startswith(expected_header)
+    return bool(item["sha256_match"] and item["header_match"])
+
+
+def canonical_workspace_match(
+    request: dict[str, Any], expected_size: int, expected_sha: str, expected_header: str
+) -> dict[str, Any] | None:
+    if not request.get("prefer_existing_canonical"):
+        return None
+    workspace = str(request.get("workspace_root", "") or "").strip()
+    canonical_name = str(request.get("canonical_name", "") or "").strip()
+    if not workspace or not canonical_name:
+        raise RuntimeError("prefer_existing_canonical requires workspace_root and canonical_name")
+    path = (Path(workspace).expanduser().resolve() / "input" / canonical_name).resolve()
+    if not path.is_file():
+        return None
+    item = inspect(path, expected_size)
+    if not exact_match(item, expected_sha, expected_header):
+        raise RuntimeError(f"existing canonical source identity mismatch: {path}")
+    item["authority"] = "canonical_workspace"
+    return item
+
+
+def write_evidence(result: dict[str, Any], evidence: Path) -> None:
+    evidence.parent.mkdir(parents=True, exist_ok=True)
+    temp = evidence.with_suffix(".tmp")
+    temp.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    os.replace(temp, evidence)
+
+
+def publish_outputs(source_path: str, evidence: Path) -> None:
+    output = os.environ.get("GITHUB_OUTPUT", "").strip()
+    if output:
+        with open(output, "a", encoding="utf-8") as handle:
+            handle.write(f"source_path={source_path}\n")
+            handle.write(f"evidence_path={evidence}\n")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--request", required=True)
@@ -174,10 +210,32 @@ def main() -> int:
     expected_size = int(request["expected_size"])
     expected_sha = request["expected_sha256"]
     expected_header = str(request.get("expected_header", "") or "").strip()
+    evidence = Path(args.evidence).resolve()
+
+    canonical = canonical_workspace_match(request, expected_size, expected_sha, expected_header)
+    if canonical is not None:
+        result = {
+            "schema_version": "openworker.source-locator-evidence.v4",
+            "assigned_host": assigned,
+            "actual_host": host,
+            "expected_size": expected_size,
+            "expected_sha256": expected_sha,
+            "expected_header": expected_header,
+            "authority": "canonical_workspace",
+            "physical_checked_count": 1,
+            "checked": [canonical],
+            "matched": True,
+            "source_path": canonical["path"],
+        }
+        write_evidence(result, evidence)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print(f"SOURCE_LOCATOR_CANONICAL_MATCH path={canonical['path']} sha256={expected_sha}")
+        publish_outputs(canonical["path"], evidence)
+        return 0
+
     checked: list[dict[str, Any]] = []
     matches: list[dict[str, Any]] = []
     seen: set[str] = set()
-
     discovered, roots_evidence = bounded_recursive_candidates(
         request["search_roots"],
         request["name_patterns"],
@@ -200,24 +258,22 @@ def main() -> int:
         except (OSError, PermissionError) as exc:
             checked.append({"path": str(path), "error": str(exc)})
             continue
-        if item["size_match"]:
-            item["sha256_match"] = item["sha256"] == expected_sha
-            item["header_match"] = (not expected_header) or str(item["header"]).startswith(expected_header)
-        checked.append(item)
-        if item.get("size_match") and item.get("sha256_match") and item.get("header_match"):
+        if exact_match(item, expected_sha, expected_header):
             matches.append(item)
+        checked.append(item)
 
     if len(matches) > 1:
         unique_paths = {os.path.normcase(item["path"]) for item in matches}
         if len(unique_paths) > 1:
             raise RuntimeError(f"ambiguous exact source: {len(matches)} matching files")
     result = {
-        "schema_version": "openworker.source-locator-evidence.v3",
+        "schema_version": "openworker.source-locator-evidence.v4",
         "assigned_host": assigned,
         "actual_host": host,
         "expected_size": expected_size,
         "expected_sha256": expected_sha,
         "expected_header": expected_header,
+        "authority": "discovered_source" if matches else "",
         "candidate_count": len(request["candidate_paths"]),
         "search_root_count": len(request["search_roots"]),
         "name_patterns": request["name_patterns"],
@@ -227,19 +283,11 @@ def main() -> int:
         "matched": bool(matches),
         "source_path": matches[0]["path"] if matches else "",
     }
-    evidence = Path(args.evidence).resolve()
-    evidence.parent.mkdir(parents=True, exist_ok=True)
-    temp = evidence.with_suffix(".tmp")
-    temp.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    os.replace(temp, evidence)
+    write_evidence(result, evidence)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     if matches:
         print(f"SOURCE_LOCATOR_EXACT_MATCH path={matches[0]['path']} sha256={expected_sha}")
-        output = os.environ.get("GITHUB_OUTPUT", "").strip()
-        if output:
-            with open(output, "a", encoding="utf-8") as handle:
-                handle.write(f"source_path={matches[0]['path']}\n")
-                handle.write(f"evidence_path={evidence}\n")
+        publish_outputs(matches[0]["path"], evidence)
         return 0
     print("SOURCE_LOCATOR_NO_MATCH", file=sys.stderr)
     return 3
