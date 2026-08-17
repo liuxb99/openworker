@@ -5,7 +5,7 @@ import json
 import pytest
 
 from coworker.review_cycle import ReviewArtifact, ReviewCycle
-from coworker.review_gap import ReviewGapError, apply_review_finding
+from coworker.review_gap import ReviewGapError, apply_review_finding, bundle_manifest_sha256
 from coworker.work_ledger import WorkLedger
 
 
@@ -42,7 +42,12 @@ def test_pass_rejects_partial_review_bundle(tmp_path):
             cycle,
             ledger,
             rid,
-            {"verdict": "PASS", "summary": "looks good", "reviewed_artifacts": [{"logical_name": "scene"}]},
+            {
+                "verdict": "PASS",
+                "bundle_manifest_sha256": bundle_manifest_sha256(cycle, rid),
+                "summary": "looks good",
+                "reviewed_artifacts": [{"logical_name": "scene"}],
+            },
             allowed_parameter_keys=[],
             current_parameters={},
         )
@@ -58,6 +63,7 @@ def test_pass_enriches_every_reviewed_artifact_with_authoritative_sha(tmp_path):
         rid,
         {
             "verdict": "PASS",
+            "bundle_manifest_sha256": bundle_manifest_sha256(cycle, rid),
             "summary": "all review artifacts accepted",
             "reviewed_artifacts": [
                 {"logical_name": "delivery"},
