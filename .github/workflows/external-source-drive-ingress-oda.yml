@@ -98,6 +98,16 @@ jobs:
           $code|python -
           if($LASTEXITCODE -ne 0){throw 'Drive ingress credential-source inspection failed'}
 
+      - name: Resolve readable user-scoped Drive credential store
+        id: credential_store
+        env:
+          PYTHONPATH: ${{ github.workspace }}\openworker
+        run: |
+          $ErrorActionPreference='Stop'
+          python openworker\scripts\resolve_drive_credential_store.py --github-output $env:GITHUB_OUTPUT
+          if($LASTEXITCODE -ne 0){throw 'user-scoped Drive credential-store probe failed'}
+          Write-Host "DRIVE_INGRESS_USER_STORE_PROBE matches=${{ steps.credential_store.outputs.match_count }} inspected=${{ steps.credential_store.outputs.inspected_count }}"
+
       - name: Download and atomically publish immutable Drive file
         env:
           PYTHONPATH: ${{ github.workspace }}\openworker
@@ -105,6 +115,11 @@ jobs:
         run: |
           $ErrorActionPreference='Stop'
           function Decode([string]$value){ return [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($value)) }
+          $stateDirB64='${{ steps.credential_store.outputs.state_dir_b64 }}'
+          if(-not [string]::IsNullOrWhiteSpace($stateDirB64)){
+            $env:COWORKER_STATE_DIR=Decode $stateDirB64
+            Write-Host 'DRIVE_INGRESS_USING_RESOLVED_USER_STORE=true'
+          }
           $requestId=Decode '${{ steps.request.outputs.request_id }}'
           $fileId=Decode '${{ steps.request.outputs.file_id }}'
           $sha=Decode '${{ steps.request.outputs.sha }}'
