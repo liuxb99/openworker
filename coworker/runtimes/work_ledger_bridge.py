@@ -1,9 +1,8 @@
 """Bind every fixed OpenWorker job to the Git-like WorkLedger.
 
 The bridge keeps lifecycle ownership in OpenWorker: creating a JobBinding creates
-its durable mini-Git ledger automatically. Higher-level runtimes can then attach
-physical artifacts, verification failures, rework and acceptance without case-
-specific bookkeeping.
+its durable mini-Git ledger automatically. Higher-level runtimes attach physical
+artifacts, verification failures and rework without case-specific bookkeeping.
 """
 from __future__ import annotations
 
@@ -12,6 +11,10 @@ from typing import Any, Mapping, Sequence
 
 from ..work_ledger import WorkLedger, WorkLedgerError
 from .job_binding import JobBinding
+
+_FAILURE_KINDS = {"failed", "failure", "rework_required", "rework-required"}
+_FAILURE_STATUSES = {"failed", "failure", "rework_required", "rework-required"}
+_REPAIR_KINDS = {"repaired", "repair", "progress", "executing", "retry"}
 
 
 class WorkLedgerBridge:
@@ -44,6 +47,101 @@ class WorkLedgerBridge:
         ledger = WorkLedger(self.path)
         try:
             work = ledger.get_work_by_code(binding.job_code)
+            return ledger.snapshot(work["work_id"])
+        finally:
+            ledger.close()
+
+    def sync_project_event(self, binding: JobBinding, event: Any) -> dict[str, Any]:
+        """Project a ProjectKnowledge event into the authoritative revision chain.
+
+        This deliberately does not auto-accept a revision. Completion/accepted
+        natural-language events may move a mutable revision to verifying, but only
+        the WorkLedger required-check gate may move the protected accepted pointer.
+        """
+        ledger = WorkLedger(self.path)
+        try:
+            try:
+                work = ledger.get_work_by_code(binding.job_code)
+            except WorkLedgerError:
+                work = ledger.create_work(
+                    code=binding.job_code,
+                    title=f"{binding.project_code} / {binding.job_code}",
+                    workspace=str(self.workspace),
+                )
+
+            head_id = str(work["head_revision_id"] or "")
+            if not head_id:
+                raise WorkLedgerError("work has no HEAD revision")
+            head = ledger.get_revision(head_id)
+            kind = str(getattr(event, "kind", "") or "").strip().lower()
+            status = str(getattr(event, "status", "") or "").strip().lower()
+            summary = str(getattr(event, "summary", "") or "").strip()
+            details = dict(getattr(event, "details", {}) or {})
+
+            # A new progress/repair event after a recorded failure must create a
+            # child revision first. The failed revision is never mutated in place.
+            if head["status"] == "rework_required" and kind in _REPAIR_KINDS:
+                head = ledger.open_rework(
+                    head_id,
+                    goal=summary,
+                    plan={"source_event_id": str(getattr(event, "event_id", "") or "")},
+                    reason=head.get("reason", ""),
+                    gap_owner_repo=head.get("gap_owner_repo", ""),
+                )
+                head_id = head["revision_id"]
+
+            # Materialize physical artifact refs into the current revision. Only
+            # paths that actually exist as non-empty files are authoritative.
+            for index, ref in enumerate(tuple(getattr(event, "artifact_refs", ()) or ())):
+                candidate = Path(str(ref)).expanduser()
+                if not candidate.is_absolute():
+                    candidate = self.workspace / candidate
+                if not candidate.is_file() or candidate.stat().st_size <= 0:
+                    continue
+                logical_name = candidate.name or f"artifact-{index + 1}"
+                try:
+                    ledger.add_file_artifact(
+                        head_id,
+                        logical_name=logical_name,
+                        path=candidate,
+                        provenance={
+                            "source": "ProjectKnowledgeStore",
+                            "event_id": str(getattr(event, "event_id", "") or ""),
+                            "capability_id": str(getattr(event, "capability_id", "") or ""),
+                            "runtime_job_id": str(getattr(event, "runtime_job_id", "") or ""),
+                        },
+                        verification_status="passed",
+                    )
+                except WorkLedgerError as exc:
+                    # Re-recording exactly the same logical artifact in one
+                    # revision is not a new tree; any real replacement still
+                    # requires a child revision and remains fail-closed elsewhere.
+                    if "already exists in revision" not in str(exc):
+                        raise
+
+            if kind in _FAILURE_KINDS or status in _FAILURE_STATUSES:
+                current = ledger.get_revision(head_id)
+                if current["status"] != "rework_required":
+                    reason = summary or "project knowledge verification failure"
+                    gap_owner_repo = str(details.get("gap_owner_repo") or details.get("owner_repo") or "").strip()
+                    changed_contracts = tuple(str(v) for v in details.get("changed_contracts", ()) if str(v).strip())
+                    verification_plan = tuple(str(v) for v in details.get("verification_plan", ()) if str(v).strip())
+                    ledger.request_rework(
+                        head_id,
+                        reason=reason,
+                        gap_owner_repo=gap_owner_repo,
+                        changed_contracts=changed_contracts,
+                        verification_plan=verification_plan,
+                    )
+            elif status in {"executing", "in_progress", "in-progress", "running"}:
+                current = ledger.get_revision(head_id)
+                if current["status"] in {"open", "blocked", "verifying"}:
+                    ledger.set_revision_status(head_id, "executing", reason=summary)
+            elif kind in {"completed", "accepted"} or status in {"completed", "accepted", "success", "succeeded"}:
+                current = ledger.get_revision(head_id)
+                if current["status"] in {"open", "executing", "blocked"}:
+                    ledger.set_revision_status(head_id, "verifying", reason=summary)
+
             return ledger.snapshot(work["work_id"])
         finally:
             ledger.close()
