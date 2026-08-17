@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from coworker.engineering.case_worklist import (
+from coworker.case_worklist import (
     CaseStep,
     CaseWorklist,
     CaseWorklistError,
