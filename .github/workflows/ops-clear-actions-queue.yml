@@ -40,3 +40,5 @@ jobs:
             exit 1
           fi
           echo 'OPENWORKER_QUEUE_CLEAR_PASS'
+
+# queue-clear trigger: 2026-08-17 case0002
