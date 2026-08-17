@@ -36,29 +36,6 @@ jobs:
         with:
           path: openworker
 
-      - name: Checkout AI-Engineering-OS
-        uses: actions/checkout@v4
-        with:
-          repository: liuxb99/AI-Engineering-OS
-          ref: main
-          path: ai-engineering-os
-          token: ${{ secrets.GH_TOKEN }}
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: ai-engineering-os/go.mod
-          cache: false
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install OpenWorker
-        working-directory: openworker
-        run: python -m pip install --disable-pip-version-check -e .
-
       - name: Gate Case 0004 canonical source ingress step
         id: worklist
         working-directory: openworker
@@ -71,6 +48,51 @@ jobs:
             --execution-id $execution
           [System.IO.File]::AppendAllText($env:GITHUB_OUTPUT, "execution_id=$execution`n", (New-Object System.Text.UTF8Encoding($false)))
 
+      - name: Resolve O87 local AI-Engineering-OS authority
+        id: osroot
+        run: |
+          $candidates = @(
+            'D:\AI-Civil\AI-Engineering-OS',
+            'D:\AI\AI-Engineering-OS',
+            'D:\AI-Engineering-OS',
+            'D:\AIWork\AI-Engineering-OS',
+            'D:\PyWork\AI-Engineering-OS'
+          )
+          $root = $null
+          foreach ($candidate in $candidates) {
+            if ((Test-Path -LiteralPath (Join-Path $candidate 'go.mod') -PathType Leaf) -and
+                (Test-Path -LiteralPath (Join-Path $candidate 'cmd') -PathType Container)) {
+              $root = (Resolve-Path -LiteralPath $candidate).Path
+              break
+            }
+          }
+          if (-not $root) {
+            throw 'AI-Engineering-OS local authority not found on O87 in canonical candidate roots'
+          }
+          $sha = ''
+          if (Test-Path -LiteralPath (Join-Path $root '.git') -PathType Container) {
+            $sha = (& git -C $root rev-parse HEAD).Trim()
+          }
+          Write-Host "AI_ENGINEERING_OS_LOCAL_AUTHORITY root=$root commit=$sha"
+          [System.IO.File]::AppendAllText($env:GITHUB_OUTPUT, "root=$root`n", (New-Object System.Text.UTF8Encoding($false)))
+          [System.IO.File]::AppendAllText($env:GITHUB_OUTPUT, "go_mod=$(Join-Path $root 'go.mod')`n", (New-Object System.Text.UTF8Encoding($false)))
+          [System.IO.File]::AppendAllText($env:GITHUB_OUTPUT, "commit=$sha`n", (New-Object System.Text.UTF8Encoding($false)))
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ steps.osroot.outputs.go_mod }}
+          cache: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install OpenWorker
+        working-directory: openworker
+        run: python -m pip install --disable-pip-version-check -e .
+
       - name: Run fixed-host local source ingress
         id: ingress
         working-directory: openworker
@@ -79,7 +101,7 @@ jobs:
         run: |
           python scripts/engineering_local_source_ingress_action.py `
             --request 'local-source-ingress-requests\request.json' `
-            --os-root '..\ai-engineering-os'
+            --os-root '${{ steps.osroot.outputs.root }}'
 
       - name: Commit ingress evidence to Case 0004 worklist
         if: success()
@@ -92,6 +114,7 @@ jobs:
           python scripts/case_worklist_action.py record --workspace-root $workspace --step-id '0004-020' --key canonical_path --value '${{ steps.ingress.outputs.canonical_path }}'
           python scripts/case_worklist_action.py record --workspace-root $workspace --step-id '0004-020' --key sha256 --value '${{ steps.ingress.outputs.sha256 }}'
           python scripts/case_worklist_action.py record --workspace-root $workspace --step-id '0004-020' --key job_binding_path --value '${{ steps.ingress.outputs.job_binding_path }}'
+          python scripts/case_worklist_action.py record --workspace-root $workspace --step-id '0004-020' --key os_authority_commit --value '${{ steps.osroot.outputs.commit }}'
           python scripts/case_worklist_action.py complete-action `
             --workspace-root $workspace `
             --step-id '0004-020' `
