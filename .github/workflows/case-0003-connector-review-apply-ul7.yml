@@ -1,6 +1,10 @@
 name: Case 0003 Connector Review Apply UL7
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/case-0003-connector-review-apply-ul7.yml'
 permissions:
   contents: read
 env:
