@@ -2,279 +2,171 @@
 
 日期：2026-08-18
 
-狀態：**IMPLEMENTED — DRIVE INGRESS CODE/OWNING-CI GREEN / ODA CREDENTIAL PROVISIONING BLOCKED**
+狀態：**IMPLEMENTED — DRIVE INGRESS CODE/OWNING-CI GREEN / OPTIONAL CAPABILITY / NOT A UNIVERSAL ACCEPTANCE GATE**
 
-## 目的
+## 架構邊界修正
 
-為固定機器工作建立一個通用、fail-closed 的外部 source transport primitive：
+本能力最初使用 KnowGraphGo 工程規範 ZIP 做 REAL ingress 案例，因此一度把 Google Drive OAuth provisioning 誤列為工程規範 corpus acceptance 的前置條件。
+
+此判斷已修正。
+
+Google Drive 在 OpenWorker 的主要角色是：**把需要 ChatGPT 視覺／多模態檢查的實體成果發布成可審查 evidence**。它不是 GitHub、固定機器或所有 source data 的通用 transport requirement。
+
+新的權威路由規則見：
+
+- `coworker/review_policy.py`
+- `docs/2026-08-18-成果審查路由邊界.md`
+- `tests/test_review_policy.py`
+- `.github/workflows/review-policy-ci.yml`
+
+Review Policy CI Run `32072184488` = **success**。
+
+## Drive ingress 能力仍然保留
+
+`coworker/drive_ingress.py` 提供 fail-closed raw-file ingress：
 
 ```text
 Google Drive raw file
-→ fixed machine authority
 → authenticated Drive API alt=media
 → expected size + SHA-256
-→ temp download
+→ unique temp download
 → atomic local publish
 → durable ingress receipt
 ```
 
-本能力不限定工程規範；案例只用來做 REAL 驗證。Transport layer 不解包、不改寫來源內容。
-
-## 本批新增能力
-
-### 1. `coworker/drive_ingress.py`
-
-新增：
-
-- `GoogleDriveRawDownloadClient`
-- `DriveIngressReceipt`
-- `ingress_drive_file_atomic`
-- `write_ingress_receipt`
-
 安全規則：
 
-- `expected_sha256` 必須是 64 位 hex。
-- `expected_size_bytes` 必須為正值。
-- download 寫入 unique temp file。
-- download byte count、temp size、temp SHA 全部必須一致。
-- publish 使用同 volume atomic/hard-link semantics；destination 已存在時不覆寫。
-- destination 已存在且 SHA/size 相同：idempotent PASS。
-- destination 已存在但 identity 不同：fail-closed。
+- expected SHA 必須合法。
+- expected size 必須為正。
+- unique temp。
+- downloaded byte count / temp size / temp SHA 必須一致。
+- destination 已存在且 identity 相同：idempotent PASS。
+- destination identity 不同：拒絕覆寫。
 - final file 再驗 SHA/size。
 - receipt 不保存 OAuth token。
 
-### 2. `scripts/download_drive_file_atomic.py`
+CLI：`scripts/download_drive_file_atomic.py`。
 
-通用 CLI contract：
-
-```text
---file-id
---destination
---expected-sha256
---expected-size-bytes
---receipt
---machine-id
---request-id
---run-id
-```
-
-### 3. Credential resolution
-
-`GoogleDriveRawDownloadClient.from_environment()` 目前依序嘗試：
+Credential resolution：
 
 ```text
 OPENWORKER_GOOGLE_DRIVE_ACCESS_TOKEN
 → machine-local SecretStore google_drive / google_drive:* profile
-→ existing Google ADC fallback
+→ Google ADC
 ```
 
-不把 credential value 寫進 log、request 或 receipt。
+固定 ODA workflow：`.github/workflows/external-source-drive-ingress-oda.yml`。
 
-### 4. 固定 ODA workflow
-
-`.github/workflows/external-source-drive-ingress-oda.yml`
-
-固定 scheduler：
-
-```yaml
-runs-on: [self-hosted, Windows, X64, ODA]
-```
-
-再 fail-closed：
-
-```text
-COMPUTERNAME == DESKTOP-ODAQN0D
-```
-
-允許 destination / receipt 只位於：
-
-`D:\AI-Work\knowledge\`
-
-request：
-
-`external-source-ingress-requests/oda.json`
-
-## Targeted tests
+## Targeted / owning CI
 
 `tests/test_drive_ingress.py` 已覆蓋：
 
-1. initial publish PASS。
-2. same identity replay idempotent PASS。
-3. wrong downloaded bytes / SHA reject。
+1. initial publish。
+2. idempotent replay。
+3. wrong SHA reject。
 4. wrong size reject。
-5. conflicting destination reject且原 bytes 不變。
-6. machine-local `SecretStore` Google Drive profile fallback。
+5. conflicting destination reject且保留原檔。
+6. SecretStore Google Drive profile fallback。
 
-ODA REAL runs 中 targeted gate 已實際達到 **6 passed**。
+Drive Ingress owning CI Run **`32071211423` = success**：
 
-## Drive Ingress owning CI
+- project/dev dependency install：PASS。
+- py_compile：PASS。
+- blocking tests：PASS。
 
-為避免全倉既存 Case 0003 / scheduler regression 混淆本能力狀態，新增獨立 blocking workflow：
+因此 Drive ingress 程式品質已 GREEN。
 
-`.github/workflows/drive-ingress-ci.yml`
+## 歷史 REAL ODA runs
 
-第一輪 Run `32070932795`：failure。`py_compile` 已 PASS，真正原因是 global `tests/conftest.py` 需要 `pytest-asyncio`，最小測試環境未安裝；不是 Drive ingress test failure。
-
-第二輪 Run `32071138118`：failure。補 `pytest-asyncio` 後又由 global conftest 暴露 `uvicorn` 未安裝；同樣是 test harness dependency drift，不是功能失敗。
-
-修正策略不再逐套件硬編碼，改為直接依 repository authoritative `pyproject.toml`：
+用 KnowGraphGo canonical standards ZIP 做 transport 測試：
 
 ```text
-python -m pip install -e ".[dev]"
+file id = 1tDuIxI_bTd19o3qK48OBePzfiESSo5DN
+size    = 1,719,409 bytes
+sha256  = 9bd159e9dc625efd35fd48f13da724d35dc83458557661255d9063406287a702
 ```
 
-第三輪 Run **`32071211423` = success**：
+三次 REAL run：
 
-- project + dev dependencies：PASS。
-- `coworker/drive_ingress.py` compile：PASS。
-- `scripts/download_drive_file_atomic.py` compile：PASS。
-- `scripts/resolve_drive_credential_store.py` compile：PASS。
-- Drive ingress blocking tests：PASS。
+### `32069844110`
 
-因此 **Drive ingress code / unit / owning CI 已正式 GREEN**。後續 ODA REAL failure 不再歸因於此模組程式品質，而只看 credential / transport execution evidence。
+- ODA authority PASS。
+- targeted tests 5 passed。
+- OAuth Actions secret absent。
 
-全倉一般 CI 仍另有既存 regressions：最近一次 Python suite 顯示 `1498 passed / 4 failed / 4 skipped`；四個 failure 分別屬 Case 0003 workflow contract 與 standing-approvals scheduler，與本 Drive ingress owning gate 分離保留，不隱藏也不拿來覆蓋本模組的 GREEN status。
+### `32070110999`
 
-## 本次 REAL source
+- ODA authority PASS。
+- targeted tests 6 passed。
+- `env_present=false / local_profiles=0 / ADC unavailable`。
 
-KnowGraphGo engineering standards immutable source bundle：
+### `32070519847`
+
+- ODA authority PASS。
+- targeted tests `6 passed in 0.22s`。
+- user SecretStore probe：`inspected_secret_files=0 / readable_active_drive_stores=0 / ambiguous=false`。
+
+這些 run 的正確結論是：**ODA Drive ingress REAL credential provisioning 尚未完成**。
+
+不再推論為：**KnowGraphGo engineering standards corpus 被阻塞**。
+
+## 何時 Drive 是 blocking gate
+
+只有 acceptance contract 明確需要感知品質判斷時才是 blocking gate，例如：
 
 ```text
-Google Drive file id = 1tDuIxI_bTd19o3qK48OBePzfiESSo5DN
-filename             = knowgraph-standards-source-bundle-deterministic.zip
-size                 = 1,719,409 bytes
-sha256               = 9bd159e9dc625efd35fd48f13da724d35dc83458557661255d9063406287a702
-target               = D:\AI-Work\knowledge\standards\knowgraph-standards-source-bundle-deterministic.zip
+Blender render
+工程圖／施工圖
+影片
+3D scene screenshot
+PDF 版面
+網站畫面
+音訊成果
 ```
 
-Drive file 本身已由 connected Google Drive 實際建立；問題不是 file identity 或 upload。
-
-## REAL run 1 — Actions secret 缺口
-
-Run：`32069844110`
-
-固定 ODA machine authority：PASS。
-
-Targeted tests：`5 passed`。
-
-REAL download step：FAIL。
-
-直接原因：
+這些案例需要：
 
 ```text
-OPENWORKER_GOOGLE_DRIVE_ACCESS_TOKEN unavailable
+physical artifact
+→ Drive review bundle
+→ ChatGPT multimodal inspection
+→ review receipt
 ```
 
-結論：workflow 裡引用 secret 不等於 repository 已配置該 secret。
+此時 OAuth / Drive publish failure 才應阻塞 delivery acceptance。
 
-## REAL run 2 — NetworkService credential scope
+## 何時 Drive 不是 blocking gate
 
-Run：`32070110999`
-
-固定 ODA authority：PASS。
-
-Targeted tests：`6 passed`。
-
-credential diagnostic：
+例如：
 
 ```text
-env_present=false
-local_profiles=0
-local_unexpired=0
+hash / size / line count
+JSON schema
+SQLite round-trip
+GraphData deterministic IDs
+ledger provenance
+machine-readable receipt
+純文字 corpus ingestion
 ```
 
-Google ADC：不存在。
-
-REAL download：FAIL。
-
-結論：GitHub self-hosted runner 以 `NetworkService` identity 執行；它自己的 OpenWorker SecretStore 沒有 Google Drive profile。
-
-## REAL run 3 — 使用者 SecretStore bounded probe
-
-Run：`32070519847`
-
-固定 ODA authority：PASS。
-
-Targeted tests：`6 passed in 0.22s`。
-
-user-scoped bounded metadata probe：
-
-```json
-{
-  "inspected_secret_files": 0,
-  "readable_active_drive_stores": 0,
-  "ambiguous": false
-}
-```
-
-因此不是「找到 profile 但 ACL 擋住」；標準 `%APPDATA%\coworker\secrets.json` 路線上沒有可供 runner 復用的 user Drive profile。
-
-REAL download：因 env/local/ADC 三層均無 credential 而 FAIL。
-
-## 修正後 fail-closed preflight
-
-workflow 已新增 credential preflight。在 source download 前先解析 credential；若不可用，直接輸出：
-
-`DRIVE_INGRESS_CREDENTIAL_UNAVAILABLE`
-
-並停止，不再執行無意義的 media GET，也不把 Google ADC traceback 當成 source corruption。
-
-## 對「本機服務」的實體核對
-
-目前 `openworker/main` 可實體取得的 local-authority 主線是：
-
-- `bootstrap-o87-local-authority.yml`：把權威版本 snapshot 到 `%ProgramData%\go-tool-runtime\work-agent\authorities`。
-- `engineering-local-source-ingress-win11.yml`：仍由 GitHub self-hosted runner 執行 fixed-host ingress。
-
-目前 main **沒有可直接取用的 `worker_service/` 常駐 daemon 實作**。因此不能假設已存在另一個以互動使用者 identity 執行、可直接復用 Google OAuth 的本機服務。
-
-這個結論只描述目前 main 的可取用實作，不否定未來補 service executor 的方向。
-
-## 現在真正的 owning gap
-
-程式、request contract、fixed-machine routing、SHA/size/atomic publish、receipt、targeted tests、owning CI 都已完成。
-
-唯一未通過的 REAL gate 是：
-
-**讓 assigned ODA execution identity 取得一個合法 Google Drive OAuth credential。**
-
-可接受的 closure 方式只有下列任一條：
+若全部品質條件可由 deterministic machine evidence 驗證：
 
 ```text
-A. 配置 repository/environment Actions secret OPENWORKER_GOOGLE_DRIVE_ACCESS_TOKEN
-B. 在 ODA runner identity 的 OpenWorker SecretStore 配置 google_drive profile
-C. 在 ODA runner identity 配置有效 Google ADC
-D. 改用另一個已驗證、無需 Google OAuth 的 immutable binary transport
+ReviewRequirement(machine_verifiable=True)
+→ ReviewRoute.MACHINE_VERIFIABLE
+→ google_drive_review_required=false
 ```
 
-不接受：
+工程規範案例即屬此類。
 
-- 再掃桌面 DriveFS。
-- 把 opaque ChatGPT Library ID 當 Drive fileId。
-- 在 repo / log / request 明文保存 OAuth token。
-- 未拿到 canonical file SHA PASS 就宣稱 source 已交付。
+## 現在 Drive ingress 自己的未完成項
 
-## 下一個驗收條件
-
-只有出現以下 terminal evidence 才把 Drive ingress 標為 `REAL PASS`：
+若未來某個真正需要 Drive multimodal review 的案例指定 ODA 為發布／下載 execution identity，仍需任一合法 credential source：
 
 ```text
-EXTERNAL_SOURCE_DRIVE_INGRESS_PASS
-machine=DESKTOP-ODAQN0D
-file_id=1tDuIxI_bTd19o3qK48OBePzfiESSo5DN
-sha256=9bd159e9dc625efd35fd48f13da724d35dc83458557661255d9063406287a702
-bytes=1719409
+A. OPENWORKER_GOOGLE_DRIVE_ACCESS_TOKEN
+B. runner identity SecretStore google_drive profile
+C. Google ADC
 ```
 
-之後才進 KnowGraphGo：
-
-```text
-standardmd -bundle
-→ 13/13 source verify
-→ GraphData
-→ SQLite
-→ every-ID re-query
-→ receipt 1.1 identity_bound=true
-→ immutable revision
-→ current.json
-```
+在沒有這種實際需求前，不應為了純 machine-verifiable 案例反覆重跑相同 OAuth probe。
