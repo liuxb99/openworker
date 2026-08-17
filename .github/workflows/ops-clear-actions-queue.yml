@@ -1,0 +1,42 @@
+name: OPS Clear Actions Queue
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/ops-clear-actions-queue.yml'
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  clear:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Cancel every other non-terminal workflow run
+        shell: bash
+        run: |
+          set -euo pipefail
+          current="${GITHUB_RUN_ID}"
+          mapfile -t runs < <(gh api --paginate "repos/${GH_REPO}/actions/runs?per_page=100" --jq '.workflow_runs[] | select(.status != "completed") | .id' | sort -u)
+          echo "OPENWORKER_NONTERMINAL_BEFORE=${#runs[@]}"
+          for id in "${runs[@]}"; do
+            if [[ "$id" == "$current" ]]; then
+              continue
+            fi
+            echo "Cancelling run $id"
+            gh api --method POST "repos/${GH_REPO}/actions/runs/${id}/cancel" >/dev/null || true
+          done
+          sleep 3
+          mapfile -t remaining < <(gh api --paginate "repos/${GH_REPO}/actions/runs?per_page=100" --jq '.workflow_runs[] | select(.status != "completed" and (.id|tostring) != env.GITHUB_RUN_ID) | [.id,.name,.status] | @tsv')
+          if (( ${#remaining[@]} > 0 )); then
+            printf 'Remaining: %s\n' "${remaining[@]}"
+            exit 1
+          fi
+          echo 'OPENWORKER_QUEUE_CLEAR_PASS'
