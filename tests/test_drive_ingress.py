@@ -5,8 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from coworker.drive_ingress import ingress_drive_file_atomic, write_ingress_receipt
+from coworker.drive_ingress import (
+    GoogleDriveRawDownloadClient,
+    ingress_drive_file_atomic,
+    write_ingress_receipt,
+)
 from coworker.review_drive import ReviewDriveError
+from coworker.secrets import SecretStore
 
 
 class FakeDownloader:
@@ -124,3 +129,24 @@ def test_drive_ingress_rejects_invalid_identity(tmp_path: Path) -> None:
             expected_sha256="bad",
             expected_size_bytes=1,
         )
+
+
+def test_drive_client_reuses_machine_local_google_drive_secret_store(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("OPENWORKER_GOOGLE_DRIVE_ACCESS_TOKEN", raising=False)
+    monkeypatch.setenv("COWORKER_STATE_DIR", str(tmp_path / "state"))
+    SecretStore().put(
+        "google_drive:account:test@example.invalid",
+        {
+            "type": "oauth",
+            "account_id": "test@example.invalid",
+            "access_token": "local-drive-token",
+        },
+    )
+
+    client = GoogleDriveRawDownloadClient.from_environment()
+    try:
+        assert client._token() == "local-drive-token"
+    finally:
+        client.close()
