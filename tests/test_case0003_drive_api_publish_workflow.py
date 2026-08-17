@@ -7,7 +7,10 @@ def test_case0003_drive_api_publish_is_fixed_to_ul7_and_cloud_identity_complete(
     root = Path(__file__).resolve().parents[1]
     workflow = (root / ".github" / "workflows" / "case-0003-drive-api-publish-ul7.yml").read_text(encoding="utf-8")
 
+    assert "runs-on: [self-hosted, Windows, X64, UL7]" in workflow
+    assert "runs-on: [self-hosted, Windows, X64]\n" not in workflow
     assert "CASE0003_ASSIGNED_HOST: DESKTOP-UL7V2VV" in workflow
+    assert "CASE0003_DRIVE_ASSIGNED_HOST_MISMATCH" in workflow
     assert "CASE0003_WORKSPACE: 'D:\\AI-Work\\jobs\\0003-YUJING-BRIDGE'" in workflow
     assert "publish_review_bundle_to_drive.py" in workflow
     assert "OPENWORKER_GOOGLE_DRIVE_ACCESS_TOKEN" in workflow
