@@ -70,3 +70,5 @@ jobs:
               }
             } catch { Write-Host ('CASE0003_BRIDGE_TEXT_SKIP path='+$f.FullName+' reason='+$_.Exception.Message) }
           }
+
+# trigger nonce: 2026-08-17 bridge-authority-inventory-1
