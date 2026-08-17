@@ -55,5 +55,6 @@ coworker = ["personas/builtin/*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = [".", "tests"]
 asyncio_mode = "auto"
 addopts = ["--import-mode=importlib"]
