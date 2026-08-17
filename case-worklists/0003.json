@@ -1,0 +1,61 @@
+{
+  "schema_version": "openworker-case-worklist/v1",
+  "case_id": "0003",
+  "workspace_root": "D:\\AI-Work\\jobs\\0003-YUJING-BRIDGE",
+  "assigned_host": "DESKTOP-UL7V2VV",
+  "revision": 1,
+  "steps": [
+    {
+      "step_id": "0003-160",
+      "title": "Publish immutable review bundle to Google Drive API and bind WorkLedger receipt",
+      "kind": "work",
+      "dependencies": [],
+      "allowed_actions": ["openworker.review.publish"],
+      "acceptance": ["review_bundle", "drive_receipt"],
+      "status": "PENDING",
+      "evidence": {},
+      "blocker": "",
+      "repair_parent_step": "",
+      "allow_skip": false
+    },
+    {
+      "step_id": "0003-170",
+      "title": "ChatGPT semantic and visual review of the exact published Drive revision",
+      "kind": "work",
+      "dependencies": ["0003-160"],
+      "allowed_actions": ["openworker.review.inspect_drive"],
+      "acceptance": ["drive_revision_folder_id", "review_receipt", "review_decision"],
+      "status": "PENDING",
+      "evidence": {},
+      "blocker": "",
+      "repair_parent_step": "",
+      "allow_skip": false
+    },
+    {
+      "step_id": "0003-180",
+      "title": "Apply ChatGPT review receipt to WorkLedger",
+      "kind": "work",
+      "dependencies": ["0003-170"],
+      "allowed_actions": ["openworker.review.apply"],
+      "acceptance": ["review_receipt", "ledger_status", "review_decision"],
+      "status": "PENDING",
+      "evidence": {},
+      "blocker": "",
+      "repair_parent_step": "",
+      "allow_skip": false
+    },
+    {
+      "step_id": "0003-190",
+      "title": "Create and validate approved Delivery Revision",
+      "kind": "work",
+      "dependencies": ["0003-180"],
+      "allowed_actions": ["engineering_os.delivery.publish", "openworker.delivery.validate"],
+      "acceptance": ["delivery_revision", "delivery_validation"],
+      "status": "PENDING",
+      "evidence": {},
+      "blocker": "",
+      "repair_parent_step": "",
+      "allow_skip": false
+    }
+  ]
+}
