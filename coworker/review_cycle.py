@@ -306,7 +306,7 @@ class ReviewCycle:
         ledger.set_revision_status(revision_id, "blocked", reason="LLM requested parameter tuning")
         child = ledger.open_revision(
             revision["work_id"],
-            kind="progress",
+            kind="tuning",
             goal="LLM-guided parameter tuning rerun",
             parent_revision_id=revision_id,
             plan={
