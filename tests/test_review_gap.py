@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from coworker.review_cycle import ReviewArtifact, ReviewCycle
-from coworker.review_gap import ReviewGapError, apply_review_finding
+from coworker.review_gap import ReviewGapError, apply_review_finding, bundle_manifest_sha256
 from coworker.work_ledger import WorkLedger
 
 
@@ -38,6 +38,7 @@ def test_tool_gap_enters_rework_required_and_preserves_owner_and_capability(tmp_
         revision_id,
         {
             "verdict": "TOOL_GAP",
+            "bundle_manifest_sha256": bundle_manifest_sha256(cycle, revision_id),
             "summary": "terrain labels cannot expose elevation diagnostics",
             "gap_description": "SceneX browse lacks elevation-label overlay required for engineering review",
             "gap_capability": "scenex.terrain.elevation_overlay",
@@ -71,6 +72,7 @@ def test_tool_gap_fails_closed_when_repair_routing_is_incomplete(tmp_path, missi
     ledger, cycle, revision_id = _case(tmp_path)
     finding = {
         "verdict": "TOOL_GAP",
+        "bundle_manifest_sha256": bundle_manifest_sha256(cycle, revision_id),
         "gap_description": "missing capability",
         "gap_capability": "tool.missing",
         "owning_repo": "liuxb99/tool",
@@ -83,6 +85,37 @@ def test_tool_gap_fails_closed_when_repair_routing_is_incomplete(tmp_path, missi
             ledger,
             revision_id,
             finding,
+            allowed_parameter_keys=["camera_height"],
+            current_parameters={"camera_height": 10},
+        )
+    assert ledger.get_revision(revision_id)["status"] == "verifying"
+    ledger.close()
+
+
+def test_review_finding_rejects_missing_or_stale_manifest_binding(tmp_path):
+    ledger, cycle, revision_id = _case(tmp_path)
+    base = {
+        "verdict": "PASS",
+        "summary": "accepted",
+        "reviewed_artifacts": [{"logical_name": "result"}],
+    }
+    with pytest.raises(ReviewGapError, match="requires bundle_manifest_sha256"):
+        apply_review_finding(
+            cycle,
+            ledger,
+            revision_id,
+            base,
+            allowed_parameter_keys=["camera_height"],
+            current_parameters={"camera_height": 10},
+        )
+    stale = dict(base)
+    stale["bundle_manifest_sha256"] = "0" * 64
+    with pytest.raises(ReviewGapError, match="different bundle manifest"):
+        apply_review_finding(
+            cycle,
+            ledger,
+            revision_id,
+            stale,
             allowed_parameter_keys=["camera_height"],
             current_parameters={"camera_height": 10},
         )
