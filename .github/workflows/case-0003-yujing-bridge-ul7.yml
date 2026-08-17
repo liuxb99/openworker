@@ -2,6 +2,12 @@ name: Case 0003 Yujing Bridge OpenWorker Final Acceptance UL7
 
 on:
   workflow_dispatch:
+    inputs:
+      refresh_scenex:
+        description: 'Refresh SceneX REAL browse before Final Acceptance'
+        required: false
+        default: false
+        type: boolean
   push:
     branches: [main]
     paths:
@@ -34,7 +40,7 @@ env:
 jobs:
   final-acceptance:
     name: OpenWorker REAL Final Acceptance + ChatGPT Handoff
-    runs-on: [self-hosted, Windows, X64]
+    runs-on: [self-hosted, Windows, X64, UL7]
     timeout-minutes: 20
     defaults:
       run:
@@ -57,7 +63,38 @@ jobs:
           ref: main
           path: openworker
 
+      # Dependency-scoped rework is the default. A Blender-only rework must not
+      # require a private cross-repo SceneX checkout or regenerate unrelated
+      # outputs. SceneX refresh is an explicit operator choice for SceneX-owned
+      # changes/regressions only.
+      - name: Verify existing SceneX REAL evidence for scoped rework
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.refresh_scenex }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=[IO.Path]::GetFullPath($env:CASE0003_WORKSPACE).TrimEnd('\')
+          $paths=@(
+            (Join-Path $root 'scenex\terrain.region.json'),
+            (Join-Path $root 'scenex\terrain-browse.png'),
+            (Join-Path $root 'scenex\terrain-browse-evidence.json'),
+            (Join-Path $root 'scenex\scenex-workspace.json')
+          )
+          foreach($p in $paths){
+            $full=[IO.Path]::GetFullPath($p)
+            if(-not $full.StartsWith($root+'\',[StringComparison]::OrdinalIgnoreCase)){throw ('SceneX evidence escapes workspace: '+$full)}
+            if(-not (Test-Path -LiteralPath $full -PathType Leaf) -or (Get-Item -LiteralPath $full).Length -le 0){throw ('SceneX scoped-rework evidence missing/empty: '+$full)}
+          }
+          $ev=Get-Content -LiteralPath $paths[2] -Raw|ConvertFrom-Json
+          $manifest=Get-Content -LiteralPath $paths[3] -Raw|ConvertFrom-Json
+          if($ev.schema_version -ne 'scenex-real-browse/v1' -or $ev.ok -ne $true){throw 'existing SceneX REAL browse evidence rejected'}
+          if([string]$ev.region_id -eq 'fallback-generated'){throw 'existing SceneX fallback-generated region forbidden'}
+          if([int]$ev.terrain_diagnostics.active_chunk_count -le 0){throw 'existing SceneX has no active terrain chunk'}
+          if([int]$ev.geometry_diagnostics.terrain_geometry_count -le 0){throw 'existing SceneX built no terrain geometry'}
+          if([int]$ev.viewport.width -ne 1280 -or [int]$ev.viewport.height -ne 720){throw 'existing SceneX viewport mismatch'}
+          if($manifest.ok -ne $true){throw 'existing SceneX workspace manifest rejected'}
+          Write-Host "CASE0003_SCENEX_SCOPED_REWORK_REUSE_PASS active=$($ev.terrain_diagnostics.active_chunk_count) geometry=$($ev.geometry_diagnostics.terrain_geometry_count)"
+
       - name: Checkout SceneX production source
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.refresh_scenex }}
         uses: actions/checkout@v4
         with:
           repository: liuxb99/SceneX
@@ -66,6 +103,7 @@ jobs:
           token: ${{ secrets.GH_TOKEN || github.token }}
 
       - name: Resolve canonical Terrain inputs for fresh SceneX browse
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.refresh_scenex }}
         run: |
           $ErrorActionPreference='Stop'
           $root=[IO.Path]::GetFullPath($env:CASE0003_WORKSPACE).TrimEnd('\')
@@ -99,6 +137,7 @@ jobs:
           Write-Host "CASE0003_SCENEX_INPUTS_READY project=$project"
 
       - name: Build fresh SceneX Region Pack from canonical Terrain grid
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.refresh_scenex }}
         working-directory: scenex-src
         run: |
           $ErrorActionPreference='Stop'
@@ -113,10 +152,12 @@ jobs:
           Write-Host "CASE0003_SCENEX_REGION_REBUILD_PASS path=$pack"
 
       - name: Resolve canonical Godot 4.6.3
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.refresh_scenex }}
         working-directory: scenex-src
         run: .\tools\resolve_godot_for_ci.ps1
 
       - name: Execute fresh REAL SceneX Godot browse and screenshot
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.refresh_scenex }}
         working-directory: scenex-src
         timeout-minutes: 6
         run: |
