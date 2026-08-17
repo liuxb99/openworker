@@ -18,6 +18,18 @@ except ModuleNotFoundError:
     from engineering_source_locator import bounded_recursive_candidates, expand_candidates, inspect, load_request
 
 
+def _force_utf8_runtime() -> None:
+    # Windows self-hosted runners commonly inherit CP950/legacy console code pages.
+    # This entrypoint handles Unicode paths, JSON and subprocess diagnostics, so its
+    # observable I/O contract must be UTF-8 regardless of the runner locale.
+    os.environ.setdefault("PYTHONUTF8", "1")
+    os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(encoding="utf-8", errors="backslashreplace")
+
+
 def _resolve_exact_source(request: dict) -> Path:
     actual = JobBindingStore.current_host().strip()
     assigned = str(request["assigned_host"]).strip()
@@ -76,6 +88,8 @@ def _stop_process(process: subprocess.Popen[bytes] | None) -> None:
 
 
 def main() -> int:
+    _force_utf8_runtime()
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--request", required=True)
     parser.add_argument("--os-root", required=True)
@@ -154,6 +168,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    _force_utf8_runtime()
     try:
         raise SystemExit(main())
     except Exception as exc:
