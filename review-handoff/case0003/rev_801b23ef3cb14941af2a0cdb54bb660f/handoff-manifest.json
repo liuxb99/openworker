@@ -1,0 +1,10 @@
+{
+    "schema_version":  "openworker-drive-connector-handoff/v1",
+    "case_id":  "0003",
+    "revision_id":  "rev_801b23ef3cb14941af2a0cdb54bb660f",
+    "bundle_manifest_sha256":  "ef4b12ec3d03a22f89aa2148146c3e1cb004e3bad1f340f707a58787676bf15c",
+    "cloud_zip_sha256":  "bea77692b721cd6568132cd5afdb5d9094d2b2f4600ceff7807b072343140a38",
+    "zip_bytes":  961487,
+    "assigned_host":  "DESKTOP-UL7V2VV",
+    "github_run_id":  "32016982090"
+}
