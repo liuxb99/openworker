@@ -45,10 +45,12 @@ jobs:
             --step-id '0004-010' `
             --action-id 'openworker.source.locate' `
             --execution-id $execution
-          "execution_id=$execution" >> $env:GITHUB_OUTPUT
+          [System.IO.File]::AppendAllText($env:GITHUB_OUTPUT, "execution_id=$execution`n", (New-Object System.Text.UTF8Encoding($false)))
 
       - name: Locate exact immutable source
         id: locate
+        env:
+          PYTHONIOENCODING: utf-8
         run: |
           $request = Join-Path (Get-Location) 'source-locator-requests\request.json'
           if (-not (Test-Path -LiteralPath $request -PathType Leaf)) { throw "missing locator request: $request" }
