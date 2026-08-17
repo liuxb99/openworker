@@ -69,3 +69,5 @@ jobs:
           path: ${{ env.CASE0003_STAGE }}
           if-no-files-found: error
           retention-days: 1
+
+# trigger nonce: 2026-08-17 exact-rev801-artifact-transport-1
