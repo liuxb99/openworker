@@ -1,0 +1,33 @@
+{
+    "schema_version":  "openworker-private-review-handoff/v1",
+    "case_id":  "0003",
+    "revision_id":  "rev_61b0104b041c4d1f8740e831a5b1d8eb",
+    "source":  "exact-review-bundle",
+    "assigned_host":  "DESKTOP-UL7V2VV",
+    "runner_name":  "DESKTOP-UL7V2VV-R002",
+    "github_run_id":  "32014258497",
+    "bundle_manifest_sha256":  "44778bff49501e7d82e9b36d72c9402ecc5156fda355bb78e9c64c860e98b185",
+    "png":  {
+                "name":  "scenex-png",
+                "sha256":  "1035305b3186499af007990dc9e23accdf6171934ac70b6152dcdd83cced779d",
+                "byte_length":  180656,
+                "base64_length":  240876,
+                "chunk_size":  75000,
+                "part_count":  4
+            },
+    "review_bundle_zip":  {
+                              "name":  "review-bundle-zip",
+                              "sha256":  "daf3a144d843570044667ddc268eb4b30d437f584b85f3f0541312eb6eb73a90",
+                              "byte_length":  936053,
+                              "base64_length":  1248072,
+                              "chunk_size":  75000,
+                              "part_count":  17
+                          },
+    "direct_png":  "scenex-browse.png",
+    "direct_review_bundle_zip":  "review-bundle.zip",
+    "review_pdf_proxy":  {
+                             "path":  "scenex-browse-review.pdf",
+                             "sha256":  "3937a7d5579bf9ee462707fd520f30acb0a0726e6d2f0077e55c5e97a2ef43d3",
+                             "source_png_sha256":  "1035305b3186499af007990dc9e23accdf6171934ac70b6152dcdd83cced779d"
+                         }
+}
