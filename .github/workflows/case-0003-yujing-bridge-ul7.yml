@@ -34,7 +34,7 @@ env:
 jobs:
   final-acceptance:
     name: OpenWorker REAL Final Acceptance + ChatGPT Handoff
-    runs-on: [self-hosted, Windows, X64, UL7]
+    runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 20
     defaults:
       run:
