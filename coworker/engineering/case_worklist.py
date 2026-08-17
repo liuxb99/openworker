@@ -84,6 +84,9 @@ class CaseWorklist:
         if not self.steps:
             raise CaseWorklistError("at least one case step is required")
         self._validate_graph()
+        running = [step.step_id for step in self.steps if step.status == StepStatus.RUNNING]
+        if len(running) > 1:
+            raise CaseWorklistError(f"multiple RUNNING steps are not allowed: {', '.join(running)}")
         self.refresh()
 
     def _validate_graph(self) -> None:
@@ -165,13 +168,21 @@ class CaseWorklist:
             step.status = StepStatus.READY if self._dependencies_satisfied(step) else StepStatus.PENDING
 
     def next_step(self) -> CaseStep | None:
-        """Return the single canonical next step in manifest order.
+        """Return the single canonical current/next step in manifest order.
 
-        Active repair steps take precedence over normal work. Manifest order is
-        intentional: even if a DAG has multiple technically-ready nodes, OpenWorker
-        gets one canonical next step and cannot fan out implicitly.
+        A RUNNING step remains canonical until it passes or becomes blocked. This
+        allows a declared stage to perform multiple approved actions without
+        accidentally unlocking a later stage. Active repairs take precedence once
+        their blocked parent yields control.
         """
         self.refresh()
+        running = [step for step in self.steps if step.status == StepStatus.RUNNING]
+        if len(running) > 1:
+            raise CaseWorklistError(
+                "multiple RUNNING steps are not allowed: " + ", ".join(step.step_id for step in running)
+            )
+        if running:
+            return running[0]
         repairs = [step for step in self.steps if step.kind == "repair" and step.status == StepStatus.READY]
         if repairs:
             return repairs[0]
@@ -184,10 +195,10 @@ class CaseWorklist:
         step = self.step(step_id)
         canonical = self.next_step()
         if canonical is None:
-            raise CaseWorklistError("no READY worklist step is available")
+            raise CaseWorklistError("no READY or RUNNING worklist step is available")
         if canonical.step_id != step.step_id:
             raise CaseWorklistError(
-                f"case drift blocked: canonical next step is {canonical.step_id!r}, not {step.step_id!r}"
+                f"case drift blocked: canonical current step is {canonical.step_id!r}, not {step.step_id!r}"
             )
         action = action_id.strip()
         if not action:
@@ -198,13 +209,18 @@ class CaseWorklist:
             )
         if not self._dependencies_satisfied(step):
             raise CaseWorklistError(f"dependencies are not satisfied for step {step.step_id!r}")
+        if step.status not in {StepStatus.READY, StepStatus.RUNNING}:
+            raise CaseWorklistError(
+                f"canonical step {step.step_id!r} cannot execute action from {step.status.value}"
+            )
         return step
 
     def start(self, step_id: str, action_id: str) -> CaseStep:
         step = self.assert_action_allowed(step_id, action_id)
-        step.status = StepStatus.RUNNING
-        step.blocker = ""
-        self.revision += 1
+        if step.status == StepStatus.READY:
+            step.status = StepStatus.RUNNING
+            step.blocker = ""
+            self.revision += 1
         return step
 
     def block(self, step_id: str, reason: str) -> CaseStep:
@@ -257,6 +273,10 @@ class CaseWorklist:
 
     def record_evidence(self, step_id: str, key: str, value: Any) -> CaseStep:
         step = self.step(step_id)
+        if step.status not in {StepStatus.RUNNING, StepStatus.BLOCKED}:
+            raise CaseWorklistError(
+                f"step {step.step_id!r} cannot record evidence from {step.status.value}"
+            )
         normalized = key.strip()
         if not normalized:
             raise CaseWorklistError("evidence key is required")
@@ -268,7 +288,7 @@ class CaseWorklist:
 
     def pass_step(self, step_id: str) -> CaseStep:
         step = self.step(step_id)
-        if step.status not in {StepStatus.RUNNING, StepStatus.BLOCKED, StepStatus.READY}:
+        if step.status not in {StepStatus.RUNNING, StepStatus.BLOCKED}:
             raise CaseWorklistError(f"step {step.step_id!r} cannot pass from {step.status.value}")
         missing = [key for key in step.acceptance if key not in step.evidence]
         if missing:
