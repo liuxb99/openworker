@@ -3,6 +3,10 @@
   "case_id": "0004",
   "assigned_host": "DESKTOP-O87PJNR",
   "original_name": "S1-1140926(1).dwg",
+  "canonical_name": "source.dwg",
+  "media_type": "application/acad",
+  "workspace_root": "D:\\AI-Work\\jobs\\0004-DWG-TO-3D",
+  "user_request": "Case 0004: ingest the exact local primary DWG on O87 into the fixed OpenWorker workspace, then continue the governed DWG-to-3D REAL workflow.",
   "expected_size": 1385583,
   "expected_sha256": "aaadbd84e8a5b2e1b0b8f54c16901a69085c7501aeec602929fd994f3192f5b6",
   "expected_header": "AC1032",
@@ -25,5 +29,5 @@
   ],
   "max_depth": 10,
   "max_size_matches": 512,
-  "request_nonce": "2026-08-17T13:06:00+08:00"
+  "request_nonce": "2026-08-17T13:22:00+08:00"
 }
