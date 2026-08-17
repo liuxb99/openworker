@@ -59,11 +59,16 @@ def test_case0002_pass_receipt_can_accept_and_deliver(tmp_path, monkeypatch):
     ]) == 0
     handoff = json.loads((workspace / "acceptance" / "openworker-review" / "handoff-latest.json").read_text(encoding="utf-8"))
     revision_id = handoff["revision_id"]
+    review_request = json.loads((workspace / ".openworker" / "reviews" / revision_id / "review-request.json").read_text(encoding="utf-8"))
+    reviewed_artifacts = [
+        {"logical_name": item["logical_name"]}
+        for item in review_request["artifacts"]
+    ]
     receipt = workspace / "chatgpt-review.json"
     receipt.write_text(json.dumps({
         "verdict": "PASS",
         "summary": "storyboard artifacts are coherent and ready for video",
-        "reviewed_artifacts": [{"logical_name": "storyboard-pptx"}],
+        "reviewed_artifacts": reviewed_artifacts,
     }), encoding="utf-8")
 
     assert case0002_apply_llm_review.main([
