@@ -14,6 +14,7 @@ import sys
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from .case0005_coordinator_recovery import Case0005CoordinatorRecoveryMixin
 from .case0005_direct_queue_fanout import Case0005DirectQueueFanoutMixin
 from .case0005_true_local_controller import TrueLocalCase0005Controller
 from .case_worklist import CaseWorklistError
@@ -22,7 +23,11 @@ _VERIFY_URL = "http://127.0.0.1:8848/api/execution/local-supervisor/verification
 _CANONICAL_MODULE = "coworker.case0005_verified_local_controller"
 
 
-class VerifiedLocalCase0005Controller(Case0005DirectQueueFanoutMixin, TrueLocalCase0005Controller):
+class VerifiedLocalCase0005Controller(
+    Case0005CoordinatorRecoveryMixin,
+    Case0005DirectQueueFanoutMixin,
+    TrueLocalCase0005Controller,
+):
     def _require_verified_local_supervisor(self, operation: str) -> dict:
         try:
             request = Request(_VERIFY_URL, method="GET")
@@ -96,10 +101,14 @@ class VerifiedLocalCase0005Controller(Case0005DirectQueueFanoutMixin, TrueLocalC
 
     def dispatch_ready(self):
         self._require_verified_local_supervisor("dispatch")
-        return super().dispatch_ready()
+        recovered = self._resume_queue_owned_coordinators()
+        result = super().dispatch_ready()
+        if recovered:
+            result = dict(result)
+            result["recovered_queue_coordinators"] = recovered
+        return result
 
     def _job_payload(self, worklist, step, action: str, execution_id: str, claim_path: Path) -> dict:
-        """Force every ordinary child job back through the verified controller."""
         python = sys.executable or "python"
         argv = [python, "-m", _CANONICAL_MODULE, "run-step", "--workspace", str(self.workspace), "--step-id", step.step_id, "--action-id", action, "--execution-id", execution_id, "--claim", str(claim_path)]
         return {
@@ -115,9 +124,8 @@ class VerifiedLocalCase0005Controller(Case0005DirectQueueFanoutMixin, TrueLocalC
             "locks": [f"case:{worklist.case_id}:step:{step.step_id}"],
         }
 
-    # These legacy payload builders remain fail-safe for old persisted manifests;
-    # new fanout uses Case0005DirectQueueFanoutMixin and does not create one
-    # OpenWorker business job per child.
+    # Legacy child payload builders remain only for previously persisted
+    # manifests. New fanout is queue-owned and uses one coordinator.
     def _image_child_payload(self, *, worklist, step_id: str, group_id: str, child_id: str, asset_id: str, role: str, claim_path: Path, manifest_path: Path) -> dict:
         python = sys.executable or "python"
         argv = [python, "-m", _CANONICAL_MODULE, "run-image-asset", "--workspace", str(self.workspace), "--step-id", step_id, "--group-execution-id", group_id, "--child-job-id", child_id, "--asset-id", asset_id, "--role", role, "--claim", str(claim_path), "--fanout-manifest", str(manifest_path)]
