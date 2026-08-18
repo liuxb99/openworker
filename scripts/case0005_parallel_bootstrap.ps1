@@ -41,11 +41,20 @@ function Resolve-RepoRoot([string]$Name,[string[]]$Markers){
   throw "local checkout not found for $Name markers=$($Markers -join ',')"
 }
 
+function Resolve-RepoRootAlias([string[]]$Names,[string[]]$Markers){
+  $errors=@()
+  foreach($name in $Names){
+    try { return Resolve-RepoRoot $name $Markers }
+    catch { $errors += $_.Exception.Message }
+  }
+  throw "local checkout not found for aliases=$($Names -join ',') markers=$($Markers -join ',') errors=$($errors -join ' | ')"
+}
+
 $env:OPENWORKER_ROOT=$repo
 $env:GO_TOOL_ROOT=Resolve-RepoRoot 'go-tool-runtime' @('go.mod','cmd\gtr-local-exec\main.go')
 $env:COMFYX_ROOT=Resolve-RepoRoot 'ComfyX' @('go.mod','cmd\comfyx-synthesis-video-real')
 $env:COMFYX_STUDIO_ROOT=Resolve-RepoRoot 'Comfyx-Studio' @('go.mod','cmd\operator-director-preproduction')
-$env:OPENMAIC_ROOT=Resolve-RepoRoot 'OpenMAIC' @('package.json')
+$env:OPENMAIC_ROOT=Resolve-RepoRootAlias @('OpenMAIC','openmaic-fork') @('package.json','src\cli\presentation.ts')
 
 if(-not $env:COMFYX_COMFYUI_OUTPUT_ROOT){
   $outputCandidates=@(
@@ -79,7 +88,7 @@ try {
 
 $controller = $json | ConvertFrom-Json
 $receipt=[ordered]@{
-  schema='openworker/case0005-local-first-bootstrap/v3';
+  schema='openworker/case0005-local-first-bootstrap/v4';
   case_id='0005'; machine=$Machine; workspace_root=$WorkspaceRoot;
   transport_run_id=$env:GITHUB_RUN_ID; submitted_at=[DateTimeOffset]::UtcNow.ToString('o');
   node=$node;
