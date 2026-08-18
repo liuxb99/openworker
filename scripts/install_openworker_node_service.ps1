@@ -1,4 +1,4 @@
-# case0005-bootstrap-transport-marker: run-on-c1d67717-fixed-launcher
+# case0005-status-only-marker: read-bootstrap-1787079962903791900
 param(
   [Parameter(Mandatory=$true)][string]$SourceExe,
   [string]$ServiceName='OpenWorkerNode',
