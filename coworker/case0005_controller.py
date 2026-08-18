@@ -1,6 +1,6 @@
 """Case 0005 Snow White local-first controller extensions.
 
-The generic LocalCaseController remains reusable.  This module only adds the
+The generic LocalCaseController remains reusable. This module only adds the
 Case 0005 business mappings that depend on the REAL storyboard visual plan.
 OpenWorker Go remains the durable scheduler; ComfyX remains the IMAGE execution
 authority and knowledge-graph owner.
@@ -32,8 +32,12 @@ class Case0005Controller(LocalCaseController):
                 return {**common, "role": "character_master", "requirements_relpath": "visual-assets/requirements.json"}
             if step.step_id == "0005-040":
                 return {**common, "role": "scene_concept", "requirements_relpath": "visual-assets/requirements.json"}
-            if step.step_id == "0005-050":
-                raise NotImplementedError("0005-050 shot_storyboard generation + Studio bind is the next Case 0005 controller batch")
+        if action == "comfyx-studio.storyboard.real-bind" and step.step_id == "0005-050":
+            return {
+                **common,
+                "request_relpath": "presentation/storyboard-request.json",
+                "output_relpath": "presentation/storyboard-request.bound.json",
+            }
         return super()._claim_inputs(worklist, step, action, spec)
 
     def _acceptance_evidence(self, step: CaseStep, local_result: Mapping[str, Any]) -> dict[str, Any]:
@@ -69,6 +73,28 @@ class Case0005Controller(LocalCaseController):
                     "scene_images": images,
                     "scene_sha256": hashes,
                 }
+            return self._require_keys(mapped, step.acceptance)
+        if action == "comfyx-studio.storyboard.real-bind" and step.step_id == "0005-050":
+            if str(local_result.get("status", "")).lower() != "completed":
+                raise CaseWorklistError("shot storyboard REAL bind did not report completed")
+            evidence = local_result.get("evidence")
+            if not isinstance(evidence, Mapping):
+                raise CaseWorklistError("shot storyboard REAL bind missing evidence")
+            mapped = {
+                "shot_image_receipts": evidence.get("shot_image_receipts"),
+                "shot_images": evidence.get("shot_images"),
+                "shot_image_sha256": evidence.get("shot_image_sha256"),
+                "bound_storyboard_request": evidence.get("bound_request"),
+            }
+            receipts = mapped["shot_image_receipts"]
+            images = mapped["shot_images"]
+            hashes = mapped["shot_image_sha256"]
+            if not isinstance(receipts, list) or not receipts:
+                raise CaseWorklistError("0005-050 returned no shot image receipts")
+            if not isinstance(images, list) or len(images) != len(receipts):
+                raise CaseWorklistError("0005-050 shot image count mismatch")
+            if not isinstance(hashes, list) or len(hashes) != len(receipts):
+                raise CaseWorklistError("0005-050 shot sha256 count mismatch")
             return self._require_keys(mapped, step.acceptance)
         return super()._acceptance_evidence(step, local_result)
 
