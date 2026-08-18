@@ -1,130 +1,225 @@
 # OpenWorker 纯 Go 本机执行核心与三机多 Agent 调度设计
 
 日期：2026-08-18
-状态：P2 BATCH-3 IMPLEMENTED — ADVERTISE / FORWARDED CONTROL / DURABLE CLUSTER LEDGER READY, WAITING FOR REAL THREE-NODE CONNECTIVITY
+状态：P2 BATCH-4 IMPLEMENTED — MULTI-AUTHORITY / ENDPOINT RECEIPT / CONNECTIVITY HISTORY READY
 
-## 1. 架构结论
+## 1. 当前架构
 
-OpenWorker Python 层继续负责案例、WorkLedger、知识、审核与上层 orchestration；纯 Go `openworker-node.exe` 负责本机 durable execution、三机 observation/routing 与 cluster control。GitHub Action 只保留 transport/CI/evidence。Action completed、cluster durable ACK、task succeeded 三者必须严格区分。
+OpenWorker Python 层负责案例、WorkLedger、知识、审核与上层 orchestration；纯 Go `openworker-node.exe` 负责本机 durable execution、三机 observation/routing/control。GitHub Action 只作为 transport / CI / evidence。`Action completed`、`cluster durable ACK`、`task succeeded` 必须严格区分。
 
-## 2. P0 ~ P2 Batch-2 已完成摘要
+## 2. 已完成主线摘要
 
-已完成 SQLite durable queue、4 worker pool、Action `_work` worktree、resource locks、process supervisor、timeout/cancel/process-tree kill、drain/retry/recover、Python adapter、durable ACK、Windows Service、build identity、job event ledger、restart PID reconciliation、tool/GPU/capability inventory、15 秒 node lease、UL7/ODA/O87 bootstrap、Cluster Registry、capability/load route、cluster_jobs、cluster_agents、agent_slot durable authority、remote durable submit、cluster job status，以及 go-tool `openworker.cluster.control`。
+目前已经具备：SQLite durable queue、4 worker slots、Action `_work` worktree、resource locks、真实 process supervisor、timeout/cancel/process-tree kill、drain/retry/recover、Windows Service、build identity、job event ledger、restart PID reconciliation、tool/GPU/capability inventory、15 秒 lease、UL7/ODA/O87 service bootstrap、Cluster Registry、capability/load-aware route、cluster_jobs、cluster_agents、agent_slot durable authority、remote durable submit、cluster job status/cancel/retry/drain、listen/advertise/peers 网络 contract、durable cluster dispatch/control ledger、Python adapter 与 go-tool cluster capability。
 
 真实三机 network receipt 仍未取得，因此不宣称 REAL VERIFIED。
 
-## 3. P2 Batch-3：Listen / Advertise / Peers 正式分层
+## 3. P2 Batch-4：Endpoint Config Durable Receipt
 
-本批解决先前最大的网络语义缺口：`127.0.0.1:8787` 只能代表本机 listen，不能当作别人可访问我的地址。
+提交 `ff737779` 新增 `go-runtime/internal/store/cluster_connectivity.go`。
 
-提交：
-
-- `8e063909`：`openworker-node.exe` 新增 `-advertise`；
-- `f6fcb768`：nodeConfig 正式分成 `Listen / Advertise / Peers`；
-- `93f16e8c`：peer Probe 会读取 node status 的 `advertise_endpoint`，Registry 保存权威对外 endpoint；
-- `2eb68b41`：Windows Service installer 支持 `-Advertise` 并持久写入 SCM binPath；
-- `da34aa50`：self observation 仍走本机 listen/loopback，不绕 advertise；对外 registry endpoint 则使用 advertise。
-
-环境变量也支持：
+新增 durable table：
 
 ```text
-OPENWORKER_NODE_ADVERTISE
-OPENWORKER_CLUSTER_PEERS
+cluster_endpoint_receipts
 ```
 
-默认仍保持 loopback，不为了 cluster 自动暴露所有网卡。只有显式配置稳定 LAN/Tailscale endpoint 后才进入跨机模式。
-
-## 4. Node Status 网络权威
-
-`GET /healthz`、`GET /v1/node/info`、`GET /v1/node/status` 现在都发布：
+每次 OpenWorkerNode 启动会记录：
 
 ```text
+node_id
 machine
-advertise_endpoint
-heartbeat_at
-lease_until
-build
-inventory
+listen
+advertise
+peers
+build_commit
+recorded_at
 ```
 
-Peer 可以通过一个 bootstrap/source endpoint 首次探测，然后改用 node 自己声明的 advertise endpoint 做后续 remote submit/control。
+`d6969060` 接入 node lifecycle；`4fa8bc6f` 修正 build commit typed snapshot。
 
-## 5. P2 Batch-3：Durable Cluster Dispatch Ledger
+因此以后不需要只看 SCM binPath 或 Action 输入来猜节点网络配置，SQLite 里有最新启动时的权威 receipt。
 
-提交 `dfde0edd` 新增：
+## 4. P2 Batch-4：Connectivity Durable History
+
+新增：
 
 ```text
-go-runtime/internal/store/cluster_ledger.go
+cluster_connectivity_history
 ```
 
-新增 durable tables：
+每次 peer probe 记录：
 
 ```text
-cluster_dispatches
-cluster_control_events
+observer_node_id
+target_endpoint
+target_node_id
+target_machine
+ok
+latency_ms
+error
+observed_at
 ```
 
-每次 cluster remote submit 成功取得 matching durable ACK 后，记录：
+`c2dc3955` 给 Cluster Controller 增加 ProbeObservation callback，并将 peer probe 改为最多 3 次短 backoff：
+
+```text
+attempt 1
+-> 100 ms
+attempt 2
+-> 200 ms
+attempt 3
+```
+
+短暂网络抖动不立即把 peer 判死；连续失败仍 fail-closed，node lease 会失效。
+
+本批刻意只对 observation/query 做自动 retry。`job.retry` 这类具有状态转换语义的 destructive/control POST 不做盲目重复，避免第一次已成功但 response 丢失后第二次造成错误状态判断。
+
+`9c4f1299` 增加 endpoint/connectivity durable round-trip test。
+
+## 5. P2 Batch-4：Connectivity / Endpoint API
+
+`02e66002` 新增：
+
+```text
+GET /v1/cluster/endpoints
+GET /v1/cluster/connectivity?limit=200
+```
+
+因此 cluster authority 可以直接回答：
+
+```text
+当前节点启动时 advertise 是什么？
+peers 配了什么？
+最近 UL7 -> ODA 探测成功还是失败？
+最近延迟多少？
+哪一个 endpoint 连续失败？
+```
+
+`9f06c5cc` 同步 Python Control Plane：
+
+```text
+cluster_endpoints()
+cluster_connectivity()
+```
+
+## 6. P2 Batch-4：Cluster Authority 不再单点依赖 O87
+
+之前 go-tool 只有：
+
+```text
+openworker.cluster.control -> O87
+```
+
+本批新增三个等价 transport：
+
+```text
+openworker.cluster.control       -> O87 primary
+openworker.cluster.control.ul7   -> UL7 fallback
+openworker.cluster.control.oda   -> ODA fallback
+```
+
+OpenWorker commits：
+
+- `8158842c`：统一 `scripts/openworker_cluster_control.ps1`；
+- `fe361c29`：O87 改用统一 transport；
+- `e63a1fb6`：UL7 fallback workflow；
+- `bc1f1b2c`：ODA fallback workflow。
+
+go-tool-runtime `6daa96c9` 写入 fallback 顺序：
+
+```text
+O87 unavailable
+-> UL7
+-> ODA
+```
+
+Authority fallback 只改变“从哪台 node 发 cluster control HTTP”，绝不改变：
 
 ```text
 job_id
 dispatch_id
-requested_machine
-selected_node_id
-selected_machine
-endpoint
-required_capabilities
-accepted_at
-created_at
+fixed machine
+required capabilities
 ```
 
-控制操作也会记录：
+因此 O87 离线不会把固定 UL7 的 job 漂到 ODA。
+
+## 7. 统一 Cluster Control Operations
+
+三台 authority workflow 都调用同一脚本，支持：
 
 ```text
-submit / submit_failed
-cancel / cancel_failed
-retry / retry_failed
-drain.queued / drain.all / drain_failed
+status
+capabilities
+jobs
+agents
+job.status
+job.cancel
+job.retry
+route
+submit
+queue.drain
+dispatches
+dispatch
+control.events
+endpoints
+connectivity
 ```
 
-这形成 cluster routing history，但它不取代 selected node 自己的 final job/event ledger。
+这样三份 workflow 不再各自复制一大段 PowerShell switch，降低能力漂移风险。
 
-`dc3b34ba` 增加 durable dispatch/control ledger round-trip test。
+## 8. Authority Fallback REAL 验证入口
 
-## 6. P2 Batch-3：跨节点 Cancel / Retry / Drain 转发
-
-提交 `77d9ca9d` 扩充 Cluster Controller：
+`17589b09` 新增：
 
 ```text
-JobAction(job_id, cancel|retry)
-Drain(machine, queued|all)
+.github/workflows/openworker-cluster-authority-fallback-verify.yml
 ```
 
-Job cancel/retry 流程：
+分别在：
 
 ```text
-cluster JobStatus(job_id)
--> 找出当前 online owning node
--> POST owning-node /v1/jobs/{job_id}/cancel|retry
--> 回传 node_id/machine/endpoint/response
--> cluster_control_events durable 记录
+O87 / DESKTOP-O87PJNR
+UL7 / DESKTOP-UL7V2VV
+ODA / DESKTOP-ODAQN0D
 ```
 
-Cluster drain 明确禁止模糊 destructive intent：
+验证：
 
 ```text
-machine=<fixed node/machine>
-或
-machine=all
+COMPUTERNAME
+local OpenWorkerNode health
+/v1/cluster/status
+/v1/cluster/endpoints
+/v1/cluster/connectivity
 ```
 
-不接受用 `machine=any` 表达清队列意图，避免随机挑一台机器清错队列。
+只有三条 authority transport 都真实可调用，才可以宣称 cluster control 不再有 O87 单点。
 
-`e5a57361` 测试 remote submit + status + cancel + retry + drain forwarding。
+## 9. 当前网络语义
 
-## 7. P2 Batch-3：Cluster API 扩充
+```text
+listen
+= 本机 bind address
 
-提交 `dfbd13c3` 后，Cluster API 包含：
+advertise
+= 其他 node 应该访问我的 URL
+
+peers
+= 我主动观察的其它 node URLs
+```
+
+Self-probe 仍走 local listen/loopback，不绕 advertise；peer registry 保存 node status 自己声明的 advertise endpoint。
+
+默认保持：
+
+```text
+127.0.0.1:8787
+```
+
+只有显式配置 LAN/Tailscale endpoint 才进入跨机模式，不会自动暴露所有网卡。
+
+## 10. 当前 Cluster API
 
 ```text
 GET  /v1/cluster/status
@@ -136,122 +231,15 @@ GET  /v1/cluster/agents
 POST /v1/cluster/jobs
 POST /v1/cluster/jobs/{job_id}/cancel
 POST /v1/cluster/jobs/{job_id}/retry
-POST /v1/cluster/queue/drain?machine=<node|all>&mode=queued|all
+POST /v1/cluster/queue/drain
 GET  /v1/cluster/dispatches
 GET  /v1/cluster/dispatches/{job_id}
 GET  /v1/cluster/control-events
+GET  /v1/cluster/endpoints
+GET  /v1/cluster/connectivity
 ```
 
-Cluster submit 成功后必须先写 durable `cluster_dispatches`；失败 submit/control 也会进入 control ledger。
-
-## 8. P2 Batch-3：Python Control Plane 与 go-tool 同步
-
-`d581a5f0` 扩充 `coworker/node_client.py`：
-
-```text
-cluster_job_cancel
-cluster_job_retry
-cluster_drain
-cluster_dispatches
-cluster_dispatch
-cluster_control_events
-```
-
-OpenWorker `fe55b501` 扩充 O87 cluster transport workflow；go-tool-runtime `ffd6b3d2` 更新 `openworker.cluster.control`，新增：
-
-```text
-job.cancel
-job.retry
-queue.drain
-dispatches
-dispatch
-control.events
-```
-
-负面知识明确写入：cluster dispatch ledger 只证明“曾在某 node durable ACK”，不能据此宣称业务成功；真正结果仍查 owning node job/event ledger。
-
-## 9. P2 Batch-3：三机 Service 网络配置入口
-
-UL7 / ODA / O87 三条 bootstrap workflow 都新增：
-
-```text
-listen
-advertise
-peers
-```
-
-提交：
-
-- `05b5337e` UL7；
-- `667b5140` ODA；
-- `d0f46790` O87。
-
-因此可选择：
-
-```text
-listen = 某机 Tailscale/LAN IP:8787 或显式 0.0.0.0:8787
-advertise = http://稳定可达名称或 IP:8787
-peers = 另外两台 advertise URLs
-```
-
-默认 `listen=127.0.0.1:8787` 保留安全本机模式。
-
-## 10. P2 Batch-3：三机 Connectivity REAL 验证入口
-
-提交 `0f4ba8c7` 新增：
-
-```text
-.github/workflows/openworker-cluster-connectivity-verify.yml
-```
-
-输入：
-
-```text
-ul7_endpoint
-oda_endpoint
-o87_endpoint
-```
-
-然后分别在 UL7 / ODA / O87 self-hosted runner 上执行真实 HTTP 探测，每台都必须访问三组 `/v1/node/status`，并检查：
-
-```text
-endpoint -> expected COMPUTERNAME
-advertise_endpoint == supplied endpoint
-```
-
-O87 authority 额外等待 heartbeat convergence 后要求：
-
-```text
-cluster.status online_count >= 3
-```
-
-只有这条 workflow 真正完成，才能声称三机 direct HTTP connectivity 成立。
-
-注意：ODA 当前 COMPUTERNAME 仍使用 `DESKTOP-ODAQN0D` fail-closed；真实 receipt 若显示不同名称，必须先修正 authority，不允许静默通过。
-
-## 11. 当前真实状态
-
-代码层已经具备：
-
-```text
-listen/advertise/peers
-peer registry
-cluster route
-remote durable submit
-cluster jobs/agents
-cluster cancel/retry/drain
-durable cluster dispatch/control ledger
-go-tool/Python cluster control
-three-node connectivity verifier
-```
-
-但截至本文档更新，尚未取得 UL7/ODA/O87 三机 network REAL receipt。因此：
-
-**P2 Batch-3 = IMPLEMENTED，不等于 REAL CONNECTED。**
-
-尤其不能因为本机 `cluster.status` 可调用，就宣称另外两台已可达。
-
-## 12. 当前调度铁律
+## 11. 当前调度与失败知识铁律
 
 - COMPUTERNAME 是 fixed machine 最终 authority；
 - fixed machine 永不自动漂移；
@@ -261,28 +249,46 @@ three-node connectivity verifier
 - self health 不依赖 advertise 网络；
 - remote submit 必须 matching durable ACK；
 - cluster cancel/retry 必须先定位 owning node；
-- drain 必须显式 node 或 all；
-- dispatch ledger != final result ledger；
+- queue drain 必须明确 node 或 all；
+- cluster dispatch ledger != final result ledger；
+- connectivity history != 当前 lease；
+- 历史成功不能覆盖当前 offline；
+- authority fallback 不能改变业务路由语义；
 - Action completed != job succeeded。
+
+## 12. 当前 REAL 验收状态
+
+代码已经 IMPLEMENTED，但仍缺：
+
+1. UL7 / ODA / O87 的真实 advertise endpoint；
+2. 三机双向 HTTP connectivity receipt；
+3. 三个 authority fallback workflow 的真实 receipt；
+4. ODA `DESKTOP-ODAQN0D` 最终 COMPUTERNAME receipt；
+5. remote durable submit 的真实跨机 smoke；
+6. 一台 node offline -> fallback authority 接管 -> node 恢复上线的真实 convergence receipt。
+
+所以当前状态是：
+
+**P2 Batch-4 IMPLEMENTED，不等于 REAL THREE-NODE HA VERIFIED。**
 
 ## 13. 下一批 P2
 
 下一批优先补：
 
 ```text
-cluster endpoint/config durable receipt
-connectivity status/history
-remote operation retry/backoff
-cluster authority fallback（不再只依赖 O87 transport）
 cluster dispatch_id 跨 authority 去重/冲突验证
+control operation request_id / idempotency receipt
+connectivity current-state summary（不是只有 history）
+authority selection helper
+真实 Case 0002/0003/0004 cluster-aware migration
 ```
 
-等真实三机 endpoint 确认后，再把 Case 0002/0003/0004 中适合 `machine=any + capability` 的步骤迁过去；明确 fixed-machine 的业务步骤仍保持 fixed。
+其中 fixed-machine 业务步骤仍保持 fixed；只有确实可在多机等价执行的步骤才使用 `machine=any + capability`。
 
 ## 14. 验收铁律
 
-持续覆盖 multi-worker、resource lock、timeout/cancel/drain、restart PID recovery、SCM service、inventory/lease、agent_slot、job 聚合、remote ACK；P2 Batch-3 新增必须验证 advertise endpoint、三机双向 reachability、cluster forwarded cancel/retry/drain、durable dispatch ledger、peer offline/lease expiry，以及重新上线后的 registry convergence。
+持续覆盖 multi-worker、resource lock、timeout/cancel/drain、restart PID recovery、SCM service、inventory/lease、agent_slot、job 聚合、remote ACK。P2 额外必须验证 advertise、endpoint receipt、connectivity history、peer backoff、lease expiry、三 authority transports、authority fallback 不改变 fixed machine，以及节点恢复上线后的 registry convergence。
 
 ## 15. 最终目标
 
-OpenWorker 成为自己拥有的三节点、多 Agent、可并行、可恢复、可观察、可按 capability 选择执行节点的本机优先系统。GitHub Actions 保留版本、入口、CI 与证据通道，不再承担长任务 scheduler。
+OpenWorker 成为自己拥有的三节点、多 Agent、可并行、可恢复、可观察、可按 capability 选择节点、且没有单一 control transport 依赖的本机优先执行系统。GitHub Actions 只保留版本、入口、CI 与证据通道，不再承担长任务 scheduler。
