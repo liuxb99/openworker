@@ -121,16 +121,16 @@ func (s *Server) caseBootstrap(w http.ResponseWriter, r *http.Request) {
     env["OPENWORKER_CASE_ID"] = req.CaseID
 
     ack, err := s.store.Submit(model.SubmitRequest{
-        JobID:        jobID,
-        DispatchID:   dispatchID,
-        Machine:      s.machine,
-        Priority:     100,
-        Command:      command,
-        CWD:          root,
+        JobID:         jobID,
+        DispatchID:    dispatchID,
+        Machine:       s.machine,
+        Priority:      100,
+        Command:       command,
+        CWD:           root,
         WorkspaceRoot: workspace,
-        Env:          env,
-        TimeoutSec:   3600,
-        Locks:        []string{"case:" + req.CaseID + ":bootstrap"},
+        Env:           env,
+        TimeoutSec:    3600,
+        Locks:         []string{"case:" + req.CaseID + ":bootstrap"},
     }, s.machine)
     if err != nil {
         writeErr(w, http.StatusConflict, err)
@@ -173,7 +173,7 @@ func requireBootstrapFile(root, raw string) (string, error) {
 }
 
 func quoteCmdArg(v string) string {
-    return `"` + strings.ReplaceAll(v, `"`, `""`) + `"`
+    return "\"" + strings.ReplaceAll(v, "\"", "\"\"") + "\""
 }
 
 func safeCaseID(v string) string {
