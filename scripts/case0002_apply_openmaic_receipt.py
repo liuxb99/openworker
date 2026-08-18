@@ -201,10 +201,12 @@ def apply_receipt(
         receipt,
         expected_run_id=expected_run_id,
     )
-    for key, value in evidence.items():
-        runtime.record(step_id, key, value)
-    runtime.complete_action(step_id, _ACTION, execution_id=execution_id)
-    return runtime.pass_step(step_id)
+    return runtime.accept_action_evidence(
+        step_id,
+        _ACTION,
+        execution_id=execution_id,
+        evidence=evidence,
+    )
 
 
 def main() -> int:
