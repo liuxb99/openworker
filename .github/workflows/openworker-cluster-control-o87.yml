@@ -1,0 +1,64 @@
+name: OpenWorker Cluster Control O87
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: status | capabilities | jobs | agents | job.status | route | submit
+        required: true
+        type: string
+      job_id:
+        description: Durable job id for job.status
+        required: false
+        type: string
+      machine:
+        description: fixed COMPUTERNAME/node_id or any for route/submit
+        required: false
+        default: any
+        type: string
+      capabilities:
+        description: comma-separated required capabilities
+        required: false
+        type: string
+      request_json:
+        description: cluster submit request JSON for operation=submit
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  control:
+    runs-on: [self-hosted, Windows, X64, O87]
+    timeout-minutes: 5
+    steps:
+      - name: Verify O87 cluster authority node
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          if($env:COMPUTERNAME -ine 'DESKTOP-O87PJNR'){throw "wrong host $env:COMPUTERNAME"}
+          $h=Invoke-RestMethod 'http://127.0.0.1:8787/healthz'
+          if(-not $h.ok){throw 'OpenWorkerNode unhealthy'}
+      - name: Execute cluster control operation
+        shell: powershell
+        env:
+          OP: ${{ inputs.operation }}
+          JOB_ID: ${{ inputs.job_id }}
+          MACHINE: ${{ inputs.machine }}
+          CAPS: ${{ inputs.capabilities }}
+          REQUEST_JSON: ${{ inputs.request_json }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $base='http://127.0.0.1:8787'
+          switch($env:OP){
+            'status' {$r=Invoke-RestMethod "$base/v1/cluster/status"}
+            'capabilities' {$r=Invoke-RestMethod "$base/v1/cluster/capabilities"}
+            'jobs' {$r=Invoke-RestMethod "$base/v1/cluster/jobs?limit=200"}
+            'agents' {$r=Invoke-RestMethod "$base/v1/cluster/agents"}
+            'job.status' {if([string]::IsNullOrWhiteSpace($env:JOB_ID)){throw 'job_id required'};$r=Invoke-RestMethod "$base/v1/cluster/jobs/$env:JOB_ID"}
+            'route' {$m=[uri]::EscapeDataString($env:MACHINE);$c=[uri]::EscapeDataString($env:CAPS);$r=Invoke-RestMethod "$base/v1/cluster/route?machine=$m&capabilities=$c"}
+            'submit' {if([string]::IsNullOrWhiteSpace($env:REQUEST_JSON)){throw 'request_json required'};$r=Invoke-RestMethod -Method Post "$base/v1/cluster/jobs" -ContentType 'application/json' -Body $env:REQUEST_JSON}
+            default {throw "unknown operation=$env:OP"}
+          }
+          $r|ConvertTo-Json -Depth 30
