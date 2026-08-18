@@ -4,17 +4,22 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: status | capabilities | jobs | agents | job.status | route | submit
+        description: status | capabilities | jobs | agents | job.status | route | submit | job.cancel | job.retry | queue.drain | dispatches | dispatch | control.events
         required: true
         type: string
       job_id:
-        description: Durable job id for job.status
+        description: Durable job id for job-scoped operations
         required: false
         type: string
       machine:
-        description: fixed COMPUTERNAME/node_id or any for route/submit
+        description: fixed COMPUTERNAME/node_id, any for route/submit, or all for queue.drain
         required: false
         default: any
+        type: string
+      mode:
+        description: queued | all for queue.drain
+        required: false
+        default: queued
         type: string
       capabilities:
         description: comma-separated required capabilities
@@ -46,6 +51,7 @@ jobs:
           OP: ${{ inputs.operation }}
           JOB_ID: ${{ inputs.job_id }}
           MACHINE: ${{ inputs.machine }}
+          MODE: ${{ inputs.mode }}
           CAPS: ${{ inputs.capabilities }}
           REQUEST_JSON: ${{ inputs.request_json }}
         run: |
@@ -57,8 +63,14 @@ jobs:
             'jobs' {$r=Invoke-RestMethod "$base/v1/cluster/jobs?limit=200"}
             'agents' {$r=Invoke-RestMethod "$base/v1/cluster/agents"}
             'job.status' {if([string]::IsNullOrWhiteSpace($env:JOB_ID)){throw 'job_id required'};$r=Invoke-RestMethod "$base/v1/cluster/jobs/$env:JOB_ID"}
+            'job.cancel' {if([string]::IsNullOrWhiteSpace($env:JOB_ID)){throw 'job_id required'};$r=Invoke-RestMethod -Method Post "$base/v1/cluster/jobs/$env:JOB_ID/cancel"}
+            'job.retry' {if([string]::IsNullOrWhiteSpace($env:JOB_ID)){throw 'job_id required'};$r=Invoke-RestMethod -Method Post "$base/v1/cluster/jobs/$env:JOB_ID/retry"}
+            'queue.drain' {$m=[uri]::EscapeDataString($env:MACHINE);$mode=[uri]::EscapeDataString($env:MODE);$r=Invoke-RestMethod -Method Post "$base/v1/cluster/queue/drain?machine=$m&mode=$mode"}
             'route' {$m=[uri]::EscapeDataString($env:MACHINE);$c=[uri]::EscapeDataString($env:CAPS);$r=Invoke-RestMethod "$base/v1/cluster/route?machine=$m&capabilities=$c"}
             'submit' {if([string]::IsNullOrWhiteSpace($env:REQUEST_JSON)){throw 'request_json required'};$r=Invoke-RestMethod -Method Post "$base/v1/cluster/jobs" -ContentType 'application/json' -Body $env:REQUEST_JSON}
+            'dispatches' {$r=Invoke-RestMethod "$base/v1/cluster/dispatches?limit=200"}
+            'dispatch' {if([string]::IsNullOrWhiteSpace($env:JOB_ID)){throw 'job_id required'};$r=Invoke-RestMethod "$base/v1/cluster/dispatches/$env:JOB_ID"}
+            'control.events' {$q='';if(-not[string]::IsNullOrWhiteSpace($env:JOB_ID)){$q='?job_id='+[uri]::EscapeDataString($env:JOB_ID)};$r=Invoke-RestMethod "$base/v1/cluster/control-events$q"}
             default {throw "unknown operation=$env:OP"}
           }
-          $r|ConvertTo-Json -Depth 30
+          $r|ConvertTo-Json -Depth 40
