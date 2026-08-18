@@ -12,6 +12,7 @@ class OpenWorkerNodeClient:
         with httpx.Client(base_url=self.base_url.rstrip("/"), timeout=self.timeout) as client:
             response=client.request(method,path,**kwargs);response.raise_for_status();return response.json()
     def node_status(self)->dict[str,Any]: return self._request("GET","/v1/node/status")
+    def case_bootstrap(self,payload:dict[str,Any])->dict[str,Any]: return self._request("POST","/v1/cases/bootstrap",json=payload)
     def submit(self,payload:dict[str,Any])->dict[str,Any]: return self._request("POST","/v1/jobs",json=payload)
     def jobs(self,limit:int=100)->dict[str,Any]: return self._request("GET","/v1/jobs",params={"limit":limit})
     def job_status(self,job_id:str)->dict[str,Any]: return self._request("GET",f"/v1/jobs/{job_id}")
