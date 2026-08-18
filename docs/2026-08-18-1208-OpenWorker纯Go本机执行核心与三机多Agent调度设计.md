@@ -1,173 +1,130 @@
 # OpenWorker 纯 Go 本机执行核心与三机多 Agent 调度设计
 
 日期：2026-08-18
-状态：P2 BATCH-2 IMPLEMENTED — CLUSTER JOB/AGENT/REMOTE-SUBMIT CONTRACT READY
+状态：P2 BATCH-3 IMPLEMENTED — ADVERTISE / FORWARDED CONTROL / DURABLE CLUSTER LEDGER READY, WAITING FOR REAL THREE-NODE CONNECTIVITY
 
 ## 1. 架构结论
 
-OpenWorker 的 Python 层继续负责案例、WorkLedger、知识、审核与上层 orchestration；纯 Go `openworker-node.exe` 负责本机 durable execution 与三机 cluster observation/routing。GitHub Action 只保留 transport/CI/evidence。Action completed 永远不等于业务 succeeded。
+OpenWorker Python 层继续负责案例、WorkLedger、知识、审核与上层 orchestration；纯 Go `openworker-node.exe` 负责本机 durable execution、三机 observation/routing 与 cluster control。GitHub Action 只保留 transport/CI/evidence。Action completed、cluster durable ACK、task succeeded 三者必须严格区分。
 
-## 2. P0 ~ P2 Batch-1 已完成摘要
+## 2. P0 ~ P2 Batch-2 已完成摘要
 
-已完成：SQLite durable queue、4 worker pool、Action `_work` worktree、resource locks、真实 process supervisor、timeout/cancel/process-tree kill、drain/retry/recover、Python adapter、durable ACK、Windows Service、build identity、job events、Case 0004 submit->ACK->exit、restart PID reconciliation、tool/GPU/capability inventory、15 秒 node lease、UL7/ODA/O87 service bootstrap、纯 Go Cluster Registry、peer heartbeat controller，以及 capability/load-aware route decision。
+已完成 SQLite durable queue、4 worker pool、Action `_work` worktree、resource locks、process supervisor、timeout/cancel/process-tree kill、drain/retry/recover、Python adapter、durable ACK、Windows Service、build identity、job event ledger、restart PID reconciliation、tool/GPU/capability inventory、15 秒 node lease、UL7/ODA/O87 bootstrap、Cluster Registry、capability/load route、cluster_jobs、cluster_agents、agent_slot durable authority、remote durable submit、cluster job status，以及 go-tool `openworker.cluster.control`。
 
-真实三机 self-hosted/network receipt 尚未取得，因此仍不宣称 REAL VERIFIED。
+真实三机 network receipt 仍未取得，因此不宣称 REAL VERIFIED。
 
-## 3. P2 Batch-2：AgentSlot durable authority
+## 3. P2 Batch-3：Listen / Advertise / Peers 正式分层
 
-本批先修正一个结构性回归：先前 runtime 虽然有 worker slot 概念，但 `agent_slot` 没有完整保留在 SQLite job authority 中，cluster 无法可靠回答 A01/A02 正在跑谁。
+本批解决先前最大的网络语义缺口：`127.0.0.1:8787` 只能代表本机 listen，不能当作别人可访问我的地址。
 
 提交：
 
-- `f87c60d7`：`model.Job` 恢复 `agent_slot`；
-- `2e747eda`：SQLite schema/migration/scan/retry/requeue/MarkRunning 全部持久化 `agent_slot`；
-- `c5fd2d6e`：runtime 启动真实 process 时把 worker slot 写入 durable job。
+- `8e063909`：`openworker-node.exe` 新增 `-advertise`；
+- `f6fcb768`：nodeConfig 正式分成 `Listen / Advertise / Peers`；
+- `93f16e8c`：peer Probe 会读取 node status 的 `advertise_endpoint`，Registry 保存权威对外 endpoint；
+- `2eb68b41`：Windows Service installer 支持 `-Advertise` 并持久写入 SCM binPath；
+- `da34aa50`：self observation 仍走本机 listen/loopback，不绕 advertise；对外 registry endpoint 则使用 advertise。
 
-现在 cluster_agents 不再只显示 `busy_workers=2`，而可以形成：
-
-```text
-node=UL7 slot=1 busy=true job_id=...
-node=UL7 slot=2 busy=false
-node=O87 slot=3 busy=true job_id=...
-```
-
-## 4. P2 Batch-2：Cluster Jobs / Agents 聚合
-
-提交 `c6883aa8` 新增 `internal/cluster/jobs.go`。
-
-新增能力：
+环境变量也支持：
 
 ```text
-Jobs(limit)
-Agents()
-JobStatus(job_id)
-Submit(cluster request)
-JobCounts()
+OPENWORKER_NODE_ADVERTISE
+OPENWORKER_CLUSTER_PEERS
 ```
 
-`cluster_jobs` 会从所有 lease-valid online nodes 抓 `/v1/jobs`，每笔 job 同时保留 `node_id + endpoint + durable Job`。
+默认仍保持 loopback，不为了 cluster 自动暴露所有网卡。只有显式配置稳定 LAN/Tailscale endpoint 后才进入跨机模式。
 
-`cluster_agents` 根据每台 node 的 max_workers 与 job.agent_slot 建立 A01..Axx 状态，因此可以看到 worker slot 与真实 job 的对应关系。
+## 4. Node Status 网络权威
 
-`cluster job status` 会逐个 online node 查询指定 durable `job_id`，找到后返回该 job 所在 node 与 endpoint；不会根据 Action run 猜测任务位置。
-
-## 5. P2 Batch-2：Remote Durable Submit
-
-Cluster Submit 输入：
-
-```json
-{
-  "job": {
-    "job_id": "...",
-    "dispatch_id": "...",
-    "machine": "any",
-    "command": "...",
-    "cwd": "..."
-  },
-  "required_capabilities": ["bridge", "blender"]
-}
-```
-
-流程：
+`GET /healthz`、`GET /v1/node/info`、`GET /v1/node/status` 现在都发布：
 
 ```text
-Registry.Select(machine, capabilities)
--> online lease only
--> fixed machine 不漂移 / machine=any 才自动选
--> POST selected-node /v1/jobs
--> selected node 自己做 CWD / COMPUTERNAME / durable idempotency 检查
--> cluster 必须收到 matching job_id + dispatch_id + accepted=true
--> 才返回 remote durable ACK
+machine
+advertise_endpoint
+heartbeat_at
+lease_until
+build
+inventory
 ```
 
-因此 Cluster scheduler 不绕过单节点的 fail-closed contract。
+Peer 可以通过一个 bootstrap/source endpoint 首次探测，然后改用 node 自己声明的 advertise endpoint 做后续 remote submit/control。
 
-`0ee07129` 使用 `httptest` 覆盖 remote durable submit、job status 与 agent slot 聚合。
+## 5. P2 Batch-3：Durable Cluster Dispatch Ledger
 
-## 6. P2 Batch-2：本机也纳入 Registry
-
-提交 `084829f1`：每个 node 启动 cluster controller 时会把自己的 local endpoint 一并加入 observation list，再加 configured peers。
-
-这修正了一个潜在问题：如果 registry 只有 peers，`machine=any` 可能永远不会选到当前这台最空闲的机器。
-
-对于 `0.0.0.0`/`::` listen，self-probe 自动使用 `127.0.0.1`，避免拿 wildcard address 当 client endpoint。
-
-## 7. P2 Batch-2：Cluster API 扩充
-
-提交 `1638d492` 新增：
+提交 `dfde0edd` 新增：
 
 ```text
-GET  /v1/cluster/jobs?limit=100
-GET  /v1/cluster/jobs/{job_id}
-GET  /v1/cluster/agents
-POST /v1/cluster/jobs
+go-runtime/internal/store/cluster_ledger.go
 ```
 
-原有：
+新增 durable tables：
 
 ```text
-GET /v1/cluster/status
-GET /v1/cluster/capabilities
-GET /v1/cluster/route
+cluster_dispatches
+cluster_control_events
 ```
 
-`cluster.status` 现在同时附带 cluster job counts。
-
-部分 peer 查询失败时允许返回已有结果并带 `partial_error`；所有 online peer 都不可查询时才 fail，避免一台离线拖垮整个 cluster observation。
-
-## 8. P2 Batch-2：Python Control Plane
-
-提交 `d138c314` 扩充 `coworker/node_client.py`：
+每次 cluster remote submit 成功取得 matching durable ACK 后，记录：
 
 ```text
-cluster_status
-cluster_capabilities
-cluster_jobs
-cluster_agents
-cluster_job_status
-cluster_route
-cluster_submit
+job_id
+dispatch_id
+requested_machine
+selected_node_id
+selected_machine
+endpoint
+required_capabilities
+accepted_at
+created_at
 ```
 
-`8569e309` 扩充 Python contract test。
-
-因此 Python 上层案例/WorkLedger 不需要自己拼 cluster HTTP。
-
-## 9. P2 Batch-2：go-tool Cluster Capability
-
-OpenWorker 提交 `c88b6ef8` 新增：
+控制操作也会记录：
 
 ```text
-.github/workflows/openworker-cluster-control-o87.yml
+submit / submit_failed
+cancel / cancel_failed
+retry / retry_failed
+drain.queued / drain.all / drain_failed
 ```
 
-作为现阶段 cluster Action transport，提供：
+这形成 cluster routing history，但它不取代 selected node 自己的 final job/event ledger。
+
+`dc3b34ba` 增加 durable dispatch/control ledger round-trip test。
+
+## 6. P2 Batch-3：跨节点 Cancel / Retry / Drain 转发
+
+提交 `77d9ca9d` 扩充 Cluster Controller：
 
 ```text
-status
-capabilities
-jobs
-agents
-job.status
-route
-submit
+JobAction(job_id, cancel|retry)
+Drain(machine, queued|all)
 ```
 
-go-tool-runtime 提交 `c364eb83` 新增：
+Job cancel/retry 流程：
 
 ```text
-openworker.cluster.control
+cluster JobStatus(job_id)
+-> 找出当前 online owning node
+-> POST owning-node /v1/jobs/{job_id}/cancel|retry
+-> 回传 node_id/machine/endpoint/response
+-> cluster_control_events durable 记录
 ```
 
-负面知识明确写入：
+Cluster drain 明确禁止模糊 destructive intent：
 
-- Action completed 只代表 cluster transport 完成；
-- submit success 只代表 selected node 已 durable ACK；
-- 真实业务成功仍必须继续查 cluster `job.status`；
-- expired lease / network unreachable 节点不可继续派工；
-- fixed machine 不得因为其他机器空闲而漂移。
+```text
+machine=<fixed node/machine>
+或
+machine=all
+```
 
-## 10. 当前 Cluster API
+不接受用 `machine=any` 表达清队列意图，避免随机挑一台机器清错队列。
+
+`e5a57361` 测试 remote submit + status + cancel + retry + drain forwarding。
+
+## 7. P2 Batch-3：Cluster API 扩充
+
+提交 `dfbd13c3` 后，Cluster API 包含：
 
 ```text
 GET  /v1/cluster/status
@@ -177,73 +134,155 @@ GET  /v1/cluster/jobs
 GET  /v1/cluster/jobs/{job_id}
 GET  /v1/cluster/agents
 POST /v1/cluster/jobs
+POST /v1/cluster/jobs/{job_id}/cancel
+POST /v1/cluster/jobs/{job_id}/retry
+POST /v1/cluster/queue/drain?machine=<node|all>&mode=queued|all
+GET  /v1/cluster/dispatches
+GET  /v1/cluster/dispatches/{job_id}
+GET  /v1/cluster/control-events
 ```
 
-单节点 API 继续保留，不被 cluster layer 取代。
+Cluster submit 成功后必须先写 durable `cluster_dispatches`；失败 submit/control 也会进入 control ledger。
 
-## 11. 目前仍存在的真实网络缺口
+## 8. P2 Batch-3：Python Control Plane 与 go-tool 同步
 
-remote durable submit **代码合约已完成**，但当前三机 Windows Service 默认仍主要使用：
+`d581a5f0` 扩充 `coworker/node_client.py`：
 
 ```text
-127.0.0.1:8787
+cluster_job_cancel
+cluster_job_retry
+cluster_drain
+cluster_dispatches
+cluster_dispatch
+cluster_control_events
 ```
 
-这只允许本机访问，不能据此宣称 UL7/ODA/O87 已经互相可达。
-
-下一步必须先确定安全且稳定的三机 endpoint，例如绑定各机 Tailscale/LAN address，并取得：
+OpenWorker `fe55b501` 扩充 O87 cluster transport workflow；go-tool-runtime `ffd6b3d2` 更新 `openworker.cluster.control`，新增：
 
 ```text
-UL7 -> ODA /v1/node/status
-UL7 -> O87 /v1/node/status
-ODA -> UL7 ...
-O87 -> UL7 ...
+job.cancel
+job.retry
+queue.drain
+dispatches
+dispatch
+control.events
 ```
 
-的真实 receipt，才可以宣称 remote submit REAL 可用。
+负面知识明确写入：cluster dispatch ledger 只证明“曾在某 node durable ACK”，不能据此宣称业务成功；真正结果仍查 owning node job/event ledger。
 
-当前 `-peers` / service installer `-Peers` 已支持持久化 endpoint，但 endpoint 本身仍需真实机器配置与验证。
+## 9. P2 Batch-3：三机 Service 网络配置入口
+
+UL7 / ODA / O87 三条 bootstrap workflow 都新增：
+
+```text
+listen
+advertise
+peers
+```
+
+提交：
+
+- `05b5337e` UL7；
+- `667b5140` ODA；
+- `d0f46790` O87。
+
+因此可选择：
+
+```text
+listen = 某机 Tailscale/LAN IP:8787 或显式 0.0.0.0:8787
+advertise = http://稳定可达名称或 IP:8787
+peers = 另外两台 advertise URLs
+```
+
+默认 `listen=127.0.0.1:8787` 保留安全本机模式。
+
+## 10. P2 Batch-3：三机 Connectivity REAL 验证入口
+
+提交 `0f4ba8c7` 新增：
+
+```text
+.github/workflows/openworker-cluster-connectivity-verify.yml
+```
+
+输入：
+
+```text
+ul7_endpoint
+oda_endpoint
+o87_endpoint
+```
+
+然后分别在 UL7 / ODA / O87 self-hosted runner 上执行真实 HTTP 探测，每台都必须访问三组 `/v1/node/status`，并检查：
+
+```text
+endpoint -> expected COMPUTERNAME
+advertise_endpoint == supplied endpoint
+```
+
+O87 authority 额外等待 heartbeat convergence 后要求：
+
+```text
+cluster.status online_count >= 3
+```
+
+只有这条 workflow 真正完成，才能声称三机 direct HTTP connectivity 成立。
+
+注意：ODA 当前 COMPUTERNAME 仍使用 `DESKTOP-ODAQN0D` fail-closed；真实 receipt 若显示不同名称，必须先修正 authority，不允许静默通过。
+
+## 11. 当前真实状态
+
+代码层已经具备：
+
+```text
+listen/advertise/peers
+peer registry
+cluster route
+remote durable submit
+cluster jobs/agents
+cluster cancel/retry/drain
+durable cluster dispatch/control ledger
+go-tool/Python cluster control
+three-node connectivity verifier
+```
+
+但截至本文档更新，尚未取得 UL7/ODA/O87 三机 network REAL receipt。因此：
+
+**P2 Batch-3 = IMPLEMENTED，不等于 REAL CONNECTED。**
+
+尤其不能因为本机 `cluster.status` 可调用，就宣称另外两台已可达。
 
 ## 12. 当前调度铁律
 
 - COMPUTERNAME 是 fixed machine 最终 authority；
 - fixed machine 永不自动漂移；
-- machine=any 才允许 capability/load routing；
-- expired lease 绝不接新任务；
-- cluster submit 必须取得 selected node durable ACK；
-- agent slot 必须从 durable job authority 读取；
-- Action ACK、cluster ACK、task succeeded 是三件不同的事；
-- peer failure 不可拖死其他在线节点；
-- stale job 仍只能显式 retry。
+- `machine=any` 只用于非 destructive route/submit；
+- expired lease 不接新任务；
+- advertise endpoint 必须来自 node 自己 status；
+- self health 不依赖 advertise 网络；
+- remote submit 必须 matching durable ACK；
+- cluster cancel/retry 必须先定位 owning node；
+- drain 必须显式 node 或 all；
+- dispatch ledger != final result ledger；
+- Action completed != job succeeded。
 
-## 13. 尚未完成的 P2
+## 13. 下一批 P2
 
-1. 三机真实可达 endpoint 配置与 firewall/Tailscale 验证；
-2. remote durable submit REAL 三机 smoke；
-3. cluster cancel/retry/drain 直接按 job 所在 node 转发；
-4. shared durable cluster history / dispatch routing ledger；
-5. endpoint discovery/config receipt；
-6. go-tool 不依赖单一 O87 authority 的多节点 fallback；
-7. Case 0002/0003/0004 真正改成 cluster-aware dispatch。
-
-## 14. 下一批 P2
-
-优先补：
+下一批优先补：
 
 ```text
-cluster dispatch ledger
-cluster job cancel/retry
-remote drain
-endpoint/advertise contract
-three-node connectivity verification workflow
+cluster endpoint/config durable receipt
+connectivity status/history
+remote operation retry/backoff
+cluster authority fallback（不再只依赖 O87 transport）
+cluster dispatch_id 跨 authority 去重/冲突验证
 ```
 
-然后才把真实案例从 fixed node dispatch 逐步升级到 `machine=any + capability`；固定机器案例仍保持 fixed，不为了“cluster 化”而强行漂移。
+等真实三机 endpoint 确认后，再把 Case 0002/0003/0004 中适合 `machine=any + capability` 的步骤迁过去；明确 fixed-machine 的业务步骤仍保持 fixed。
 
-## 15. 验收铁律
+## 14. 验收铁律
 
-持续验证多 worker、resource lock、timeout/cancel/drain、dispatch 幂等、restart PID recovery、SCM service、inventory/lease。P2 额外必须覆盖：agent_slot 权威、job 聚合、peer partial failure、expired node 不路由、fixed machine 不漂移、remote ACK id 一致，以及三机真实 network reachability。
+持续覆盖 multi-worker、resource lock、timeout/cancel/drain、restart PID recovery、SCM service、inventory/lease、agent_slot、job 聚合、remote ACK；P2 Batch-3 新增必须验证 advertise endpoint、三机双向 reachability、cluster forwarded cancel/retry/drain、durable dispatch ledger、peer offline/lease expiry，以及重新上线后的 registry convergence。
 
-## 16. 最终目标
+## 15. 最终目标
 
-OpenWorker 成为自己拥有的三节点、多 Agent、可并行、可恢复、可观察、可按 capability 选择执行节点的本机优先系统。GitHub Actions 只保留版本、入口、CI 与证据通道，不再承担长任务 scheduler。
+OpenWorker 成为自己拥有的三节点、多 Agent、可并行、可恢复、可观察、可按 capability 选择执行节点的本机优先系统。GitHub Actions 保留版本、入口、CI 与证据通道，不再承担长任务 scheduler。
