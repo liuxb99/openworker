@@ -68,7 +68,7 @@ $evidence=Join-Path $WorkspaceRoot 'evidence'
 New-Item -ItemType Directory -Force -Path $evidence | Out-Null
 $receipt=[ordered]@{
   schema='openworker/case0005-resident-bootstrap/v1';case_id='0005';machine=$Machine;workspace_root=$WorkspaceRoot;
-  resident_root=$ResidentRoot;transport='github-action-one-shot';business_execution='resident-openworker-local-supervisor';
+  resident_root=$ResidentRoot;transport='go-tool-lan-hostname';target_queue_url="http://$Machine`:8848";business_execution='resident-openworker-local-supervisor';github_action_used_for_business_execution=$false;
   node=$node;ack=$ack;submitted_at=[DateTimeOffset]::UtcNow.ToString('o')
 }
 $receipt|ConvertTo-Json -Depth 20|Set-Content -LiteralPath (Join-Path $evidence 'case0005-resident-bootstrap.json') -Encoding utf8
