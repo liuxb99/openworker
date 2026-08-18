@@ -10,8 +10,6 @@ type JobEvent struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-func (s *Store) RecordEvent(jobID, eventType, detail string) { s.event(jobID, eventType, detail) }
-
 func (s *Store) Events(jobID string, limit int) ([]JobEvent, error) {
 	if limit <= 0 || limit > 1000 { limit = 100 }
 	rows, err := s.db.Query(`SELECT id,job_id,event_type,detail,created_at FROM job_events WHERE job_id=? ORDER BY id DESC LIMIT ?`, jobID, limit)
