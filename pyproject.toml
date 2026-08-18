@@ -47,6 +47,7 @@ openworker-harness-evidence = "coworker.engineering.harness_verify:main"
 openworker-project-query = "coworker.project_query_cli:main"
 openworker-work-ledger = "coworker.work_ledger_cli:main"
 openworker-review-publish-drive = "scripts.publish_review_bundle_to_drive:main"
+openworker-drive = "coworker.google_drive_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
