@@ -1,0 +1,4 @@
+Trigger cloud-hosted three-node runner registry reconciliation.
+Targets: DESKTOP-UL7V2VV, DESKTOP-O87PJNR, DESKTOP-ODAQN0D
+Workflow: bootstrap-three-node-labels-v2.yml
+Requested at: 2026-08-18 17:29 Asia/Taipei
