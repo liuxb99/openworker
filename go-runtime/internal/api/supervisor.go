@@ -28,6 +28,7 @@ func(s *Server)supervisorRoutes(){
  s.mux.HandleFunc("POST /v1/cases/bootstrap",s.caseBootstrap)
  s.mux.HandleFunc("GET /v1/jobs/{jobID}/progress",s.jobProgress)
  s.mux.HandleFunc("POST /v1/jobs/{jobID}/progress",s.updateJobProgress)
+ s.mux.HandleFunc("GET /v1/jobs/{jobID}/explain",s.jobExplain)
 }
 
 func(s *Server)supervisorSession(w http.ResponseWriter,r *http.Request){var req supervisorSessionRequest;d:=json.NewDecoder(http.MaxBytesReader(w,r.Body,1<<20));d.DisallowUnknownFields();if err:=d.Decode(&req);err!=nil{writeErr(w,400,err);return};v,err:=s.store.StartSupervisorSession(store.SupervisorSession{SessionID:req.SessionID,SupervisorID:req.SupervisorID,Machine:s.machine,Model:req.Model,State:"active"},req.CurrentGoal);if err!=nil{writeErr(w,409,err);return};writeJSON(w,201,v)}
@@ -41,5 +42,15 @@ func(s *Server)supervisorDecision(w http.ResponseWriter,r *http.Request){var req
 func(s *Server)supervisorDecisions(w http.ResponseWriter,r *http.Request){id:=strings.TrimSpace(r.URL.Query().Get("supervisor_id"));if id==""{writeErr(w,400,errors.New("supervisor_id required"));return};rows,err:=s.store.SupervisorDecisions(id,queryInt(r,"limit",100));if err!=nil{writeErr(w,500,err);return};writeJSON(w,200,map[string]any{"decisions":rows,"count":len(rows)})}
 func(s *Server)updateJobProgress(w http.ResponseWriter,r *http.Request){var p store.JobProgress;d:=json.NewDecoder(http.MaxBytesReader(w,r.Body,1<<20));d.DisallowUnknownFields();if err:=d.Decode(&p);err!=nil{writeErr(w,400,err);return};id:=r.PathValue("jobID");if p.JobID!=""&&p.JobID!=id{writeErr(w,409,errors.New("job_id mismatch"));return};p.JobID=id;if err:=s.store.UpdateJobProgress(p);err!=nil{writeErr(w,409,err);return};got,_:=s.store.JobProgressByID(id);writeJSON(w,200,got)}
 func(s *Server)jobProgress(w http.ResponseWriter,r *http.Request){v,err:=s.store.JobProgressByID(r.PathValue("jobID"));if err!=nil{writeErr(w,404,err);return};writeJSON(w,200,v)}
+func(s *Server)jobExplain(w http.ResponseWriter,r *http.Request){
+ id:=r.PathValue("jobID")
+ j,err:=s.store.Get(id);if err!=nil{writeErr(w,404,err);return}
+ events,err:=s.store.Events(id,200);if err!=nil{writeErr(w,500,err);return}
+ var summary any
+ for _,e:=range events{if e.EventType!="execution_summary"{continue};var v any;if json.Unmarshal([]byte(e.Detail),&v)==nil{summary=v}else{summary=map[string]any{"raw":e.Detail}};break}
+ out:=map[string]any{"job":j,"execution_summary":summary,"events":events,"authority":"openworker-local-durable-ledger","observed_at":time.Now().UTC()}
+ if p,e:=s.store.JobProgressByID(id);e==nil{out["progress"]=p}
+ writeJSON(w,200,out)
+}
 func(s *Server)supervisorAttention(w http.ResponseWriter,r *http.Request){id:=strings.TrimSpace(r.URL.Query().Get("supervisor_id"));if id==""{writeErr(w,400,errors.New("supervisor_id required"));return};sup,err:=s.store.SupervisorByID(id);if err!=nil{writeErr(w,404,err);return};jobs,err:=s.store.List(1000);if err!=nil{writeErr(w,500,err);return};items:=[]map[string]any{};seen:=map[string]bool{};for _,j:=range jobs{if !strings.EqualFold(j.Machine,sup.Machine){continue};reason:="";switch j.Status{case model.StatusFailed:reason="job_failed";case model.StatusTimedOut:reason="job_timed_out";case model.StatusStale:reason="job_stale"};if reason!=""{items=append(items,map[string]any{"job_id":j.JobID,"reason":reason,"status":j.Status});seen[j.JobID]=true}};rows,_:=s.store.AttentionProgress(1000);for _,p:=range rows{if seen[p.JobID]{continue};j,e:=s.store.Get(p.JobID);if e!=nil||!strings.EqualFold(j.Machine,sup.Machine){continue};items=append(items,map[string]any{"job_id":p.JobID,"reason":"progress_attention","status":j.Status,"progress":p})};writeJSON(w,200,map[string]any{"supervisor_id":id,"machine":sup.Machine,"attention":items,"count":len(items),"observed_at":time.Now().UTC()})}
 func appendUnique(v []string,x string)[]string{for _,e:=range v{if e==x{return v}};return append(v,x)}
