@@ -1,33 +1,23 @@
 package api
 
-import (
-	"encoding/json"
-	"errors"
-	"net/http"
-	"strconv"
-	"strings"
-	"time"
-
-	"github.com/liuxb99/openworker/go-runtime/internal/buildinfo"
-	"github.com/liuxb99/openworker/go-runtime/internal/inventory"
-	"github.com/liuxb99/openworker/go-runtime/internal/model"
-	owruntime "github.com/liuxb99/openworker/go-runtime/internal/runtime"
-	"github.com/liuxb99/openworker/go-runtime/internal/store"
+import(
+ "encoding/json";"errors";"net/http";"strconv";"strings";"time"
+ "github.com/liuxb99/openworker/go-runtime/internal/buildinfo"
+ "github.com/liuxb99/openworker/go-runtime/internal/cluster"
+ "github.com/liuxb99/openworker/go-runtime/internal/inventory"
+ "github.com/liuxb99/openworker/go-runtime/internal/model"
+ owruntime "github.com/liuxb99/openworker/go-runtime/internal/runtime"
+ "github.com/liuxb99/openworker/go-runtime/internal/store"
 )
-
-type Server struct{store *store.Store;runtime *owruntime.Manager;machine string;mux *http.ServeMux}
-func New(st *store.Store,rt *owruntime.Manager,machine string)*Server{s:=&Server{store:st,runtime:rt,machine:machine,mux:http.NewServeMux()};s.routes();return s}
+type Server struct{store *store.Store;runtime *owruntime.Manager;machine string;cluster *cluster.Controller;mux *http.ServeMux}
+func New(st *store.Store,rt *owruntime.Manager,machine string,cc ...*cluster.Controller)*Server{var c *cluster.Controller;if len(cc)>0{c=cc[0]};s:=&Server{store:st,runtime:rt,machine:machine,cluster:c,mux:http.NewServeMux()};s.routes();return s}
 func(s *Server)Handler()http.Handler{return s.mux}
 func writeJSON(w http.ResponseWriter,status int,v any){w.Header().Set("Content-Type","application/json");w.WriteHeader(status);_=json.NewEncoder(w).Encode(v)}
 func writeErr(w http.ResponseWriter,status int,e error){writeJSON(w,status,map[string]any{"ok":false,"error":e.Error()})}
-func(s *Server)routes(){
-	s.mux.HandleFunc("GET /healthz",func(w http.ResponseWriter,r *http.Request){now:=time.Now().UTC();writeJSON(w,200,map[string]any{"ok":true,"machine":s.machine,"heartbeat_at":now,"lease_until":now.Add(15*time.Second),"build":buildinfo.Snapshot()})})
-	s.mux.HandleFunc("GET /v1/node/info",func(w http.ResponseWriter,r *http.Request){writeJSON(w,200,map[string]any{"machine":s.machine,"build":buildinfo.Snapshot(),"inventory":inventory.Collect()})})
-	s.mux.HandleFunc("GET /v1/node/status",func(w http.ResponseWriter,r *http.Request){now:=time.Now().UTC();v:=s.runtime.NodeStatus();v["node_id"]=strings.ToLower(s.machine);v["heartbeat_at"]=now;v["lease_seconds"]=15;v["lease_until"]=now.Add(15*time.Second);v["build"]=buildinfo.Snapshot();v["inventory"]=inventory.Collect();writeJSON(w,200,v)})
-	s.mux.HandleFunc("POST /v1/jobs",s.submit);s.mux.HandleFunc("GET /v1/jobs",s.list);s.mux.HandleFunc("GET /v1/jobs/{jobID}",s.get)
-	s.mux.HandleFunc("GET /v1/jobs/{jobID}/events",s.events)
-	s.mux.HandleFunc("POST /v1/jobs/{jobID}/cancel",s.cancel);s.mux.HandleFunc("POST /v1/jobs/{jobID}/retry",s.retry);s.mux.HandleFunc("POST /v1/queue/drain",s.drain)
-}
+func(s *Server)routes(){s.mux.HandleFunc("GET /healthz",func(w http.ResponseWriter,r *http.Request){now:=time.Now().UTC();writeJSON(w,200,map[string]any{"ok":true,"machine":s.machine,"heartbeat_at":now,"lease_until":now.Add(15*time.Second),"build":buildinfo.Snapshot()})});s.mux.HandleFunc("GET /v1/node/info",func(w http.ResponseWriter,r *http.Request){writeJSON(w,200,map[string]any{"machine":s.machine,"build":buildinfo.Snapshot(),"inventory":inventory.Collect()})});s.mux.HandleFunc("GET /v1/node/status",func(w http.ResponseWriter,r *http.Request){now:=time.Now().UTC();v:=s.runtime.NodeStatus();v["node_id"]=strings.ToLower(s.machine);v["heartbeat_at"]=now;v["lease_seconds"]=15;v["lease_until"]=now.Add(15*time.Second);v["build"]=buildinfo.Snapshot();v["inventory"]=inventory.Collect();writeJSON(w,200,v)});s.mux.HandleFunc("GET /v1/cluster/status",s.clusterStatus);s.mux.HandleFunc("GET /v1/cluster/capabilities",s.clusterCapabilities);s.mux.HandleFunc("GET /v1/cluster/route",s.clusterRoute);s.mux.HandleFunc("POST /v1/jobs",s.submit);s.mux.HandleFunc("GET /v1/jobs",s.list);s.mux.HandleFunc("GET /v1/jobs/{jobID}",s.get);s.mux.HandleFunc("GET /v1/jobs/{jobID}/events",s.events);s.mux.HandleFunc("POST /v1/jobs/{jobID}/cancel",s.cancel);s.mux.HandleFunc("POST /v1/jobs/{jobID}/retry",s.retry);s.mux.HandleFunc("POST /v1/queue/drain",s.drain)}
+func(s *Server)clusterStatus(w http.ResponseWriter,r *http.Request){if s.cluster==nil{writeErr(w,503,errors.New("cluster controller disabled"));return};writeJSON(w,200,s.cluster.Status())}
+func(s *Server)clusterCapabilities(w http.ResponseWriter,r *http.Request){if s.cluster==nil{writeErr(w,503,errors.New("cluster controller disabled"));return};writeJSON(w,200,s.cluster.Capabilities())}
+func(s *Server)clusterRoute(w http.ResponseWriter,r *http.Request){if s.cluster==nil{writeErr(w,503,errors.New("cluster controller disabled"));return};caps:=[]string{};for _,x:=range strings.Split(r.URL.Query().Get("capabilities"),","){if x=strings.TrimSpace(x);x!=""{caps=append(caps,x)}};n,e:=s.cluster.Registry().Select(r.URL.Query().Get("machine"),caps);if e!=nil{writeErr(w,409,e);return};writeJSON(w,200,map[string]any{"selected":n,"required_capabilities":caps})}
 func(s *Server)submit(w http.ResponseWriter,r *http.Request){var req model.SubmitRequest;d:=json.NewDecoder(http.MaxBytesReader(w,r.Body,1<<20));d.DisallowUnknownFields();if e:=d.Decode(&req);e!=nil{writeErr(w,400,e);return};if e:=owruntime.ValidateCWD(req.CWD);e!=nil{writeErr(w,400,e);return};ack,e:=s.store.Submit(req,s.machine);if e!=nil{writeErr(w,409,e);return};writeJSON(w,202,ack)}
 func(s *Server)list(w http.ResponseWriter,r *http.Request){limit:=100;if v:=r.URL.Query().Get("limit");v!=""{if n,e:=strconv.Atoi(v);e==nil{limit=n}};jobs,e:=s.store.List(limit);if e!=nil{writeErr(w,500,e);return};writeJSON(w,200,map[string]any{"jobs":jobs})}
 func(s *Server)get(w http.ResponseWriter,r *http.Request){j,e:=s.store.Get(r.PathValue("jobID"));if e!=nil{writeErr(w,404,e);return};writeJSON(w,200,j)}
