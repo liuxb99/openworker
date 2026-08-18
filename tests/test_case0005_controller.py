@@ -1,7 +1,9 @@
 from pathlib import Path
 
+import pytest
+
 from coworker.case0005_controller import Case0005Controller
-from coworker.case_worklist import CaseStep, CaseWorklist
+from coworker.case_worklist import CaseStep, CaseWorklist, CaseWorklistError
 
 
 def _worklist(tmp_path: Path) -> CaseWorklist:
@@ -133,3 +135,54 @@ def test_child_job_keeps_case0005_controller(tmp_path: Path):
     payload = controller._job_payload(worklist, step, "image.comfyx.storyboard-real", "case0005-test", claim)
     assert "coworker.case0005_controller" in payload["command"]
     assert "github" not in payload["command"].lower()
+
+
+def test_storyboard_plan_rejects_director_provenance_drift(tmp_path: Path, monkeypatch):
+    controller = Case0005Controller(tmp_path)
+    parent = CaseStep(
+        step_id="0005-010",
+        title="director",
+        allowed_actions=["comfyx-studio.director.preproduction"],
+        acceptance=["director_plan_sha256"],
+        evidence={"director_plan_sha256": "a" * 64},
+    )
+    worklist = CaseWorklist(
+        case_id="0005",
+        workspace_root=str(tmp_path),
+        assigned_host="DESKTOP-ODAQN0D",
+        steps=[parent],
+    )
+    monkeypatch.setattr(controller.runtime, "load", lambda: worklist)
+    step = CaseStep(
+        step_id="0005-020",
+        title="storyboard plan",
+        allowed_actions=["comfyx-studio.storyboard.plan"],
+        acceptance=["storyboard_request"],
+    )
+    result = {
+        "status": "completed",
+        "capability_id": "comfyx-studio.storyboard.plan",
+        "evidence": {"director_plan_sha256": "b" * 64, "storyboard_request": "x"},
+    }
+    with pytest.raises(CaseWorklistError, match="Director provenance mismatch"):
+        controller._acceptance_evidence(step, result)
+
+
+def test_text_storyboard_rejects_wrong_consumed_request_sha(tmp_path: Path):
+    controller = Case0005Controller(tmp_path)
+    request = tmp_path / "presentation" / "storyboard-request.json"
+    request.parent.mkdir(parents=True)
+    request.write_text('{"title":"Snow White","slides":[{"title":"S1"}]}\n', encoding="utf-8")
+    step = CaseStep(
+        step_id="0005-025",
+        title="text storyboard",
+        allowed_actions=["presentation.openmaic"],
+        acceptance=["storyboard_pptx"],
+    )
+    result = {
+        "status": "completed",
+        "capability_id": "presentation.openmaic",
+        "evidence": {"request_sha256": "0" * 64},
+    }
+    with pytest.raises(CaseWorklistError, match="request provenance mismatch"):
+        controller._acceptance_evidence(step, result)
