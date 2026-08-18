@@ -47,3 +47,11 @@ func TestProcessEnvOverridesPersistedRegistry(t *testing.T) {
 	_ = os.Setenv("OPENWORKER_MACHINE_ROOTS_FILE",registry);_ = os.Setenv("SCENEX_ROOT",override)
 	s:=Collect();for _,root:=range s.Roots{if root.Env=="SCENEX_ROOT"{want,_:=filepath.Abs(override);if root.Path!=filepath.Clean(want)||root.Source!="process-env"{t.Fatalf("unexpected override root: %#v",root)};return}};t.Fatal("SCENEX_ROOT inventory missing")
 }
+
+func TestParseRunnerServices(t *testing.T) {
+	got:=parseRunnerServices("actions.runner.liuxb99-openworker.UL7\tRunning\tAuto\r\nactions.runner.liuxb99-openworker.ODA\tStopped\tAuto\r\n")
+	if len(got)!=2{t.Fatalf("got %#v",got)}
+	if got[0].Name!="actions.runner.liuxb99-openworker.ODA"||got[0].Running{t.Fatalf("unexpected first runner %#v",got[0])}
+	if got[1].Name!="actions.runner.liuxb99-openworker.UL7"||!got[1].Running{t.Fatalf("unexpected second runner %#v",got[1])}
+	if got[1].StartType!="Auto"{t.Fatalf("start type=%q",got[1].StartType)}
+}
