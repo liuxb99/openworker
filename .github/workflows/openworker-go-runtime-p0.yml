@@ -1,19 +1,17 @@
-name: OpenWorker Go Runtime P0
+name: OpenWorker Go Runtime P0-P1
 
 on:
   workflow_dispatch:
   push:
     paths:
       - 'go-runtime/**'
+      - 'scripts/submit_openworker_node.ps1'
       - '.github/workflows/openworker-go-runtime-p0.yml'
 
 jobs:
   verify-go-runtime:
     runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 20
-    defaults:
-      run:
-        working-directory: go-runtime
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -33,16 +31,55 @@ jobs:
 
       - name: Go mod tidy
         shell: powershell
+        working-directory: go-runtime
         run: go mod tidy
 
       - name: Build openworker-node
         shell: powershell
-        run: go build ./cmd/openworker-node
+        working-directory: go-runtime
+        run: go build -o openworker-node.exe ./cmd/openworker-node
 
-      - name: Run P0 tests
+      - name: Run all Go tests
         shell: powershell
+        working-directory: go-runtime
         run: go test ./... -count=1 -v
 
-      - name: Verify four-worker concurrency test explicitly
+      - name: Verify four-worker concurrency explicitly
         shell: powershell
+        working-directory: go-runtime
         run: go test ./internal/runtime -run TestFourWorkersRunAndFifthQueues -count=1 -v
+
+      - name: Verify shared resource lock serialization explicitly
+        shell: powershell
+        working-directory: go-runtime
+        run: go test ./internal/runtime -run TestSharedResourceLockSerializesJobs -count=1 -v
+
+      - name: Start local Go node and verify Action submit ACK bridge
+        shell: powershell
+        run: |
+          $data = Join-Path $env:RUNNER_TEMP "openworker-node-p1-$env:GITHUB_RUN_ID"
+          New-Item -ItemType Directory -Force -Path $data | Out-Null
+          $node = Start-Process -FilePath (Join-Path $env:GITHUB_WORKSPACE 'go-runtime\openworker-node.exe') -ArgumentList @('-listen','127.0.0.1:18787','-data',$data,'-workers','2') -PassThru
+          try {
+            $ready = $false
+            for ($i=0; $i -lt 30; $i++) {
+              try { $h = Invoke-RestMethod 'http://127.0.0.1:18787/healthz'; if ($h.ok) { $ready=$true; break } } catch {}
+              Start-Sleep -Milliseconds 500
+            }
+            if (-not $ready) { throw 'openworker-node did not become healthy' }
+            $jid = "P1-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+            $did = "P1D-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+            & "$env:GITHUB_WORKSPACE\scripts\submit_openworker_node.ps1" -JobId $jid -DispatchId $did -ExpectedComputerName $env:COMPUTERNAME -Command 'echo bridge-ok' -Cwd $env:GITHUB_WORKSPACE -NodeUrl 'http://127.0.0.1:18787' -Locks @('tool:bridge-smoke') -ReceiptPath (Join-Path $data 'dispatch-receipt.json')
+            $done=$false
+            for ($i=0; $i -lt 30; $i++) {
+              $j=Invoke-RestMethod "http://127.0.0.1:18787/v1/jobs/$jid"
+              if ($j.status -eq 'succeeded') { $done=$true; break }
+              if ($j.status -in @('failed','timed_out','cancelled','stale')) { throw "bridge smoke failed status=$($j.status)" }
+              Start-Sleep -Milliseconds 500
+            }
+            if (-not $done) { throw 'bridge smoke did not complete' }
+            Get-Content (Join-Path $data 'dispatch-receipt.json') -Raw
+          }
+          finally {
+            if ($node -and -not $node.HasExited) { Stop-Process -Id $node.Id -Force }
+          }
