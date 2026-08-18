@@ -8,6 +8,7 @@ param(
   [string]$EngineeringOSRoot=$env:ENGINEERING_OS_ROOT,
   [string]$OSProjectId=$env:ENGINEERING_OS_PROJECT_ID,
   [string]$OSJobId=$env:ENGINEERING_OS_JOB_ID,
+  [string]$EngineeringOSBaseUrl='http://127.0.0.1:8080',
   [string]$CatalogPath='D:\TaiwanDTM\catalog\dtm_catalog.sqlite'
 )
 $ErrorActionPreference='Stop'
@@ -18,39 +19,23 @@ $scriptRoot=Split-Path -Parent $MyInvocation.MyCommand.Path
 $evidenceDir=Join-Path $WorkspaceRoot 'evidence';New-Item -ItemType Directory -Force -Path $evidenceDir|Out-Null
 function Read-Json([string]$Path){if(-not(Test-Path -LiteralPath $Path)){return $null};try{return Get-Content -LiteralPath $Path -Raw|ConvertFrom-Json}catch{return $null}}
 function File-OK([string]$Path){return (Test-Path -LiteralPath $Path) -and (-not (Get-Item -LiteralPath $Path).PSIsContainer) -and ((Get-Item -LiteralPath $Path).Length -gt 0)}
-function SHA-OK([string]$Path,[string]$Expected){if(-not(File-OK $Path)-or[string]::IsNullOrWhiteSpace($Expected)){return $false};$want=$Expected.ToLowerInvariant().Replace('sha256:','');return ((Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() -eq $want)}
-function StreetView-OK{
-  $m=Read-Json (Join-Path $WorkspaceRoot 'streetview\browser\streetview-browser-screenshots.json');if($null -eq $m -or -not $m.ok -or $m.schema_version -ne 'streetview-browser-screenshots/v2'){return $false}
-  $r=@($m.renders);if($r.Count -ne 4){return $false};foreach($x in $r){if(-not(File-OK ([string]$x.path))){return $false}};return $true
-}
-function Ortho-OK{
-  $e=Read-Json (Join-Path $WorkspaceRoot 'orthophoto\nlsc-photo2\orthophoto-photo2-evidence.json');if($null -eq $e -or -not $e.ok){return $false};return File-OK ([string]$e.output_path)
-}
-function Terrain-OK{
-  $root=Join-Path $WorkspaceRoot 'terrain';$names=@('terrain-context.json','terrain-build.json','terrain-grid.json','terrain.dxf','terrain-heightmap.raw','terrain-heightmap.json','terrain.obj','terrain-mesh.json','terrain-scene.json','scenex-terrain-scene.json');foreach($n in $names){if(-not(File-OK (Join-Path $root $n))){return $false}};$c=Read-Json (Join-Path $root 'terrain-context.json');return $null -ne $c -and [int]$c.usable_tiles -gt 0
-}
-function Consumer-OK{
-  $root=Join-Path $WorkspaceRoot 'consumer';$names=@('visual-frame-set.json','blender-reference-pack.json','minimax-h3-reference-pack.json','blender-visual-handoff.json','minimax-h3-visual-handoff.json','geo-context.json','consumer-orchestration.json');foreach($n in $names){if(-not(File-OK (Join-Path $root $n))){return $false}};$c=Read-Json (Join-Path $root 'consumer-orchestration.json');return $null -ne $c -and $c.schema_version -eq 'consumer-orchestration/v1'
-}
-function Blender-OK{
-  $root=Join-Path $WorkspaceRoot 'blender';foreach($n in @('terrain-scene.blend','terrain-render.png','blender-execution-request.json','blender-scene-evidence.json','blender-render-handoff.json')){if(-not(File-OK (Join-Path $root $n))){return $false}};$e=Read-Json (Join-Path $root 'blender-scene-evidence.json');$h=Read-Json (Join-Path $root 'blender-render-handoff.json');return $null -ne $e -and $null -ne $h -and $e.schema_version -eq 'blender-scene-evidence/v1' -and $h.schema_version -eq 'blender-render-handoff/v1'
-}
-function SceneX-OK{
-  $root=Join-Path $WorkspaceRoot 'scenex';$m=Read-Json (Join-Path $root 'scenex-workspace.json');if($null -eq $m -or -not $m.ok -or $m.schema_version -ne 'scenex-workspace-browse/v1'){return $false}
-  if([int]$m.active_chunks -le 0 -or [int]$m.terrain_geometry_count -le 0){return $false}
-  if(-not(SHA-OK ([string]$m.screenshot.path) ([string]$m.screenshot.sha256))){return $false};if(-not(SHA-OK ([string]$m.region_pack.path) ([string]$m.region_pack.sha256))){return $false};if(-not(SHA-OK ([string]$m.evidence.path) ([string]$m.evidence.sha256))){return $false};return $true
-}
+function SHA-OK([string]$Path,[string]$Expected){if(-not(File-OK $Path) -or [string]::IsNullOrWhiteSpace($Expected)){return $false};$want=$Expected.ToLowerInvariant().Replace('sha256:','');return ((Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() -eq $want)}
+function StreetView-OK{$m=Read-Json (Join-Path $WorkspaceRoot 'streetview\browser\streetview-browser-screenshots.json');if($null -eq $m -or -not $m.ok -or $m.schema_version -ne 'streetview-browser-screenshots/v2'){return $false};$r=@($m.renders);if($r.Count -ne 4){return $false};foreach($x in $r){if(-not(File-OK ([string]$x.path))){return $false}};return $true}
+function Ortho-OK{$e=Read-Json (Join-Path $WorkspaceRoot 'orthophoto\nlsc-photo2\orthophoto-photo2-evidence.json');if($null -eq $e -or -not $e.ok){return $false};return File-OK ([string]$e.output_path)}
+function Terrain-OK{$root=Join-Path $WorkspaceRoot 'terrain';$names=@('terrain-context.json','terrain-build.json','terrain-grid.json','terrain.dxf','terrain-heightmap.raw','terrain-heightmap.json','terrain.obj','terrain-mesh.json','terrain-scene.json','scenex-terrain-scene.json');foreach($n in $names){if(-not(File-OK (Join-Path $root $n))){return $false}};$c=Read-Json (Join-Path $root 'terrain-context.json');return $null -ne $c -and [int]$c.usable_tiles -gt 0}
+function Consumer-OK{$root=Join-Path $WorkspaceRoot 'consumer';$names=@('visual-frame-set.json','blender-reference-pack.json','minimax-h3-reference-pack.json','blender-visual-handoff.json','minimax-h3-visual-handoff.json','geo-context.json','consumer-orchestration.json');foreach($n in $names){if(-not(File-OK (Join-Path $root $n))){return $false}};$c=Read-Json (Join-Path $root 'consumer-orchestration.json');return $null -ne $c -and $c.schema_version -eq 'consumer-orchestration/v1'}
+function Blender-OK{$root=Join-Path $WorkspaceRoot 'blender';foreach($n in @('terrain-scene.blend','terrain-render.png','blender-execution-request.json','blender-scene-evidence.json','blender-render-handoff.json')){if(-not(File-OK (Join-Path $root $n))){return $false}};$e=Read-Json (Join-Path $root 'blender-scene-evidence.json');$h=Read-Json (Join-Path $root 'blender-render-handoff.json');return $null -ne $e -and $null -ne $h -and $e.schema_version -eq 'blender-scene-evidence/v1' -and $h.schema_version -eq 'blender-render-handoff/v1'}
+function SceneX-OK{$root=Join-Path $WorkspaceRoot 'scenex';$m=Read-Json (Join-Path $root 'scenex-workspace.json');if($null -eq $m -or -not $m.ok -or $m.schema_version -ne 'scenex-workspace-browse/v1'){return $false};if([int]$m.active_chunks -le 0 -or [int]$m.terrain_geometry_count -le 0){return $false};if(-not(SHA-OK ([string]$m.screenshot.path) ([string]$m.screenshot.sha256))){return $false};if(-not(SHA-OK ([string]$m.region_pack.path) ([string]$m.region_pack.sha256))){return $false};if(-not(SHA-OK ([string]$m.evidence.path) ([string]$m.evidence.sha256))){return $false};return $true}
 function OSArtifacts-OK{
   $r=Read-Json (Join-Path $evidenceDir 'case0003-os-artifact-ingest-receipt.json');if($null -eq $r -or -not $r.ok -or $r.schema_version -ne 'engineering-os-artifact-ingest-receipt/v1'){return $false}
-  if(-not[string]::IsNullOrWhiteSpace($OSProjectId) -and [string]$r.project_id -ne $OSProjectId){return $false};if(-not[string]::IsNullOrWhiteSpace($OSJobId) -and [string]$r.job_id -ne $OSJobId){return $false}
+  if(-not [string]::IsNullOrWhiteSpace($OSProjectId) -and [string]$r.project_id -ne $OSProjectId){return $false};if(-not [string]::IsNullOrWhiteSpace($OSJobId) -and [string]$r.job_id -ne $OSJobId){return $false}
   $expected=[ordered]@{'terrain_context'='terrain\terrain-context.json';'terrain_grid'='terrain\terrain-grid.json';'terrain_mesh_obj'='terrain\terrain.obj';'terrain_scene'='terrain\terrain-scene.json';'terrain_blender_scene'='blender\terrain-scene.blend';'terrain_blender_render_png'='blender\terrain-render.png';'terrain_blender_evidence'='blender\blender-scene-evidence.json';'scenex_terrain_region_pack'='scenex\terrain.region.json';'scenex_terrain_browse_png'='scenex\terrain-browse.png';'scenex_terrain_browse_evidence'='scenex\terrain-browse-evidence.json';'scenex_workspace_manifest'='scenex\scenex-workspace.json'}
-  $arts=@($r.artifacts);if($arts.Count -lt $expected.Count){return $false}
-  foreach($kind in $expected.Keys){$a=@($arts|Where-Object{[string]$_.kind -eq $kind}|Select-Object -Last 1);if($a.Count -ne 1){return $false};$src=Join-Path $WorkspaceRoot $expected[$kind];if(-not(SHA-OK $src ([string]$a[0].checksum)){return $false}}
-  return $true
+  $arts=@($r.artifacts);if($arts.Count -lt $expected.Count){return $false};foreach($kind in $expected.Keys){$a=@($arts|Where-Object{[string]$_.kind -eq $kind}|Select-Object -Last 1);if($a.Count -ne 1){return $false};if(-not(SHA-OK (Join-Path $WorkspaceRoot $expected[$kind]) ([string]$a[0].checksum)){return $false}};return $true
 }
-function Gates{return [ordered]@{streetview=(StreetView-OK);orthophoto=(Ortho-OK);terrain=(Terrain-OK);consumer=(Consumer-OK);blender=(Blender-OK);scenex=(SceneX-OK);os_artifacts=(OSArtifacts-OK)}}
-$node=Invoke-RestMethod -Method Get -Uri "$OpenWorkerUrl/v1/node/status";$agents=Invoke-RestMethod -Method Get -Uri "$OpenWorkerUrl/v1/cluster/agents"
-$before=Gates;$submitted=@()
+function OSApproval-OK{if([string]::IsNullOrWhiteSpace($OSJobId)){return $false};try{$a=Invoke-RestMethod -Method Get -Uri ($EngineeringOSBaseUrl.TrimEnd('/')+"/api/v1/jobs/$OSJobId/approval-status") -TimeoutSec 5;return [bool]$a.approved}catch{return $false}}
+function OSDelivery-OK{if([string]::IsNullOrWhiteSpace($OSJobId)){return $false};try{$d=Invoke-RestMethod -Method Get -Uri ($EngineeringOSBaseUrl.TrimEnd('/')+"/api/v1/jobs/$OSJobId/deliveries/latest") -TimeoutSec 5;if([string]$d.status -ne 'published'){return $false};if(-not(File-OK ([string]$d.manifest_path)) -or -not(File-OK ([string]$d.website_entry))){return $false};$m=Read-Json ([string]$d.manifest_path);return $null -ne $m -and $m.schema_version -eq 'delivery-manifest/1.0' -and [string]$m.job_id -eq $OSJobId -and [int64]$m.revision -eq [int64]$d.revision}catch{return $false}}
+function Gates{return [ordered]@{streetview=(StreetView-OK);orthophoto=(Ortho-OK);terrain=(Terrain-OK);consumer=(Consumer-OK);blender=(Blender-OK);scenex=(SceneX-OK);os_artifacts=(OSArtifacts-OK);os_approved=(OSApproval-OK);os_delivery=(OSDelivery-OK)}}
+$node=Invoke-RestMethod -Method Get -Uri "$OpenWorkerUrl/v1/node/status";$agents=Invoke-RestMethod -Method Get -Uri "$OpenWorkerUrl/v1/cluster/agents";$before=Gates;$submitted=@()
 if(-not($before.streetview -and $before.orthophoto)){& (Join-Path $scriptRoot 'case0003_local_imagery_parallel.ps1') -OpenWorkerUrl $OpenWorkerUrl -WorkspaceRoot $WorkspaceRoot -Machine $Machine -GoToolRoot $GoToolRoot -TerrainRoot $TerrainRoot;$submitted+='imagery_parallel'}
 if(-not $before.terrain){if(Test-Path -LiteralPath $CatalogPath){& (Join-Path $scriptRoot 'case0003_local_terrain_aoi.ps1') -OpenWorkerUrl $OpenWorkerUrl -WorkspaceRoot $WorkspaceRoot -Machine $Machine -GoToolRoot $GoToolRoot -TerrainRoot $TerrainRoot -CatalogPath $CatalogPath;$submitted+='terrain_aoi'}else{Write-Warning "DTM catalog missing; AOI not submitted: $CatalogPath"}}
 $afterImmediate=Gates
@@ -59,11 +44,10 @@ if($afterImmediate.streetview -and $afterImmediate.orthophoto -and $afterImmedia
 $afterConsumer=Gates
 if($afterConsumer.consumer -and -not $afterConsumer.blender){& (Join-Path $scriptRoot 'case0003_local_blender.ps1') -OpenWorkerUrl $OpenWorkerUrl -WorkspaceRoot $WorkspaceRoot -Machine $Machine -GoToolRoot $GoToolRoot -TerrainRoot $TerrainRoot;$submitted+='blender'}
 $afterRender=Gates
-if($afterRender.blender -and $afterRender.scenex -and -not $afterRender.os_artifacts){
-  if([string]::IsNullOrWhiteSpace($EngineeringOSRoot)-or[string]::IsNullOrWhiteSpace($OSProjectId)-or[string]::IsNullOrWhiteSpace($OSJobId)){Write-Warning 'Engineering OS root/project/job identity missing; artifact ingest not submitted'}else{& (Join-Path $scriptRoot 'case0003_local_os_artifacts.ps1') -OpenWorkerUrl $OpenWorkerUrl -WorkspaceRoot $WorkspaceRoot -Machine $Machine -GoToolRoot $GoToolRoot -EngineeringOSRoot $EngineeringOSRoot -OSProjectId $OSProjectId -OSJobId $OSJobId;$submitted+='os_artifacts'}
-}
+if($afterRender.blender -and $afterRender.scenex -and -not $afterRender.os_artifacts){if([string]::IsNullOrWhiteSpace($EngineeringOSRoot) -or [string]::IsNullOrWhiteSpace($OSProjectId) -or [string]::IsNullOrWhiteSpace($OSJobId)){Write-Warning 'Engineering OS root/project/job identity missing; artifact ingest not submitted'}else{& (Join-Path $scriptRoot 'case0003_local_os_artifacts.ps1') -OpenWorkerUrl $OpenWorkerUrl -WorkspaceRoot $WorkspaceRoot -Machine $Machine -GoToolRoot $GoToolRoot -EngineeringOSRoot $EngineeringOSRoot -OSProjectId $OSProjectId -OSJobId $OSJobId;$submitted+='os_artifacts'}}
+$afterRegistry=Gates
+if($afterRegistry.os_artifacts -and $afterRegistry.os_approved -and -not $afterRegistry.os_delivery){if([string]::IsNullOrWhiteSpace($EngineeringOSRoot)){Write-Warning 'ENGINEERING_OS_ROOT missing; delivery not submitted'}else{& (Join-Path $scriptRoot 'case0003_local_os_delivery.ps1') -OpenWorkerUrl $OpenWorkerUrl -WorkspaceRoot $WorkspaceRoot -Machine $Machine -GoToolRoot $GoToolRoot -EngineeringOSRoot $EngineeringOSRoot -OSJobId $OSJobId -EngineeringOSBaseUrl $EngineeringOSBaseUrl;$submitted+='os_delivery'}}
 $final=Gates
-$next=if($final.os_artifacts){'OS_REVIEW_APPROVAL_DELIVERY_REQUIRED'}elseif($final.blender -and $final.scenex){'OS_ARTIFACT_REGISTRY_REQUIRED'}elseif($final.terrain){'SCENEX_CONSUMER_BLENDER_REAL_QC_REQUIRED'}else{'LOCAL_JOBS_AND_PHYSICAL_QC_REQUIRED'}
-$receipt=[ordered]@{schema='openworker/case0003-local-continue/v3';case_id='0003';machine=$Machine;workspace_root=$WorkspaceRoot;transport='openworker-local-first';github_business_transport=$false;checked_at=[DateTimeOffset]::UtcNow.ToString('o');node=$node;agents=$agents;gates_before=$before;gates_after_submission=$final;submitted=$submitted;next_boundary=$next}
-$path=Join-Path $evidenceDir 'case0003-local-continue.json';$receipt|ConvertTo-Json -Depth 12|Set-Content -LiteralPath $path -Encoding utf8
-$receipt|ConvertTo-Json -Depth 12|Write-Host
+$next=if($final.os_delivery){'GOOGLE_DRIVE_CHATGPT_FINAL_QC_REQUIRED'}elseif($final.os_artifacts -and -not $final.os_approved){'OS_REVIEW_APPROVAL_REQUIRED'}elseif($final.os_artifacts){'OS_DELIVERY_PUBLICATION_REQUIRED'}elseif($final.blender -and $final.scenex){'OS_ARTIFACT_REGISTRY_REQUIRED'}elseif($final.terrain){'SCENEX_CONSUMER_BLENDER_REAL_QC_REQUIRED'}else{'LOCAL_JOBS_AND_PHYSICAL_QC_REQUIRED'}
+$receipt=[ordered]@{schema='openworker/case0003-local-continue/v4';case_id='0003';machine=$Machine;workspace_root=$WorkspaceRoot;transport='openworker-local-first';github_business_transport=$false;checked_at=[DateTimeOffset]::UtcNow.ToString('o');node=$node;agents=$agents;gates_before=$before;gates_after_submission=$final;submitted=$submitted;next_boundary=$next}
+$path=Join-Path $evidenceDir 'case0003-local-continue.json';$receipt|ConvertTo-Json -Depth 12|Set-Content -LiteralPath $path -Encoding utf8;$receipt|ConvertTo-Json -Depth 12|Write-Host
