@@ -21,7 +21,7 @@
                    "manifest_exists":  true,
                    "spec_exists":  true
                },
-    "started_at":  "2026-08-18T14:59:18.3045565+00:00",
-    "observed_at":  "2026-08-18T14:59:19.2801656+00:00",
+    "started_at":  "2026-08-18T14:59:52.6147207+00:00",
+    "observed_at":  "2026-08-18T14:59:53.3829213+00:00",
     "next_action":  "repair the reported stage/reason, then retry bootstrap only"
 }
