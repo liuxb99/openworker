@@ -122,3 +122,5 @@ jobs:
         if: steps.route.outputs.run != 'true'
         shell: cmd
         run: echo OPENWORKER_QUEUE_DRAIN_SKIP machine=%COMPUTERNAME% runner=%RUNNER_NAME%
+
+# case0004 trigger: 2026-08-18T11:22+08:00
