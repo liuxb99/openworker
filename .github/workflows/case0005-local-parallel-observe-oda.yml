@@ -1,5 +1,6 @@
 name: Case 0005 Local Parallel Observe ODA
 
+# Case 0005 bounded observation transport. It never owns long-running work.
 on:
   workflow_dispatch:
   push:
