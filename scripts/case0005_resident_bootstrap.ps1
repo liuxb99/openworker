@@ -14,7 +14,7 @@ function Save-Outcome([bool]$Succeeded,[string]$Reason,$RawResponse=$null,$Ack=$
   $dir=Split-Path $outcomePath
   New-Item -ItemType Directory -Force -Path $dir | Out-Null
   $o=[ordered]@{
-    schema='openworker/case0005-bootstrap-script-outcome/v3'
+    schema='openworker/case0005-bootstrap-script-outcome/v4'
     case_id='0005'
     machine=$env:COMPUTERNAME
     workspace_root=$WorkspaceRoot
@@ -113,8 +113,11 @@ try {
     COMFYX_STUDIO_ROOT=(Resolve-RepoRoot 'Comfyx-Studio' @('go.mod','cmd\operator-director-preproduction'))
     OPENMAIC_ROOT=(Resolve-RepoRootAlias @('OpenMAIC','openmaic-fork') @('package.json','src\cli\presentation.ts'))
   }
+  $goToolExe=Join-Path $envMap.GO_TOOL_ROOT 'gtr-local-exec.exe'
+  if(Test-Path -LiteralPath $goToolExe -PathType Leaf){$envMap.GTR_LOCAL_EXEC_EXE=$goToolExe}
   $checks.tool_roots=$envMap
-  $checks.go_tool_authority_kind=if($envMap.GO_TOOL_ROOT -ieq 'C:\ProgramData\go-tool-runtime\work-agent'){'deployed-runtime'}else{'source-checkout'}
+  $checks.go_tool_authority_kind=if($envMap.GTR_LOCAL_EXEC_EXE){'deployed-runtime-exe'}else{'source-checkout'}
+  if($checks.go_tool_authority_kind -eq 'deployed-runtime-exe' -and -not(Test-Path -LiteralPath $envMap.GTR_LOCAL_EXEC_EXE -PathType Leaf)){throw 'deployed GTR_LOCAL_EXEC_EXE authority missing'}
 
   $stage='resolve_comfyui_output'
   foreach($p in @('D:\Comfy-Desktop\ComfyUI-Installs\ComfyUI\ComfyUI\output','D:\ComfyUI\output')){
@@ -157,7 +160,7 @@ try {
   $evidence=Join-Path $WorkspaceRoot 'evidence'
   New-Item -ItemType Directory -Force -Path $evidence | Out-Null
   $receipt=[ordered]@{
-    schema='openworker/case0005-resident-bootstrap/v3';case_id='0005';machine=$Machine;workspace_root=$WorkspaceRoot;
+    schema='openworker/case0005-resident-bootstrap/v4';case_id='0005';machine=$Machine;workspace_root=$WorkspaceRoot;
     resident_root=$ResidentRoot;transport='go-tool-lan-hostname';target_queue_url="http://$Machine`:8848";business_execution='resident-openworker-local-supervisor';github_action_used_for_business_execution=$false;
     node=$node;ack=$ack;tool_roots=$envMap;submitted_at=[DateTimeOffset]::UtcNow.ToString('o')
   }
