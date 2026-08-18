@@ -1,0 +1,43 @@
+name: Bootstrap OpenWorker Node Service ODA
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    runs-on: [self-hosted, Windows, X64, ODA]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify fixed ODA computer
+        shell: powershell
+        run: |
+          if($env:COMPUTERNAME -ine 'DESKTOP-ODAQN0D'){throw "wrong host $env:COMPUTERNAME"}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+          cache-dependency-path: go-runtime/go.sum
+      - name: Build native Windows service binary
+        shell: powershell
+        working-directory: go-runtime
+        run: |
+          go mod tidy
+          $commit=$env:GITHUB_SHA
+          $build=[DateTime]::UtcNow.ToString('o')
+          go build -ldflags "-X github.com/liuxb99/openworker/go-runtime/internal/buildinfo.Version=p2-node -X github.com/liuxb99/openworker/go-runtime/internal/buildinfo.Commit=$commit -X github.com/liuxb99/openworker/go-runtime/internal/buildinfo.BuildTime=$build" -o openworker-node.exe ./cmd/openworker-node
+      - name: Install or upgrade OpenWorkerNode service
+        shell: powershell
+        run: |
+          & "$env:GITHUB_WORKSPACE\scripts\install_openworker_node_service.ps1" -SourceExe "$env:GITHUB_WORKSPACE\go-runtime\openworker-node.exe" -Workers 4 -Capabilities 'case0002,comfyx,minimax-h3,video,storyboard,presentation'
+      - name: Verify service node identity inventory and lease
+        shell: powershell
+        run: |
+          $s=Invoke-RestMethod 'http://127.0.0.1:8787/v1/node/status'
+          if($s.machine -ine 'DESKTOP-ODAQN0D'){throw "node machine=$($s.machine)"}
+          if($s.build.commit -ne $env:GITHUB_SHA){throw "node commit=$($s.build.commit) expected=$env:GITHUB_SHA"}
+          if(-not $s.lease_until){throw 'missing lease_until'}
+          if(-not ($s.inventory.capabilities -contains 'comfyx')){throw 'missing comfyx capability'}
+          $s|ConvertTo-Json -Depth 20
