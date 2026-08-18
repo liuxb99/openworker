@@ -7,10 +7,11 @@ import (
 )
 
 var (
-	Version   = "dev"
-	Commit    = "unknown"
-	BuildTime = "unknown"
-	startedAt = time.Now().UTC()
+	Version      = "dev"
+	Commit       = "unknown"
+	BuildTime    = "unknown"
+	TargetCommit = ""
+	startedAt    = time.Now().UTC()
 )
 
 const SupervisorAPIVersion = "v1"
@@ -26,6 +27,9 @@ func Snapshot() map[string]string {
 func ServiceSnapshot() map[string]any {
 	running := strings.TrimSpace(Commit)
 	target := strings.TrimSpace(os.Getenv("OPENWORKER_TARGET_COMMIT"))
+	if target == "" {
+		target = strings.TrimSpace(TargetCommit)
+	}
 	status := "UNTRACKED"
 	verified := false
 	if target != "" {
