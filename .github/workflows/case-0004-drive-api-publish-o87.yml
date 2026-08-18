@@ -24,25 +24,29 @@ env:
 
 jobs:
   publish:
-    name: Publish Case 0004 visual review bundle to Google Drive API
+    name: Publish Case 0004 visual review bundle to Google Drive API slot ${{ matrix.slot }}
+    strategy:
+      fail-fast: false
+      matrix:
+        slot: [1, 2, 3]
     runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 15
     defaults:
       run:
         shell: powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ". '{0}'"
     steps:
-      - name: Route to fixed O87 computer name
+      - name: Route candidate to fixed O87 computer name
         id: route
         shell: cmd
         run: |
           @echo off
           if /I not "%COMPUTERNAME%"=="DESKTOP-O87PJNR" (
             echo run=false>>"%GITHUB_OUTPUT%"
-            echo CASE0004_DRIVE_SKIP_WRONG_HOST actual=%COMPUTERNAME% runner=%RUNNER_NAME%
+            echo CASE0004_DRIVE_SKIP_WRONG_HOST slot=${{ matrix.slot }} actual=%COMPUTERNAME% runner=%RUNNER_NAME%
             exit /b 0
           )
           echo run=true>>"%GITHUB_OUTPUT%"
-          echo CASE0004_DRIVE_HOST_OK machine=%COMPUTERNAME% runner=%RUNNER_NAME%
+          echo CASE0004_DRIVE_HOST_OK slot=${{ matrix.slot }} machine=%COMPUTERNAME% runner=%RUNNER_NAME%
 
       - name: Checkout OpenWorker main
         if: steps.route.outputs.run == 'true'
@@ -108,6 +112,7 @@ jobs:
             case_id='0004'
             run_id=$env:GITHUB_RUN_ID
             run_attempt=$env:GITHUB_RUN_ATTEMPT
+            slot='${{ matrix.slot }}'
             machine=$env:COMPUTERNAME
             runner_name=$env:RUNNER_NAME
             route='${{ steps.route.outcome }}'
@@ -134,7 +139,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: case-0004-drive-api-publication-${{ github.run_id }}
+          name: case-0004-drive-api-publication-${{ github.run_id }}-${{ matrix.slot }}
           path: |
             D:\AI-Work\jobs\0004-DWG-TO-3D\evidence\case0004-visual-drive-handoff-${{ github.run_id }}.json
             D:\AI-Work\jobs\0004-DWG-TO-3D\.openworker\reviews\case0004-visual-${{ github.run_id }}\review-publish-receipt.json
