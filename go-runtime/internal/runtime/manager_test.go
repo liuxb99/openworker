@@ -2,6 +2,7 @@ package runtime_test
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	gort "runtime"
 	"strings"
@@ -72,4 +73,14 @@ func TestFailedJobPersistsExplainableExecutionSummary(t *testing.T){
 	found:=false
 	for _,e:=range events{if e.EventType=="execution_summary"{found=true;if !strings.Contains(e.Detail,"\"succeeded\":false"){t.Fatalf("missing succeeded=false: %s",e.Detail)};if !strings.Contains(e.Detail,"boom-detail"){t.Fatalf("missing stderr tail: %s",e.Detail)};if !strings.Contains(e.Detail,"\"next_action\""){t.Fatalf("missing next_action: %s",e.Detail)}}}
 	if !found{t.Fatal("execution_summary event not found")}
+}
+
+func TestWindowsQuotedExecutableCommand(t *testing.T){
+	if gort.GOOS!="windows"{t.Skip("windows quoting regression")}
+	root:=t.TempDir();st,err:=store.Open(filepath.Join(root,"node.sqlite3"));if err!=nil{t.Fatal(err)};defer st.Close()
+	rt:=owruntime.New(st,1,filepath.Join(root,"logs"),"TESTHOST");if err:=rt.Start();err!=nil{t.Fatal(err)};defer rt.Stop()
+	cwd:=t.TempDir()
+	cmd:=fmt.Sprintf("\"%s\" -test.run=^$",os.Args[0])
+	_,err=st.Submit(model.SubmitRequest{JobID:"QUOTE-1",DispatchID:"QUOTE-D-1",Machine:"TESTHOST",Command:cmd,CWD:cwd,TimeoutSec:10},"TESTHOST");if err!=nil{t.Fatal(err)}
+	waitStatus(t,st,map[model.Status]int{model.StatusSucceeded:1},10*time.Second)
 }
