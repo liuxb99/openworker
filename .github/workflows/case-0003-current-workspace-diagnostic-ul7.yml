@@ -1,0 +1,106 @@
+name: Case 0003 Current Workspace Diagnostic UL7
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/case-0003-current-workspace-diagnostic-ul7.yml'
+
+permissions:
+  contents: write
+
+env:
+  CASE0003_ASSIGNED_HOST: DESKTOP-UL7V2VV
+  CASE0003_WORKSPACE: 'D:\AI-Work\jobs\0003-YUJING-BRIDGE'
+  CASE0003_DIAG_BRANCH: case0003-current-workspace-diagnostic
+  PYTHONUTF8: '1'
+  PYTHONIOENCODING: utf-8
+
+jobs:
+  diagnostic:
+    runs-on: [self-hosted, Windows, X64, UL7]
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ". '{0}'"
+    steps:
+      - name: Verify fixed UL7 host
+        run: |
+          $ErrorActionPreference='Stop'
+          if($env:COMPUTERNAME -ine $env:CASE0003_ASSIGNED_HOST){throw ('wrong host '+$env:COMPUTERNAME)}
+          if(-not(Test-Path -LiteralPath $env:CASE0003_WORKSPACE -PathType Container)){throw 'Case 0003 workspace unavailable'}
+
+      - name: Checkout OpenWorker main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Stage current Case 0003 workspace evidence
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=Join-Path (Get-Location) 'diagnostic-handoff\case0003\current'
+          if(Test-Path -LiteralPath $root){Remove-Item -LiteralPath $root -Recurse -Force}
+          New-Item -ItemType Directory -Force $root|Out-Null
+
+          $items=[ordered]@{
+            final_acceptance='acceptance\openworker-final\work-ledger-final-acceptance.json'
+            scenex_png='scenex\terrain-browse.png'
+            scenex_evidence='scenex\terrain-browse-evidence.json'
+            scenex_workspace='scenex\scenex-workspace.json'
+            launcher='Open-Case0003-SceneX.bat'
+            launcher_evidence='scenex\scenex-launcher-evidence.json'
+            worklist='.openworker\case-worklist.json'
+          }
+          $summary=[ordered]@{
+            schema_version='openworker-case0003-current-workspace-diagnostic/v1'
+            case_id='0003'
+            assigned_host=$env:CASE0003_ASSIGNED_HOST
+            computer_name=$env:COMPUTERNAME
+            runner_name=$env:RUNNER_NAME
+            github_run_id=$env:GITHUB_RUN_ID
+            workspace=$env:CASE0003_WORKSPACE
+            files=[ordered]@{}
+          }
+          foreach($entry in $items.GetEnumerator()){
+            $src=Join-Path $env:CASE0003_WORKSPACE $entry.Value
+            $record=[ordered]@{relative_path=$entry.Value;exists=$false}
+            if(Test-Path -LiteralPath $src -PathType Leaf){
+              $record.exists=$true
+              $record.size=(Get-Item -LiteralPath $src).Length
+              $record.sha256=(Get-FileHash -LiteralPath $src -Algorithm SHA256).Hash.ToLowerInvariant()
+              $dst=Join-Path $root ([IO.Path]::GetFileName($src))
+              Copy-Item -LiteralPath $src -Destination $dst -Force
+            }
+            $summary.files[$entry.Key]=$record
+          }
+          $statePath=Join-Path $env:CASE0003_WORKSPACE 'acceptance\openworker-final\work-ledger-final-acceptance.json'
+          if(Test-Path -LiteralPath $statePath -PathType Leaf){
+            $state=Get-Content -LiteralPath $statePath -Raw|ConvertFrom-Json
+            $summary.revision_id=[string]$state.revision_id
+            $summary.acceptance_status=[string]$state.status
+            if(-not [string]::IsNullOrWhiteSpace([string]$state.revision_id)){
+              $bundle=Join-Path $env:CASE0003_WORKSPACE ('.openworker\reviews\'+[string]$state.revision_id)
+              $summary.review_bundle_path=$bundle
+              $summary.review_bundle_exists=Test-Path -LiteralPath $bundle -PathType Container
+              if($summary.review_bundle_exists){
+                $summary.review_bundle_files=@(Get-ChildItem -LiteralPath $bundle -Recurse -File|ForEach-Object{[ordered]@{relative=$_.FullName.Substring($bundle.Length).TrimStart('\');size=$_.Length;sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()}})
+              }
+            }
+          }
+          [IO.File]::WriteAllText((Join-Path $root 'diagnostic-summary.json'),($summary|ConvertTo-Json -Depth 20),[Text.UTF8Encoding]::new($false))
+          Write-Host ('CASE0003_CURRENT_DIAGNOSTIC_STAGED revision='+[string]$summary.revision_id+' status='+[string]$summary.acceptance_status)
+
+      - name: Publish diagnostic branch
+        run: |
+          $ErrorActionPreference='Stop'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git checkout -B $env:CASE0003_DIAG_BRANCH
+          git add -- diagnostic-handoff/case0003/current
+          git commit -m 'case0003: publish current UL7 workspace diagnostic'
+          if($LASTEXITCODE -ne 0){throw 'failed to commit Case 0003 diagnostic handoff'}
+          git push --force origin ("HEAD:refs/heads/"+$env:CASE0003_DIAG_BRANCH)
+          if($LASTEXITCODE -ne 0){throw 'failed to publish Case 0003 diagnostic branch'}
+          Write-Host "CASE0003_CURRENT_DIAGNOSTIC_PUBLISHED branch=$env:CASE0003_DIAG_BRANCH"
