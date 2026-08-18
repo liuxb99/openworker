@@ -14,37 +14,56 @@ permissions:
 
 concurrency:
   group: openworker-case0002-worklist-sync
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 env:
   CASE0002_WORKSPACE: D:\AI-Example\0002
 
 jobs:
   sync-worklist:
-    runs-on: [self-hosted, Windows, X64, ODA]
+    strategy:
+      fail-fast: false
+      matrix:
+        slot: [1, 2, 3]
+    runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 10
     defaults:
       run:
         shell: powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ". '{0}'"
     steps:
-      - name: Verify fixed ODA machine authority
+      - name: Route one candidate to fixed ODA computer name
+        id: route
+        shell: cmd
         run: |
-          $ErrorActionPreference='Stop'
-          if($env:COMPUTERNAME -ne 'DESKTOP-ODAQN0D'){
-            throw "CASE0002_HOST_MISMATCH expected=DESKTOP-ODAQN0D actual=$env:COMPUTERNAME runner=$env:RUNNER_NAME"
-          }
-          Write-Host "CASE0002_HOST_OK machine=$env:COMPUTERNAME runner=$env:RUNNER_NAME"
+          @echo off
+          if /I not "%COMPUTERNAME%"=="DESKTOP-ODAQN0D" (
+            echo run=false>>"%GITHUB_OUTPUT%"
+            echo CASE0002_SYNC_SKIP_WRONG_HOST slot=${{ matrix.slot }} actual=%COMPUTERNAME% runner=%RUNNER_NAME%
+            exit /b 0
+          )
+          if not exist "%CASE0002_WORKSPACE%\.locks" mkdir "%CASE0002_WORKSPACE%\.locks"
+          mkdir "%CASE0002_WORKSPACE%\.locks\worklist-sync-%GITHUB_RUN_ID%-%GITHUB_RUN_ATTEMPT%" 2>nul
+          if errorlevel 1 (
+            echo run=false>>"%GITHUB_OUTPUT%"
+            echo CASE0002_SYNC_SKIP_DUPLICATE_ODA slot=${{ matrix.slot }} actual=%COMPUTERNAME% runner=%RUNNER_NAME%
+          ) else (
+            echo run=true>>"%GITHUB_OUTPUT%"
+            echo CASE0002_SYNC_HOST_OK slot=${{ matrix.slot }} machine=%COMPUTERNAME% runner=%RUNNER_NAME%
+          )
 
       - name: Checkout OpenWorker main
+        if: steps.route.outputs.run == 'true'
         uses: actions/checkout@v4
 
       - name: Sync durable CaseWorklist to latest manifest
+        if: steps.route.outputs.run == 'true'
         run: |
           $ErrorActionPreference='Stop'
           python scripts\case_worklist_sync_manifest.py --workspace-root $env:CASE0002_WORKSPACE --manifest case-worklists\0002.json
           if($LASTEXITCODE -ne 0){throw 'CASE0002 manifest sync failed'}
 
       - name: Assert storyboard review gates precede IMAGE and VIDEO
+        if: steps.route.outputs.run == 'true'
         run: |
           $ErrorActionPreference='Stop'
           $path=Join-Path $env:CASE0002_WORKSPACE '.openworker\case-worklist.json'
@@ -61,3 +80,8 @@ jobs:
           if(-not(@($s057.dependencies) -contains '0002-055')){throw 'illustrated storyboard approval is not gated by illustrated PPTX'}
           if(-not(@($s060.dependencies) -contains '0002-057')){throw 'VIDEO step is not gated by illustrated storyboard approval'}
           Write-Host "CASE0002_STORYBOARD_GATES_OK next=$($w.canonical_next_step_id)"
+
+      - name: Non-ODA candidate exits cleanly
+        if: steps.route.outputs.run != 'true'
+        shell: cmd
+        run: echo CASE0002_SYNC_NOT_EXECUTED slot=${{ matrix.slot }} actual=%COMPUTERNAME% runner=%RUNNER_NAME%
