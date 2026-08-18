@@ -15,10 +15,15 @@ concurrency:
 jobs:
   kick-local-controller:
     if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[case0005-local-kick]')
-    runs-on: [self-hosted, Windows, X64]
+    runs-on: [self-hosted, Windows, X64, ODA]
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+
+      - name: Verify ODA computer name
+        shell: powershell
+        run: |
+          if ($env:COMPUTERNAME -ine 'DESKTOP-ODAQN0D') { throw "wrong host: $env:COMPUTERNAME" }
 
       - name: Submit Case 0005 through OpenWorker cluster to ODA
         shell: powershell
