@@ -1,14 +1,8 @@
 """Canonical Case 0005 controller gated by REAL local-supervisor verification.
 
-This wrapper is intentionally small: the true-local four-slot fanout logic lives
-in case0005_true_local_controller.py, while this layer prevents bootstrap or
-business dispatch unless go-tool :8848 has a fresh REAL_VERIFIED receipt.
-There is no GitHub Actions fallback.
-
-Every child process is also forced back through this module. This is important:
-a parent-only gate is not sufficient because run-step / image / video children
-can dispatch downstream work after they finish. No Case 0005 continuation may
-silently fall back to an ungated controller module.
+All business fanout is owned by go-tool :8848. OpenWorker is used only as the
+resident process/progress kernel and runs one lightweight coordinator per
+fanout group. There is no GitHub Actions fallback.
 """
 from __future__ import annotations
 
@@ -20,6 +14,7 @@ import sys
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from .case0005_direct_queue_fanout import Case0005DirectQueueFanoutMixin
 from .case0005_true_local_controller import TrueLocalCase0005Controller
 from .case_worklist import CaseWorklistError
 
@@ -27,7 +22,7 @@ _VERIFY_URL = "http://127.0.0.1:8848/api/execution/local-supervisor/verification
 _CANONICAL_MODULE = "coworker.case0005_verified_local_controller"
 
 
-class VerifiedLocalCase0005Controller(TrueLocalCase0005Controller):
+class VerifiedLocalCase0005Controller(Case0005DirectQueueFanoutMixin, TrueLocalCase0005Controller):
     def _require_verified_local_supervisor(self, operation: str) -> dict:
         try:
             request = Request(_VERIFY_URL, method="GET")
@@ -106,14 +101,7 @@ class VerifiedLocalCase0005Controller(TrueLocalCase0005Controller):
     def _job_payload(self, worklist, step, action: str, execution_id: str, claim_path: Path) -> dict:
         """Force every ordinary child job back through the verified controller."""
         python = sys.executable or "python"
-        argv = [
-            python, "-m", _CANONICAL_MODULE, "run-step",
-            "--workspace", str(self.workspace),
-            "--step-id", step.step_id,
-            "--action-id", action,
-            "--execution-id", execution_id,
-            "--claim", str(claim_path),
-        ]
+        argv = [python, "-m", _CANONICAL_MODULE, "run-step", "--workspace", str(self.workspace), "--step-id", step.step_id, "--action-id", action, "--execution-id", execution_id, "--claim", str(claim_path)]
         return {
             "job_id": execution_id,
             "dispatch_id": "verified-local-controller-" + execution_id,
@@ -127,114 +115,31 @@ class VerifiedLocalCase0005Controller(TrueLocalCase0005Controller):
             "locks": [f"case:{worklist.case_id}:step:{step.step_id}"],
         }
 
-    def _image_child_payload(
-        self,
-        *,
-        worklist,
-        step_id: str,
-        group_id: str,
-        child_id: str,
-        asset_id: str,
-        role: str,
-        claim_path: Path,
-        manifest_path: Path,
-    ) -> dict:
-        """Force image fanout children back through the verified controller."""
+    # These legacy payload builders remain fail-safe for old persisted manifests;
+    # new fanout uses Case0005DirectQueueFanoutMixin and does not create one
+    # OpenWorker business job per child.
+    def _image_child_payload(self, *, worklist, step_id: str, group_id: str, child_id: str, asset_id: str, role: str, claim_path: Path, manifest_path: Path) -> dict:
         python = sys.executable or "python"
-        argv = [
-            python, "-m", _CANONICAL_MODULE, "run-image-asset",
-            "--workspace", str(self.workspace),
-            "--step-id", step_id,
-            "--group-execution-id", group_id,
-            "--child-job-id", child_id,
-            "--asset-id", asset_id,
-            "--role", role,
-            "--claim", str(claim_path),
-            "--fanout-manifest", str(manifest_path),
-        ]
-        return {
-            "job_id": child_id,
-            "dispatch_id": "verified-local-controller-" + child_id,
-            "machine": worklist.assigned_host,
-            "priority": 100,
-            "command": subprocess.list2cmdline(argv),
-            "cwd": str(self.openworker_root),
-            "workspace_root": str(self.workspace),
-            "env": self._localexec_env(),
-            "timeout_sec": 2100,
-            "locks": [f"case:{worklist.case_id}:image-asset:{self._safe_id(asset_id)}"],
-        }
+        argv = [python, "-m", _CANONICAL_MODULE, "run-image-asset", "--workspace", str(self.workspace), "--step-id", step_id, "--group-execution-id", group_id, "--child-job-id", child_id, "--asset-id", asset_id, "--role", role, "--claim", str(claim_path), "--fanout-manifest", str(manifest_path)]
+        return {"job_id":child_id,"dispatch_id":"verified-local-controller-"+child_id,"machine":worklist.assigned_host,"priority":100,"command":subprocess.list2cmdline(argv),"cwd":str(self.openworker_root),"workspace_root":str(self.workspace),"env":self._localexec_env(),"timeout_sec":2100,"locks":[f"case:{worklist.case_id}:image-asset:{self._safe_id(asset_id)}"]}
 
-    def _video_child_payload(
-        self,
-        *,
-        worklist,
-        group_id: str,
-        child_id: str,
-        shot_id: str,
-        claim_path: Path,
-        manifest_path: Path,
-    ) -> dict:
-        """Force video fanout children back through the verified controller."""
+    def _video_child_payload(self, *, worklist, group_id: str, child_id: str, shot_id: str, claim_path: Path, manifest_path: Path) -> dict:
         python = sys.executable or "python"
-        argv = [
-            python, "-m", _CANONICAL_MODULE, "run-video-shot",
-            "--workspace", str(self.workspace),
-            "--group-execution-id", group_id,
-            "--child-job-id", child_id,
-            "--shot-id", shot_id,
-            "--claim", str(claim_path),
-            "--fanout-manifest", str(manifest_path),
-        ]
-        return {
-            "job_id": child_id,
-            "dispatch_id": "verified-local-controller-" + child_id,
-            "machine": worklist.assigned_host,
-            "priority": 100,
-            "command": subprocess.list2cmdline(argv),
-            "cwd": str(self.openworker_root),
-            "workspace_root": str(self.workspace),
-            "env": self._localexec_env(),
-            "timeout_sec": 2100,
-            "locks": [f"case:{worklist.case_id}:video-shot:{self._safe_id(shot_id)}"],
-        }
+        argv = [python, "-m", _CANONICAL_MODULE, "run-video-shot", "--workspace", str(self.workspace), "--group-execution-id", group_id, "--child-job-id", child_id, "--shot-id", shot_id, "--claim", str(claim_path), "--fanout-manifest", str(manifest_path)]
+        return {"job_id":child_id,"dispatch_id":"verified-local-controller-"+child_id,"machine":worklist.assigned_host,"priority":100,"command":subprocess.list2cmdline(argv),"cwd":str(self.openworker_root),"workspace_root":str(self.workspace),"env":self._localexec_env(),"timeout_sec":2100,"locks":[f"case:{worklist.case_id}:video-shot:{self._safe_id(shot_id)}"]}
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Case 0005 REAL-verified local controller")
     parser.add_argument("--node-url", default="http://127.0.0.1:8787")
     sub = parser.add_subparsers(dest="command", required=True)
-    bootstrap = sub.add_parser("bootstrap")
-    bootstrap.add_argument("--workspace", required=True)
-    bootstrap.add_argument("--manifest", required=True)
-    bootstrap.add_argument("--spec", required=True)
-    dispatch = sub.add_parser("dispatch")
-    dispatch.add_argument("--workspace", required=True)
-    dispatch.add_argument("--spec")
-    run = sub.add_parser("run-step")
-    run.add_argument("--workspace", required=True)
-    run.add_argument("--spec")
-    run.add_argument("--step-id", required=True)
-    run.add_argument("--action-id", required=True)
-    run.add_argument("--execution-id", required=True)
-    run.add_argument("--claim", required=True)
-    image = sub.add_parser("run-image-asset")
-    image.add_argument("--workspace", required=True)
-    image.add_argument("--step-id", required=True)
-    image.add_argument("--group-execution-id", required=True)
-    image.add_argument("--child-job-id", required=True)
-    image.add_argument("--asset-id", required=True)
-    image.add_argument("--role", required=True)
-    image.add_argument("--claim", required=True)
-    image.add_argument("--fanout-manifest", required=True)
-    video = sub.add_parser("run-video-shot")
-    video.add_argument("--workspace", required=True)
-    video.add_argument("--spec")
-    video.add_argument("--group-execution-id", required=True)
-    video.add_argument("--child-job-id", required=True)
-    video.add_argument("--shot-id", required=True)
-    video.add_argument("--claim", required=True)
-    video.add_argument("--fanout-manifest", required=True)
+    bootstrap = sub.add_parser("bootstrap"); bootstrap.add_argument("--workspace", required=True); bootstrap.add_argument("--manifest", required=True); bootstrap.add_argument("--spec", required=True)
+    dispatch = sub.add_parser("dispatch"); dispatch.add_argument("--workspace", required=True); dispatch.add_argument("--spec")
+    run = sub.add_parser("run-step"); run.add_argument("--workspace", required=True); run.add_argument("--spec"); run.add_argument("--step-id", required=True); run.add_argument("--action-id", required=True); run.add_argument("--execution-id", required=True); run.add_argument("--claim", required=True)
+    image = sub.add_parser("run-image-asset"); image.add_argument("--workspace", required=True); image.add_argument("--step-id", required=True); image.add_argument("--group-execution-id", required=True); image.add_argument("--child-job-id", required=True); image.add_argument("--asset-id", required=True); image.add_argument("--role", required=True); image.add_argument("--claim", required=True); image.add_argument("--fanout-manifest", required=True)
+    video = sub.add_parser("run-video-shot"); video.add_argument("--workspace", required=True); video.add_argument("--spec"); video.add_argument("--group-execution-id", required=True); video.add_argument("--child-job-id", required=True); video.add_argument("--shot-id", required=True); video.add_argument("--claim", required=True); video.add_argument("--fanout-manifest", required=True)
+    watch_image = sub.add_parser("watch-image-fanout"); watch_image.add_argument("--workspace", required=True); watch_image.add_argument("--spec"); watch_image.add_argument("--fanout-manifest", required=True)
+    watch_video = sub.add_parser("watch-video-fanout"); watch_video.add_argument("--workspace", required=True); watch_video.add_argument("--spec"); watch_video.add_argument("--fanout-manifest", required=True)
     return parser
 
 
@@ -247,30 +152,15 @@ def main() -> int:
         elif args.command == "dispatch":
             result = controller.dispatch_ready()
         elif args.command == "run-step":
-            result = controller.run_step(
-                step_id=args.step_id,
-                action_id=args.action_id,
-                execution_id=args.execution_id,
-                claim_path=args.claim,
-            )
+            result = controller.run_step(step_id=args.step_id, action_id=args.action_id, execution_id=args.execution_id, claim_path=args.claim)
         elif args.command == "run-image-asset":
-            result = controller.run_image_asset(
-                step_id=args.step_id,
-                group_execution_id=args.group_execution_id,
-                child_job_id=args.child_job_id,
-                asset_id=args.asset_id,
-                role=args.role,
-                claim_path=args.claim,
-                fanout_manifest=args.fanout_manifest,
-            )
+            result = controller.run_image_asset(step_id=args.step_id, group_execution_id=args.group_execution_id, child_job_id=args.child_job_id, asset_id=args.asset_id, role=args.role, claim_path=args.claim, fanout_manifest=args.fanout_manifest)
+        elif args.command == "run-video-shot":
+            result = controller.run_video_shot(group_execution_id=args.group_execution_id, child_job_id=args.child_job_id, shot_id=args.shot_id, claim_path=args.claim, fanout_manifest=args.fanout_manifest)
+        elif args.command == "watch-image-fanout":
+            result = controller.watch_image_fanout(args.fanout_manifest)
         else:
-            result = controller.run_video_shot(
-                group_execution_id=args.group_execution_id,
-                child_job_id=args.child_job_id,
-                shot_id=args.shot_id,
-                claim_path=args.claim,
-                fanout_manifest=args.fanout_manifest,
-            )
+            result = controller.watch_video_fanout(args.fanout_manifest)
     except Exception as exc:
         try:
             controller._append_ledger("controller_command_failed", command=args.command, error=str(exc))
