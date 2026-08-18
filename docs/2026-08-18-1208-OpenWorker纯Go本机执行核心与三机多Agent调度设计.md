@@ -1,20 +1,114 @@
 # OpenWorker 纯 Go 本机执行核心与三机多 Agent 调度设计
 
 日期：2026-08-18
-状态：P1 BATCH-5 IMPLEMENTED — ENTERING P2 CLUSTER PREP
+状态：P2 BATCH-1 IMPLEMENTED — CLUSTER OBSERVATION / ROUTING CONTRACT READY
 
 ## 1. 架构结论
 
-OpenWorker 继续采用双层结构：Python 保留案例、WorkLedger、知识、审核、Drive 与上层 orchestration；纯 Go `openworker-node.exe` 作为本机执行内核，负责 durable queue、多 Agent slots、真实进程、资源锁、heartbeat、timeout、cancel、drain、retry/recover，以及三机节点状态。
+OpenWorker 继续采用双层结构：Python 保留案例、WorkLedger、知识、审核、Drive 与上层 orchestration；纯 Go `openworker-node.exe` 是本机执行与三机状态核心。GitHub Action 只负责 transport / CI / evidence，Action completed 永远不等于业务 succeeded。
 
-GitHub Action 继续退化为 transport：`runner accepted -> COMPUTERNAME -> submit -> durable ACK -> Action completed`。Action completed 永远不等于业务 succeeded。
+## 2. P0 ~ P1 已完成摘要
 
-## 2. 当前 Go Node API
+已完成 SQLite durable queue、4 worker pool、Action `_work` worktree、resource locks、真实 process supervisor、heartbeat/timeout/cancel、process-tree kill、drain queued/all、retry/recover、Python adapter、durable ACK、原生 Windows Service、build identity、durable events、Case 0004 submit->ACK->exit 样板、restart PID reconciliation、tool/GPU/capability inventory、15 秒 node lease，以及 UL7/ODA/O87 service bootstrap。
+
+真实三机 self-hosted receipt 仍待取得，因此没有把 IMPLEMENTED 写成 REAL VERIFIED。
+
+## 3. P2 Batch-1：纯 Go Cluster Registry
+
+提交 `06f487ea` 新增 `go-runtime/internal/cluster/registry.go`。
+
+Registry 节点模型包含：
+
+```text
+node_id
+machine
+endpoint
+online
+heartbeat_at
+lease_until
+max/busy/free workers
+queued_jobs
+capabilities
+inventory
+build
+last_error
+```
+
+Registry 不把“曾经在线”误当成“现在在线”。每次读取 Nodes 时都按当前时间重新判断 `lease_until`；lease 过期节点自动视为 offline。
+
+## 4. P2 Batch-1：Capability-aware Route Selection
+
+Registry 新增 `Select(machine, requiredCapabilities)`：
+
+```text
+固定 machine
+  -> 只允许该 machine/node_id
+machine=any
+  -> online lease
+  -> capability 全部满足
+  -> free_workers 较多优先
+  -> 同 free_workers 时 queued_jobs 较少优先
+```
+
+没有合格节点时 fail-closed 返回 `no online compatible node`，不会随便把任务丢给错误机器。
+
+提交 `4240fd23` 增加测试，覆盖：
+
+- expired lease 节点不能被调度；
+- capability 不匹配不能被调度；
+- `machine=any` 优先 free worker 较多节点。
+
+## 5. P2 Batch-1：Heartbeat Controller
+
+提交 `41e2fe0a` 新增 cluster Controller。
+
+每个 OpenWorker Node 可以配置多个 peer endpoint，每 5 秒抓取：
+
+```text
+GET <peer>/v1/node/status
+```
+
+抓取成功则更新 heartbeat/lease/capability/load；抓取失败保留节点身份并标 offline/error。三台机器不需要同时永远在线，离线节点只是失去 lease，不会破坏其他节点执行。
+
+当前实现是轻量 peer-observation registry，不做复杂共识协议；符合三台个人工作机不同时间上线的实际情况。
+
+## 6. P2 Batch-1：Node Cluster 配置
+
+提交：
+
+- `4a59edf9`：node lifecycle 接入 cluster Controller；
+- `84dbd2a9`：新增 `openworker-node.exe -peers`；
+- `93962d5c`：Windows service installer 支持 `-Peers`，持久写入 SCM binPath。
+
+也可使用：
+
+```text
+OPENWORKER_CLUSTER_PEERS
+```
+
+因此 cluster peer 配置与 capability 一样，不依赖一次性的 Action 环境变量。
+
+## 7. P2 Batch-1：Cluster API
+
+提交 `13b52676` 新增：
+
+```text
+GET /v1/cluster/status
+GET /v1/cluster/capabilities
+GET /v1/cluster/route?machine=any&capabilities=bridge,blender
+```
+
+`cluster.status` 返回 observed nodes、online/offline 数量与时间；`cluster.capabilities` 返回每节点 capability；`cluster.route` 只做路由决策，不直接执行任务，便于先观察/验证 scheduler 判断。
+
+## 8. 当前 Go Node API
 
 ```text
 GET  /healthz
 GET  /v1/node/info
 GET  /v1/node/status
+GET  /v1/cluster/status
+GET  /v1/cluster/capabilities
+GET  /v1/cluster/route
 POST /v1/jobs
 GET  /v1/jobs
 GET  /v1/jobs/{job_id}
@@ -24,212 +118,56 @@ POST /v1/jobs/{job_id}/retry
 POST /v1/queue/drain?mode=queued|all
 ```
 
-`job_id` 贯穿 Action、Go Core、Python Control Plane、WorkLedger、artifact、QC receipt；`dispatch_id` 负责派工幂等。
-
-## 3. P0 ~ P1 Batch-4 已完成摘要
-
-已完成：SQLite durable store、4 worker pool、Action `_work` worktree slots、resource locks、真实 process supervisor、heartbeat/timeout/cancel、Windows process-tree kill、queued/all drain、显式 retry、Python node adapter、Action durable ACK bridge、原生 Windows Service、build identity、durable job event ledger，以及 Case 0004 O87 `submit -> ACK -> exit` + 独立 result verify 样板。
-
-O87 service bootstrap 与真实 Case 0004 仍需 self-hosted REAL receipt，因此未宣称真实验收完成。
-
-## 4. P1 Batch-5：Restart PID 存活恢复
-
-旧逻辑在 Host 启动时把所有 `starting/running` 一律标 stale，无法分辨旧 PID 是否仍活着。
-
-本批新增：
-
-- `68f91006`：Windows 使用 `OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION)` + `GetExitCodeProcess` 检查 PID 是否 `STILL_ACTIVE`；
-- `ff9c8b0d`：非 Windows 使用 signal 0 做存活探测；
-- `2458a1be`：Store 增加 `ActiveJobs()` 与 `MarkStale(job_id,detail)`；
-- `12721533`：Host startup recovery 改为逐 job reconciliation；
-- `2c57529f`：验证遗留 active job 在 startup 被标 stale 并写 durable event。
-
-当前 fail-closed policy：
+## 9. 三机目标拓扑
 
 ```text
-读取 starting/running
--> 检查 PID
--> PID 已死：直接 stale
--> PID 仍活：先 kill 整个 orphan process tree
--> stale
--> durable stale event 记录 pid/alive/处理结果
--> 只有显式 retry 才能重新执行
+UL7 :8787 -> case0003,bridge,blender,scenex,engineering,drive-review
+ODA :8787 -> case0002,comfyx,minimax-h3,video,storyboard,presentation
+O87 :8787 -> case0004,dwg,story-index,engineering
 ```
 
-这样避免服务重启后“旧进程还活着 + 新 retry 又跑一份”的双执行风险。
+每台 Node 的 `-peers` 指向另外可达节点 endpoint。某台关机后 lease 过期，其他节点仍可看到它 offline，并停止向它做 `machine=any` 路由。
 
-## 5. P1 Batch-5：Node Capability / Tool / GPU Inventory
+## 10. 当前调度铁律
 
-提交 `ea07e3e5` 新增 `internal/inventory`。
+- COMPUTERNAME 仍是固定机器最终权威；
+- capability 只是可执行能力，不替代机器身份；
+- fixed machine 不自动漂移；
+- `machine=any` 才允许 cluster route；
+- expired lease 绝不能接新任务；
+- route 目前只返回 selected node，不跨机偷偷 submit；
+- Action durable ACK 与真实 job succeeded 分离；
+- restart orphan PID 必须先处理再 stale；
+- stale 只能显式 retry。
 
-`GET /v1/node/info` 与 `/v1/node/status` 现在可以发布：
+## 11. 尚未完成的 P2
 
-```text
-capabilities
-installed tool availability/path
-gpu index/name/memory
-collected_at
-```
+1. `cluster_jobs`：聚合三机 job 状态；
+2. `cluster_agents`：发布每个 worker slot 当前 job；
+3. cluster route -> remote durable submit；
+4. 跨节点 job_id / dispatch_id 幂等；
+5. endpoint discovery/配置 receipt；
+6. go-tool capability：`openworker.cluster.status/jobs/capabilities/route`；
+7. 三机真实网络可达性、lease 过期、恢复上线 REAL 验证；
+8. shared cluster durable history。当前 registry 是运行期观察层，不假装成已经完成的中央持久库。
 
-默认 tool probe：
+## 12. 下一批 P2
 
-```text
-git
-go
-python
-powershell
-blender
-nvidia-smi
-```
-
-GPU inventory 使用 `nvidia-smi --query-gpu=index,name,memory.total`；没有 NVIDIA 环境时返回空 GPU list，不伪造资源。
-
-`b6030628` 增加 capability normalization test。
-
-## 6. P1 Batch-5：Heartbeat / Lease Contract
-
-提交 `0673bf21` 扩充 `/healthz` 与 `/v1/node/status`：
+下一批优先补：
 
 ```text
-node_id
-heartbeat_at
-lease_seconds = 15
-lease_until
-```
-
-P2 Registry 后续只要定期抓 node status，即可按 `lease_until` 判断节点是否仍可调度。超过 lease 的节点必须视为 unavailable，不允许继续派 `machine=any` 新任务。
-
-目前 lease 是 node response contract，还没有中央 Registry 持久化，这是下一阶段 P2 的工作。
-
-## 7. P1 Batch-5：Service Capability 配置
-
-提交：
-
-- `81d29a7c`：nodeConfig 支持 `Capabilities`；
-- `c4dc97fe`：`openworker-node.exe -capabilities`；
-- `be79d2ed`：Windows service installer 支持 `-Capabilities`，并持久写入 SCM `binPath`。
-
-因此 capability 不依赖临时 Action 环境变量；服务重启后仍保留节点角色。
-
-## 8. 三机 Service Bootstrap
-
-### O87
-
-`96bd056c` 更新 O87 bootstrap：
-
-```text
-COMPUTERNAME = DESKTOP-O87PJNR
-capabilities = case0004,dwg,story-index,engineering
-```
-
-并验证 `lease_until`、build commit 与 `dwg` capability。
-
-### UL7
-
-`d9749c97` 新增：
-
-```text
-.github/workflows/bootstrap-openworker-node-ul7.yml
-```
-
-固定：
-
-```text
-COMPUTERNAME = DESKTOP-UL7V2VV
-capabilities = case0003,bridge,blender,scenex,engineering,drive-review
-```
-
-### ODA
-
-`8b20d520` 新增：
-
-```text
-.github/workflows/bootstrap-openworker-node-oda.yml
-```
-
-当前固定检查：
-
-```text
-COMPUTERNAME = DESKTOP-ODAQN0D
-capabilities = case0002,comfyx,minimax-h3,video,storyboard,presentation
-```
-
-该 hostname 必须由真实 ODA self-hosted run receipt 再确认；若实际 COMPUTERNAME 不同，workflow 会 fail-closed，不会静默在错误机器安装服务。
-
-## 9. 当前三机目标状态
-
-```text
-UL7  -> OpenWorkerNode :8787 -> bridge/blender/scenex/engineering
-ODA  -> OpenWorkerNode :8787 -> comfyx/minimax-h3/video/storyboard
-O87  -> OpenWorkerNode :8787 -> dwg/story-index/engineering
-```
-
-每台默认 4 worker slots；实际并行能力仍由 resource locks / GPU locks / workspace locks 限制，不把“4 workers”误解为“所有 GPU 任务都可以四份同时跑”。
-
-## 10. 当前恢复铁律
-
-- service restart 不可直接重跑旧 active job；
-- PID 存活必须先处理 orphan process；
-- 旧 active job 最终进入 stale；
-- stale 必须显式 retry；
-- retry 保留同一 durable `job_id`；
-- event ledger 必须记录 recovery 原因；
-- 固定机器最后权威仍是 COMPUTERNAME；
-- capability 是调度条件，不是机器身份替代品。
-
-## 11. 当前真实验收状态
-
-代码层已经进入三节点准备，但以下仍需 REAL self-hosted receipt：
-
-1. O87 OpenWorkerNode service 安装/升级 + inventory/lease；
-2. UL7 OpenWorkerNode service 安装/升级 + inventory/lease；
-3. ODA OpenWorkerNode service 安装/升级 + COMPUTERNAME 最终确认；
-4. Case 0004 durable ACK -> job succeeded -> event ledger -> local artifact -> GitHub result receipt；
-5. restart 时真实 orphan PID recovery 行为。
-
-因此本批状态是：**IMPLEMENTED，尚未宣称三机 REAL VERIFIED。**
-
-## 12. 下一阶段 P2：Cluster Registry
-
-下一批开始建立中央 cluster authority：
-
-```text
-cluster_nodes
-cluster_agents
-cluster_capabilities
 cluster_jobs
+cluster_agents
+remote submit
+cluster job status
 ```
 
-每个 node 以 heartbeat/lease 更新：
-
-```text
-node_id
-computer_name
-endpoint
-build.commit
-heartbeat_at
-lease_until
-workers busy/free
-capabilities
-tools
-gpus
-queue depth
-```
-
-目标 API / go-tool：
-
-```text
-openworker.cluster.status
-openworker.cluster.jobs
-openworker.cluster.capabilities
-```
-
-之后才允许 `machine=any` 根据 online lease + capability + free slots + resource/GPU availability 自动选机器。固定 machine job 不参与自动漂移。
+并把 cluster 查询/路由能力同步给 go-tool。等三机 service endpoint REAL 可达后，再决定 shared durable registry authority 的最终持久化位置，不提前引入复杂数据库或共识系统。
 
 ## 13. 验收铁律
 
-必须持续覆盖：四任务并行、第五排队、同锁串行、不占死 worker、timeout、process-tree cancel、drain queued/all、dispatch 幂等、restart PID recovery、stale 显式 retry、Action `_work` worktree、COMPUTERNAME fail-closed、Windows SCM service、build identity、inventory、lease，以及真实 Case 在 Action 结束后由 Go Node 独立完成。
+持续覆盖：多 worker 并行、resource lock、timeout/cancel/drain、dispatch 幂等、restart PID recovery、Action `_work`、COMPUTERNAME、SCM service、build identity、inventory、lease；P2 新增必须验证 expired node 不路由、capability 不匹配不路由、fixed machine 不漂移、machine=any 才自动选节点、peer failure 不拖死本机执行。
 
 ## 14. 最终目标
 
-OpenWorker 从 GitHub Actions 驱动的单 runner 执行，升级为 OpenWorker 自己拥有的三节点、多 Agent、可并行、可恢复、可观察、本机优先的执行系统。GitHub Actions 只保留版本、入口、CI 与证据通道，不再承担长任务 scheduler。
+OpenWorker 从 GitHub Actions 驱动的单 runner 执行，升级为自己拥有的三节点、多 Agent、可并行、可恢复、可观察、本机优先的执行系统。GitHub Actions 保留版本、入口、CI 与证据通道，不再承担长任务 scheduler。
