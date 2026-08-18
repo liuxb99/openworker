@@ -1,1 +1,1 @@
-{"schema":"openworker/node-upgrade-receipt/v2","target_commit":"7b43092dacf56ff6448eab970c49f5e9f74f808b","run_id":"32127130328","accepted_at":"2026-08-18T10:31:31.9635245+00:00","slot":"3","phase":"ACCEPTED","node":"ul7","machine":"DESKTOP-UL7V2VV","runner_name":"DESKTOP-UL7V2VV-R003"}
+{"schema":"openworker/node-upgrade-receipt/v2","target_commit":"7b43092dacf56ff6448eab970c49f5e9f74f808b","run_id":"32127130328","accepted_at":"2026-08-18T10:31:56.7560498+00:00","slot":"6","phase":"ACCEPTED","node":"ul7","machine":"DESKTOP-UL7V2VV","runner_name":"DESKTOP-UL7V2VV-R003"}
