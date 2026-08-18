@@ -3,7 +3,7 @@
   "case_id": "0005",
   "workspace_root": "D:\\AI-Work\\jobs\\0005-SNOW-WHITE",
   "assigned_host": "DESKTOP-ODAQN0D",
-  "revision": 6,
+  "revision": 7,
   "parallel_policy": {
     "authority": "go-tool-runtime-local-supervisor",
     "canonical_controller_module": "coworker.case0005_verified_local_controller",
@@ -11,6 +11,10 @@
     "route_query_endpoint": "http://127.0.0.1:8848/api/execution/route",
     "verification_endpoint": "http://127.0.0.1:8848/api/execution/local-supervisor/verification",
     "required_verification_status": "REAL_VERIFIED",
+    "fanout_queue_owner": "go-tool-runtime:8848",
+    "fanout_submit_all_children_before_coordinator": true,
+    "openworker_business_child_jobs_allowed": false,
+    "openworker_role_for_fanout": "single-coordinator-only",
     "process_kernel": "openworker-local-supervisor",
     "process_kernel_endpoint": "http://127.0.0.1:8787",
     "max_local_slots": 4,
@@ -19,8 +23,8 @@
     "github_actions_fallback_allowed": false,
     "transport_non_blocking": true,
     "fanout_join": [
-      {"after":"0005-027","parallel_steps":["0005-030","0005-040"],"dynamic_fanout":"one durable local-work item per character/scene asset","join_step":"0005-050"},
-      {"after":"0005-057","dynamic_fanout":"one durable local-work item per approved shot","join_step":"0005-070"}
+      {"after":"0005-027","parallel_steps":["0005-030","0005-040"],"dynamic_fanout":"submit every character/scene asset directly to :8848 durable local-work before one OpenWorker coordinator observes results","join_step":"0005-050"},
+      {"after":"0005-057","dynamic_fanout":"submit every approved shot directly to :8848 durable local-work before one OpenWorker coordinator observes results","join_step":"0005-070"}
     ]
   },
   "steps": [
@@ -28,12 +32,12 @@
     {"step_id":"0005-020","title":"Materialize Snow White storyboard presentation request and visual requirements","kind":"work","dependencies":["0005-010"],"allowed_actions":["comfyx-studio.storyboard.plan"],"acceptance":["storyboard_request","visual_requirements","visual_asset_count","reference_asset_ids"],"status":"PENDING","evidence":{},"blocker":"","repair_parent_step":"","allow_skip":false},
     {"step_id":"0005-025","title":"Generate text-only Snow White storyboard PPTX through OpenMAIC","kind":"work","dependencies":["0005-020"],"allowed_actions":["presentation.openmaic"],"acceptance":["storyboard_pptx","storyboard_manifest","storyboard_pptx_sha256","slide_count","reopen_receipt","image_count"],"status":"PENDING","evidence":{},"blocker":"","repair_parent_step":"","allow_skip":false},
     {"step_id":"0005-027","title":"Wait for user approval of text-only Snow White storyboard PPTX","kind":"approval","dependencies":["0005-025"],"allowed_actions":["openworker.user.approval"],"acceptance":["approved_storyboard_pptx_sha256","approval_decision","approval_receipt"],"status":"PENDING","evidence":{},"blocker":"","repair_parent_step":"","allow_skip":false},
-    {"step_id":"0005-030","title":"Generate REAL Snow White character master images as per-asset local-work fanout","kind":"fanout","dependencies":["0005-027"],"allowed_actions":["image.comfyx.storyboard-real"],"acceptance":["character_receipts","character_images","character_sha256"],"status":"PENDING","evidence":{},"blocker":"","repair_parent_step":"","allow_skip":false},
-    {"step_id":"0005-040","title":"Generate REAL Snow White scene concept images as per-asset local-work fanout","kind":"fanout","dependencies":["0005-027"],"allowed_actions":["image.comfyx.storyboard-real"],"acceptance":["scene_receipts","scene_images","scene_sha256"],"status":"PENDING","evidence":{},"blocker":"","repair_parent_step":"","allow_skip":false},
+    {"step_id":"0005-030","title":"Generate REAL Snow White character master images as per-asset :8848 queue-owned fanout","kind":"fanout","dependencies":["0005-027"],"allowed_actions":["image.comfyx.storyboard-real"],"acceptance":["character_receipts","character_images","character_sha256"],"status":"PENDING","evidence":{},"blocker":"","repair_parent_step":"","allow_skip":false},
+    {"step_id":"0005-040","title":"Generate REAL Snow White scene concept images as per-asset :8848 queue-owned fanout","kind":"fanout","dependencies":["0005-027"],"allowed_actions":["image.comfyx.storyboard-real"],"acceptance":["scene_receipts","scene_images","scene_sha256"],"status":"PENDING","evidence":{},"blocker":"","repair_parent_step":"","allow_skip":false},
     {"step_id":"0005-050","title":"Join character/scene branches, then generate and bind REAL Snow White shot images","kind":"work","dependencies":["0005-030","0005-040"],"allowed_actions":["comfyx-studio.storyboard.real-bind"],"acceptance":["shot_image_receipts","shot_images","shot_image_sha256","bound_storyboard_request"],"status":"PENDING","evidence":{},"blocker":"","repair_parent_step":"","allow_skip":false},
     {"step_id":"0005-055","title":"Generate illustrated Snow White storyboard PPTX through OpenMAIC","kind":"work","dependencies":["0005-050"],"allowed_actions":["presentation.openmaic"],"acceptance":["illustrated_storyboard_pptx","illustrated_storyboard_manifest","illustrated_storyboard_sha256","slide_count","reopen_receipt","bound_image_count"],"status":"PENDING","evidence":{},"blocker":"","repair_parent_step":"","allow_skip":false},
     {"step_id":"0005-057","title":"Wait for user approval of illustrated Snow White storyboard PPTX","kind":"approval","dependencies":["0005-055"],"allowed_actions":["openworker.user.approval"],"acceptance":["approved_illustrated_storyboard_sha256","approval_decision","approval_receipt"],"status":"PENDING","evidence":{},"blocker":"","repair_parent_step":"","allow_skip":false},
-    {"step_id":"0005-060","title":"Fan out approved Snow White shots as independent REAL video durable local-work items","kind":"fanout","dependencies":["0005-057"],"allowed_actions":["comfyx.production.video.real"],"acceptance":["shot_job_ids","shot_video_receipts","shot_videos","shot_video_sha256","execution_ledger","all_shots_terminal_succeeded"],"status":"PENDING","evidence":{},"blocker":"","repair_parent_step":"","allow_skip":false},
+    {"step_id":"0005-060","title":"Fan out every approved Snow White shot directly into :8848 durable local-work","kind":"fanout","dependencies":["0005-057"],"allowed_actions":["comfyx.production.video.real"],"acceptance":["shot_job_ids","shot_video_receipts","shot_videos","shot_video_sha256","execution_ledger","all_shots_terminal_succeeded"],"status":"PENDING","evidence":{},"blocker":"","repair_parent_step":"","allow_skip":false},
     {"step_id":"0005-070","title":"Join all shot video jobs and assemble canonical Snow White final MP4 with physical QC","kind":"join","dependencies":["0005-060"],"allowed_actions":["comfyx-studio.finalize"],"acceptance":["final_mp4","final_mp4_sha256","resolution","duration","subtitle_receipt","physical_qc"],"status":"PENDING","evidence":{},"blocker":"","repair_parent_step":"","allow_skip":false},
     {"step_id":"0005-080","title":"Register Snow White final artifacts and create immutable WorkLedger revision","kind":"work","dependencies":["0005-070"],"allowed_actions":["engineering_os.artifact.register","openworker.workledger.revision"],"acceptance":["artifact_ids","revision_id","manifest_sha256"],"status":"PENDING","evidence":{},"blocker":"","repair_parent_step":"","allow_skip":false},
     {"step_id":"0005-090","title":"Build and publish bounded Snow White review bundle to Google Drive","kind":"work","dependencies":["0005-080"],"allowed_actions":["openworker.review.publish"],"acceptance":["review_bundle","drive_receipt","drive_folder_id","manifest_sha256"],"status":"PENDING","evidence":{},"blocker":"","repair_parent_step":"","allow_skip":false},
