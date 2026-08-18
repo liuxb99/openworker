@@ -1,5 +1,5 @@
 {
-    "schema":  "openworker/case0005-bootstrap-script-outcome/v4",
+    "schema":  "openworker/case0005-bootstrap-script-outcome/v5",
     "case_id":  "0005",
     "machine":  "DESKTOP-ODAQN0D",
     "workspace_root":  "D:\\AI-Work\\jobs\\0005-SNOW-WHITE",
@@ -31,11 +31,11 @@
                                     "controller_module":  "coworker.case0005_controller",
                                     "github_action_used":  false,
                                     "job":  {
-                                                "job_id":  "case0005-bootstrap-1787065728691315300",
-                                                "dispatch_id":  "local-supervisor-case0005-bootstrap-1787065728691315300",
+                                                "job_id":  "case0005-bootstrap-1787066081300383100",
+                                                "dispatch_id":  "local-supervisor-case0005-bootstrap-1787066081300383100",
                                                 "machine":  "DESKTOP-ODAQN0D",
                                                 "accepted":  true,
-                                                "accepted_at":  "2026-08-18T15:08:48.6913153Z",
+                                                "accepted_at":  "2026-08-18T15:14:41.3003831Z",
                                                 "queue_position":  1,
                                                 "duplicate":  false
                                             },
@@ -70,11 +70,11 @@
                 "controller_module":  "coworker.case0005_controller",
                 "github_action_used":  false,
                 "job":  {
-                            "job_id":  "case0005-bootstrap-1787065728691315300",
-                            "dispatch_id":  "local-supervisor-case0005-bootstrap-1787065728691315300",
+                            "job_id":  "case0005-bootstrap-1787066081300383100",
+                            "dispatch_id":  "local-supervisor-case0005-bootstrap-1787066081300383100",
                             "machine":  "DESKTOP-ODAQN0D",
                             "accepted":  true,
-                            "accepted_at":  "2026-08-18T15:08:48.6913153Z",
+                            "accepted_at":  "2026-08-18T15:14:41.3003831Z",
                             "queue_position":  1,
                             "duplicate":  false
                         },
@@ -92,7 +92,7 @@
                    "node_online":  true,
                    "node_machine":  "DESKTOP-ODAQN0D",
                    "node_max_workers":  4,
-                   "node_running_commit":  "bde15451edb7ea2c74317c3618bc5af481d09e20",
+                   "node_running_commit":  "1da41de584fe8db3f012cee355eed2c92c85d32c",
                    "resident_root_exists":  true,
                    "manifest_exists":  true,
                    "spec_exists":  true,
@@ -105,12 +105,13 @@
                                       "OPENMAIC_ROOT":  "C:\\github-runners\\openmaic-fork\\_work\\openmaic-fork\\openmaic-fork"
                                   },
                    "go_tool_authority_kind":  "deployed-runtime-exe",
+                   "python_exe":  "C:\\Python314\\python.exe",
                    "comfyui_output":  "D:\\Comfy-Desktop\\ComfyUI-Installs\\ComfyUI\\ComfyUI\\output",
                    "workspace_created":  true,
                    "workspace_exists":  true,
                    "dot_openworker_exists":  true
                },
-    "started_at":  "2026-08-18T15:08:37.3874896+00:00",
-    "observed_at":  "2026-08-18T15:08:48.7098077+00:00",
+    "started_at":  "2026-08-18T15:14:30.4146543+00:00",
+    "observed_at":  "2026-08-18T15:14:41.3177272+00:00",
     "next_action":  "continue with OpenWorker local supervisor"
 }
