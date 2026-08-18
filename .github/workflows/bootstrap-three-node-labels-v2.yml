@@ -1,0 +1,47 @@
+name: Bootstrap OpenWorker Three Node Labels V2
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  bootstrap:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[bootstrap-three-node-labels-v2]')
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 5
+    steps:
+      - name: Reconcile UL7 O87 ODA labels by runner computer name
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $headers=@{Authorization="Bearer $env:GH_TOKEN";Accept='application/vnd.github+json';'X-GitHub-Api-Version'='2022-11-28'}
+          $uri="https://api.github.com/repos/$env:GITHUB_REPOSITORY/actions/runners?per_page=100"
+          $payload=Invoke-RestMethod -Uri $uri -Headers $headers
+          $targets=@(
+            @{prefix='DESKTOP-UL7V2VV';label='UL7'},
+            @{prefix='DESKTOP-O87PJNR';label='O87'},
+            @{prefix='DESKTOP-ODAQN0D';label='ODA'}
+          )
+          $result=@()
+          foreach($t in $targets){
+            $matches=@($payload.runners | Where-Object { $_.name -like "$($t.prefix)*" })
+            if($matches.Count -lt 1){throw "runner registration not found for $($t.prefix)"}
+            foreach($runner in $matches){
+              $existing=@($runner.labels | ForEach-Object {[string]$_.name})
+              $labels=@($existing + $t.label | Sort-Object -Unique)
+              if(-not ($existing -contains $t.label)){
+                $body=@{labels=$labels}|ConvertTo-Json -Compress
+                Invoke-RestMethod -Method Put -Uri "https://api.github.com/repos/$env:GITHUB_REPOSITORY/actions/runners/$($runner.id)/labels" -Headers $headers -ContentType 'application/json' -Body $body | Out-Null
+              }
+              $result += [ordered]@{machine_prefix=$t.prefix;runner=$runner.name;runner_id=$runner.id;status=$runner.status;busy=$runner.busy;required_label=$t.label;labels=$labels;reconciled_at=[DateTimeOffset]::UtcNow.ToString('o')}
+            }
+          }
+          $result | ConvertTo-Json -Depth 10
+          Write-Host 'THREE_NODE_LABEL_BOOTSTRAP_PASS'
