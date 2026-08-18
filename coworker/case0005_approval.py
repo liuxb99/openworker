@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import sys
 from typing import Any
 
 from .case0005_controller import Case0005Controller
@@ -184,5 +185,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    import sys
     raise SystemExit(main())
