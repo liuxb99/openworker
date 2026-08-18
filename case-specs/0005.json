@@ -16,7 +16,7 @@
   },
   "execution_policy": {
     "normal_mode": "local_supervisor",
-    "controller_module": "coworker.case0005_true_local_controller",
+    "controller_module": "coworker.case0005_local_supervisor",
     "required_execution_route": "local_supervisor",
     "max_parallel_actions": 4,
     "github_actions": "code_update_or_repair_only",
