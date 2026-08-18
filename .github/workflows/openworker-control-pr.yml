@@ -30,13 +30,11 @@ jobs:
           set -euo pipefail
           command=$(printf '%s\n' "$BODY" | sed -nE 's/^[[:space:]]*command:[[:space:]]*([A-Za-z0-9_-]+)[[:space:]]*$/\1/p' | head -n1 | tr '[:upper:]' '[:lower:]')
           case "$command" in
-            drain|reconcile|upgrade) ;;
+            drain|upgrade) ;;
             *) echo "unsupported or missing command: $command" >&2; exit 2 ;;
           esac
-
           api="https://api.github.com/repos/${REPO}"
           auth=(-H "Authorization: Bearer ${GH_TOKEN}" -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28')
-          result=''
 
           if [ "$command" = 'drain' ]; then
             runs=$(curl -fsSL "${auth[@]}" "${api}/actions/runs?per_page=100")
@@ -45,50 +43,16 @@ jobs:
             while read -r id; do
               [ -z "$id" ] && continue
               code=$(curl -sS -o /tmp/cancel-response -w '%{http_code}' -X POST "${auth[@]}" "${api}/actions/runs/${id}/cancel")
-              if [ "$code" != '202' ] && [ "$code" != '409' ]; then
-                cat /tmp/cancel-response || true
-                exit 1
-              fi
+              if [ "$code" != '202' ] && [ "$code" != '409' ]; then cat /tmp/cancel-response || true; exit 1; fi
               count=$((count+1))
             done <<< "$ids"
             result="cancelled active runs: ${count}"
           else
-            runners=$(curl -fsSL "${auth[@]}" "${api}/actions/runners?per_page=100")
-            targets='[{"node":"ul7","prefix":"DESKTOP-UL7V2VV","label":"UL7"},{"node":"o87","prefix":"DESKTOP-O87PJNR","label":"O87"},{"node":"oda","prefix":"DESKTOP-ODAQN0D","label":"ODA"}]'
-            registry='[]'
-            while IFS=$'\t' read -r node prefix label; do
-              matches=$(printf '%s' "$runners" | jq --arg p "$prefix" '[.runners[] | select(.name | startswith($p))]')
-              if [ "$(printf '%s' "$matches" | jq 'length')" = '0' ]; then
-                row=$(jq -nc --arg n "$node" --arg p "$prefix" --arg l "$label" '{node:$n,machine_prefix:$p,registered:false,status:"missing",busy:false,required_label:$l,labels:[]}')
-                registry=$(jq -nc --argjson a "$registry" --argjson r "$row" '$a + [$r]')
-                continue
-              fi
-              while IFS= read -r runner; do
-                id=$(printf '%s' "$runner" | jq -r '.id')
-                name=$(printf '%s' "$runner" | jq -r '.name')
-                status=$(printf '%s' "$runner" | jq -r '.status')
-                busy=$(printf '%s' "$runner" | jq -r '.busy')
-                labels=$(printf '%s' "$runner" | jq '[.labels[].name]')
-                if ! printf '%s' "$labels" | jq -e --arg l "$label" 'index($l) != null' >/dev/null; then
-                  labels=$(printf '%s' "$labels" | jq --arg l "$label" '. + [$l] | unique')
-                  curl -fsSL -X PUT "${auth[@]}" -H 'Content-Type: application/json' "${api}/actions/runners/${id}/labels" -d "$(jq -nc --argjson l "$labels" '{labels:$l}')" >/dev/null
-                fi
-                row=$(jq -nc --arg n "$node" --arg p "$prefix" --arg l "$label" --arg name "$name" --arg s "$status" --argjson b "$busy" --argjson ls "$labels" '{node:$n,machine_prefix:$p,registered:true,runner:$name,status:$s,busy:$b,required_label:$l,labels:$ls}')
-                registry=$(jq -nc --argjson a "$registry" --argjson r "$row" '$a + [$r]')
-              done < <(printf '%s' "$matches" | jq -c '.[]')
-            done < <(printf '%s' "$targets" | jq -r '.[] | [.node,.prefix,.label] | @tsv')
-            result=$(printf '%s' "$registry" | jq -c '.')
-
-            if [ "$command" = 'upgrade' ]; then
-              code=$(curl -sS -o /tmp/dispatch-response -w '%{http_code}' -X POST "${auth[@]}" "${api}/actions/workflows/upgrade-openworker-nodes-v2.yml/dispatches" -d '{"ref":"main"}')
-              if [ "$code" != '204' ]; then
-                cat /tmp/dispatch-response || true
-                echo "upgrade workflow dispatch failed http=${code}" >&2
-                exit 1
-              fi
-            fi
+            code=$(curl -sS -o /tmp/dispatch-response -w '%{http_code}' -X POST "${auth[@]}" "${api}/actions/workflows/upgrade-openworker-nodes-v3.yml/dispatches" -d '{"ref":"main"}')
+            if [ "$code" != '204' ]; then cat /tmp/dispatch-response || true; echo "upgrade v3 dispatch failed http=${code}" >&2; exit 1; fi
+            result='upgrade-openworker-nodes-v3.yml dispatched; routing is generic self-hosted Windows and machine identity is validated at runtime by COMPUTERNAME'
           fi
 
-          body=$(jq -nc --arg c "$command" --arg r "$GITHUB_RUN_ID" --arg result "$result" '{body:("OpenWorker control accepted: `"+$c+"`. Source run: `"+$r+"`.\n\nResult:\n```json\n"+$result+"\n```")}')
+          body=$(jq -nc --arg c "$command" --arg r "$GITHUB_RUN_ID" --arg result "$result" '{body:("OpenWorker control accepted: `"+$c+"`. Source run: `"+$r+"`.\n\n"+$result)}')
           curl -fsSL -X POST "${auth[@]}" -H 'Content-Type: application/json' "${api}/issues/${PR}/comments" -d "$body" >/dev/null
           echo "OPENWORKER_CONTROL_PASS command=${command}"
