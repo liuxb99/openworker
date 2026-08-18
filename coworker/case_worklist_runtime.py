@@ -43,10 +43,7 @@ class CaseWorklistRuntime:
                 time.sleep(0.05)
                 continue
             try:
-                payload = {
-                    "pid": os.getpid(),
-                    "created_unix": time.time(),
-                }
+                payload = {"pid": os.getpid(), "created_unix": time.time()}
                 os.write(fd, (json.dumps(payload, sort_keys=True) + "\n").encode("utf-8"))
             finally:
                 os.close(fd)
@@ -83,25 +80,10 @@ class CaseWorklistRuntime:
             self.store.save(manifest)
             return manifest
 
-    def add_repair(
-        self,
-        *,
-        parent_step_id: str,
-        step_id: str,
-        title: str,
-        allowed_actions: Iterable[str],
-        acceptance: Iterable[str] = (),
-    ) -> CaseWorklist:
-        """Insert one repair step while holding the cross-process mutation lock."""
+    def add_repair(self, *, parent_step_id: str, step_id: str, title: str, allowed_actions: Iterable[str], acceptance: Iterable[str] = ()) -> CaseWorklist:
         with self.lock():
             worklist = self.store.load()
-            worklist.add_repair(
-                parent_step_id=parent_step_id,
-                step_id=step_id,
-                title=title,
-                allowed_actions=allowed_actions,
-                acceptance=acceptance,
-            )
+            worklist.add_repair(parent_step_id=parent_step_id, step_id=step_id, title=title, allowed_actions=allowed_actions, acceptance=acceptance)
             self.store.save(worklist)
             return worklist
 
@@ -128,6 +110,35 @@ class CaseWorklistRuntime:
             self.store.save(worklist)
             return worklist
 
+    def retry_stale_active(self, step_id: str, *, execution_id: str) -> CaseWorklist:
+        """Release one exact stale active execution and make the same step READY again.
+
+        The caller must independently prove that the referenced execution is terminal.
+        This method is intentionally fail-closed: it only mutates a RUNNING step whose
+        active execution exactly matches ``execution_id``.
+        """
+        expected = execution_id.strip()
+        if not expected:
+            raise CaseWorklistError("execution_id is required for stale active retry")
+        with self.lock():
+            worklist = self.store.load()
+            step = worklist.step(step_id)
+            active = str(step.evidence.get(_ACTIVE_EXECUTION_KEY, "") or "").strip()
+            if step.status != StepStatus.RUNNING:
+                raise CaseWorklistError(f"stale active retry requires RUNNING step, got {step.status.value}")
+            if active != expected:
+                raise CaseWorklistError(
+                    f"stale active retry ownership mismatch for step {step.step_id!r}: "
+                    f"expected execution={expected!r} actual={active!r}"
+                )
+            step.evidence.pop(_ACTIVE_ACTION_KEY, None)
+            step.evidence.pop(_ACTIVE_EXECUTION_KEY, None)
+            step.status = StepStatus.READY
+            step.blocker = ""
+            worklist.revision += 1
+            self.store.save(worklist)
+            return worklist
+
     def complete_action(self, step_id: str, action_id: str, *, execution_id: str) -> CaseWorklist:
         with self.lock():
             worklist = self.store.load()
@@ -139,20 +150,7 @@ class CaseWorklistRuntime:
             self.store.save(worklist)
             return worklist
 
-    def accept_action_evidence(
-        self,
-        step_id: str,
-        action_id: str,
-        *,
-        execution_id: str,
-        evidence: Mapping[str, object],
-    ) -> CaseWorklist:
-        """Atomically persist validated evidence, complete the active action, and PASS.
-
-        Validation of tool-specific evidence must happen before this method. This
-        method owns the Worklist transaction so an ownership mismatch or missing
-        acceptance key cannot leave a partially accepted step on disk.
-        """
+    def accept_action_evidence(self, step_id: str, action_id: str, *, execution_id: str, evidence: Mapping[str, object]) -> CaseWorklist:
         if not evidence:
             raise CaseWorklistError("accepted action evidence cannot be empty")
         with self.lock():
