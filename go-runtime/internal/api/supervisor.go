@@ -25,6 +25,7 @@ func(s *Server)supervisorRoutes(){
  s.mux.HandleFunc("POST /v1/supervisor/decision",s.supervisorDecision)
  s.mux.HandleFunc("GET /v1/supervisor/decisions",s.supervisorDecisions)
  s.mux.HandleFunc("GET /v1/supervisor/attention",s.supervisorAttention)
+ s.mux.HandleFunc("POST /v1/cases/bootstrap",s.caseBootstrap)
  s.mux.HandleFunc("GET /v1/jobs/{jobID}/progress",s.jobProgress)
  s.mux.HandleFunc("POST /v1/jobs/{jobID}/progress",s.updateJobProgress)
 }
