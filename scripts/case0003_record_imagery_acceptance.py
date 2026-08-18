@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import sys
@@ -10,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from coworker.work_ledger import WorkLedger, WorkLedgerError
+from coworker.work_ledger import WorkLedger
 
 WORK_CODE = "OWJ-20260816030152-03D90D"
 HOST = "DESKTOP-UL7V2VV"
@@ -38,21 +39,31 @@ def sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def same_geo(a: dict[str, Any], lat: float, lng: float) -> bool:
+def within(workspace: Path, candidate: Path, label: str) -> Path:
+    resolved = candidate.expanduser().resolve()
     try:
-        return abs(float(a["lat"]) - lat) <= TOL and abs(float(a["lng"]) - lng) <= TOL
+        resolved.relative_to(workspace)
+    except ValueError as exc:
+        raise ImageryAcceptanceError(f"{label} escapes canonical workspace: {resolved}") from exc
+    return resolved
+
+
+def same_geo(value: dict[str, Any], lat: float, lng: float) -> bool:
+    try:
+        return abs(float(value["lat"]) - lat) <= TOL and abs(float(value["lng"]) - lng) <= TOL
     except Exception:
         return False
 
 
-def require_file_sha(path: Path, expected: Any, label: str) -> str:
+def require_file_sha(workspace: Path, path_value: Any, expected: Any, label: str) -> tuple[Path, str]:
+    path = within(workspace, Path(str(path_value or "")), label)
     if not path.is_file() or path.stat().st_size <= 0:
         raise ImageryAcceptanceError(f"{label} missing/empty: {path}")
     actual = sha256(path)
     want = str(expected or "").strip().lower().removeprefix("sha256:")
     if len(want) != 64 or actual != want:
         raise ImageryAcceptanceError(f"{label} SHA mismatch expected={want} actual={actual}")
-    return actual
+    return path, actual
 
 
 def validate(workspace: Path) -> tuple[dict[str, Any], list[tuple[str, Path, dict[str, Any]]]]:
@@ -89,8 +100,9 @@ def validate(workspace: Path) -> tuple[dict[str, Any], list[tuple[str, Path, dic
             raise ImageryAcceptanceError(f"Street View heading {heading} producer provenance rejected")
         if int(receipt.get("width") or 0) != 1920 or int(receipt.get("height") or 0) != 1080 or int(receipt.get("bytes") or 0) <= 0:
             raise ImageryAcceptanceError(f"Street View heading {heading} dimensions/bytes rejected")
-        image = Path(str(item.get("path") or "")).expanduser().resolve()
-        digest = require_file_sha(image, receipt.get("sha256"), f"Street View {heading}")
+        image, digest = require_file_sha(workspace, item.get("path"), receipt.get("sha256"), f"Street View {heading}")
+        if receipt.get("output") and within(workspace, Path(str(receipt["output"])), f"Street View {heading} receipt output") != image:
+            raise ImageryAcceptanceError(f"Street View heading {heading} output/path mismatch")
         sv_shas[heading] = digest
         artifacts.append((f"streetview_{heading}", image, {"stage": "imagery", "heading": heading, "provider": "google", "mode": receipt.get("mode"), "backend": receipt.get("backend")}))
 
@@ -111,9 +123,10 @@ def validate(workspace: Path) -> tuple[dict[str, Any], list[tuple[str, Path, dic
         raise ImageryAcceptanceError("Orthophoto producer plan geolocation mismatch")
     if not bool(vis.get("visible")) or float(vis.get("useful_pixel_ratio") or 0) < 0.20 or float(vis.get("luma_stddev") or 0) < 0.02 or float(vis.get("luma_range") or 0) < 0.10:
         raise ImageryAcceptanceError("Orthophoto semantic visibility rejected")
-    ortho_image = Path(str(ortho.get("image") or "")).expanduser().resolve()
-    ortho_sha = require_file_sha(ortho_image, producer.get("output_sha256"), "Orthophoto PHOTO2 mosaic")
-    ortho_evidence = Path(str(ortho.get("evidence") or "")).expanduser().resolve()
+    ortho_image, ortho_sha = require_file_sha(workspace, ortho.get("image"), producer.get("output_sha256"), "Orthophoto PHOTO2 mosaic")
+    if producer.get("output_path") and within(workspace, Path(str(producer["output_path"])), "Orthophoto producer output") != ortho_image:
+        raise ImageryAcceptanceError("Orthophoto producer output/image mismatch")
+    ortho_evidence = within(workspace, Path(str(ortho.get("evidence") or "")), "Orthophoto evidence")
     if not ortho_evidence.is_file() or ortho_evidence.stat().st_size <= 0:
         raise ImageryAcceptanceError("Orthophoto evidence missing/empty")
     artifacts.extend([
@@ -131,13 +144,11 @@ def validate(workspace: Path) -> tuple[dict[str, Any], list[tuple[str, Path, dic
         "orthophoto_evidence_sha256": sha256(ortho_evidence),
         "orthophoto_image_sha256": ortho_sha,
     }
-    fingerprint = hashlib.sha256(json.dumps(identity, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
-    identity["fingerprint"] = fingerprint
+    identity["fingerprint"] = hashlib.sha256(json.dumps(identity, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
     return identity, artifacts
 
 
 def main(argv: list[str] | None = None) -> int:
-    import argparse
     p = argparse.ArgumentParser()
     p.add_argument("--workspace", required=True)
     args = p.parse_args(argv)
@@ -161,10 +172,7 @@ def main(argv: list[str] | None = None) -> int:
                 matching = rev
                 break
         if matching is None:
-            matching = ledger.open_revision(
-                work["work_id"], kind="progress", goal="Case 0003 imagery physical acceptance",
-                plan={"stage": "imagery", "fingerprint": identity["fingerprint"], "accepted_geolocation": identity["geolocation"]},
-            )
+            matching = ledger.open_revision(work["work_id"], kind="progress", goal="Case 0003 imagery physical acceptance", plan={"stage": "imagery", "fingerprint": identity["fingerprint"], "accepted_geolocation": identity["geolocation"]})
         rid = matching["revision_id"]
         snap = ledger.snapshot(work["work_id"])
         rev_snap = next(r for r in snap["revisions"] if r["revision_id"] == rid)
@@ -176,20 +184,10 @@ def main(argv: list[str] | None = None) -> int:
         ledger.set_check(rid, name="Street View Physical+Semantic QC", status="passed", required=True, evidence={"manifest_sha256": identity["streetview_manifest_sha256"], "render_sha256": identity["streetview_render_sha256"]})
         ledger.set_check(rid, name="Orthophoto Physical+Semantic QC", status="passed", required=True, evidence={"workspace_sha256": identity["orthophoto_workspace_sha256"], "evidence_sha256": identity["orthophoto_evidence_sha256"], "image_sha256": identity["orthophoto_image_sha256"]})
         ledger.set_revision_status(rid, "verifying", reason="Imagery stage checks passed; whole Case acceptance remains pending downstream OS/Drive/ChatGPT review")
-        receipt = {
-            "schema_version": "openworker-case0003-imagery-acceptance/v1",
-            "case_id": "0003",
-            "status": "IMAGERY_ACCEPTED_PENDING_CASE_COMPLETION",
-            "work_code": WORK_CODE,
-            "revision_id": rid,
-            **identity,
-            "accepted_revision_id": "",
-            "delivered_revision_id": "",
-        }
+        receipt = {"schema_version": "openworker-case0003-imagery-acceptance/v1", "case_id": "0003", "status": "IMAGERY_ACCEPTED_PENDING_CASE_COMPLETION", "work_code": WORK_CODE, "revision_id": rid, **identity, "accepted_revision_id": "", "delivered_revision_id": ""}
         out_dir.mkdir(parents=True, exist_ok=True)
-        per = out_dir / f"imagery-acceptance-{identity['fingerprint']}.json"
         payload = json.dumps(receipt, ensure_ascii=False, indent=2, default=str)
-        per.write_text(payload, encoding="utf-8")
+        (out_dir / f"imagery-acceptance-{identity['fingerprint']}.json").write_text(payload, encoding="utf-8")
         latest.write_text(payload, encoding="utf-8")
         print(json.dumps(receipt, ensure_ascii=False, sort_keys=True))
         return 0
