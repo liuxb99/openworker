@@ -48,9 +48,27 @@ jobs:
             done <<< "$ids"
             result="cancelled active runs: ${count}"
           else
+            before=$(curl -fsSL "${auth[@]}" "${api}/actions/workflows/upgrade-openworker-nodes-v3.yml/runs?event=workflow_dispatch&per_page=1")
+            before_id=$(printf '%s' "$before" | jq -r '.workflow_runs[0].id // 0')
             code=$(curl -sS -o /tmp/dispatch-response -w '%{http_code}' -X POST "${auth[@]}" "${api}/actions/workflows/upgrade-openworker-nodes-v3.yml/dispatches" -d '{"ref":"main"}')
             if [ "$code" != '204' ]; then cat /tmp/dispatch-response || true; echo "upgrade v3 dispatch failed http=${code}" >&2; exit 1; fi
-            result='upgrade-openworker-nodes-v3.yml dispatched; routing is generic self-hosted Windows and machine identity is validated at runtime by COMPUTERNAME'
+
+            v3=''
+            for i in $(seq 1 12); do
+              sleep 2
+              runs=$(curl -fsSL "${auth[@]}" "${api}/actions/workflows/upgrade-openworker-nodes-v3.yml/runs?event=workflow_dispatch&per_page=5")
+              v3=$(printf '%s' "$runs" | jq -c --argjson before "$before_id" '[.workflow_runs[] | select(.id != $before)] | sort_by(.created_at) | reverse | .[0] // empty')
+              [ -n "$v3" ] && break
+            done
+            if [ -z "$v3" ]; then
+              result='upgrade-openworker-nodes-v3.yml dispatch accepted, but no new run became visible within control polling window'
+            else
+              run_id=$(printf '%s' "$v3" | jq -r '.id')
+              status=$(printf '%s' "$v3" | jq -r '.status')
+              conclusion=$(printf '%s' "$v3" | jq -r '.conclusion // ""')
+              created=$(printf '%s' "$v3" | jq -r '.created_at')
+              result="upgrade-openworker-nodes-v3.yml run_id=${run_id} status=${status} conclusion=${conclusion} created_at=${created}; routing=generic self-hosted Windows; machine identity checked by COMPUTERNAME"
+            fi
           fi
 
           body=$(jq -nc --arg c "$command" --arg r "$GITHUB_RUN_ID" --arg result "$result" '{body:("OpenWorker control accepted: `"+$c+"`. Source run: `"+$r+"`.\n\n"+$result)}')
