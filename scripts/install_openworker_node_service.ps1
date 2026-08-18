@@ -1,3 +1,4 @@
+# case0005-bootstrap-transport-marker: 2026-08-18T23:01+08:00
 param(
   [Parameter(Mandatory=$true)][string]$SourceExe,
   [string]$ServiceName='OpenWorkerNode',
