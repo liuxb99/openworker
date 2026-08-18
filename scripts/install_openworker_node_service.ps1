@@ -1,4 +1,4 @@
-# case0005-bootstrap-transport-marker: 2026-08-18T23:28+08:00
+# case0005-bootstrap-transport-marker: rerun-after-windows-launcher-fix
 param(
   [Parameter(Mandatory=$true)][string]$SourceExe,
   [string]$ServiceName='OpenWorkerNode',
