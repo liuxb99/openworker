@@ -2,6 +2,8 @@ param(
   [string]$OpenWorkerUrl='http://127.0.0.1:8787',
   [string]$WorkspaceRoot='D:\AI-Work\jobs\0003-YUJING-BRIDGE',
   [string]$Machine='DESKTOP-UL7V2VV',
+  [string]$OpenWorkerRoot=$env:OPENWORKER_ROOT,
+  [string]$DriveSyncRoot=$env:OPENWORKER_REVIEW_DRIVE_ROOT,
   [string]$GoToolRoot=$env:GO_TOOL_ROOT,
   [string]$TerrainRoot=$env:TERRAIN_ROOT,
   [string]$SceneXRoot=$env:SCENEX_ROOT,
@@ -34,34 +36,27 @@ function OSArtifacts-OK{
 }
 function OSApproval-OK{if([string]::IsNullOrWhiteSpace($OSJobId)){return $false};try{$a=Invoke-RestMethod -Method Get -Uri ($EngineeringOSBaseUrl.TrimEnd('/')+"/api/v1/jobs/$OSJobId/approval-status") -TimeoutSec 5;return [bool]$a.approved}catch{return $false}}
 function OSDelivery-OK{if([string]::IsNullOrWhiteSpace($OSJobId)){return $false};try{$d=Invoke-RestMethod -Method Get -Uri ($EngineeringOSBaseUrl.TrimEnd('/')+"/api/v1/jobs/$OSJobId/deliveries/latest") -TimeoutSec 5;if([string]$d.status -ne 'published'){return $false};if(-not(File-OK ([string]$d.manifest_path)) -or -not(File-OK ([string]$d.website_entry))){return $false};$m=Read-Json ([string]$d.manifest_path);return $null -ne $m -and $m.schema_version -eq 'delivery-manifest/1.0' -and [string]$m.job_id -eq $OSJobId -and [int64]$m.revision -eq [int64]$d.revision}catch{return $false}}
-function Gates{return [ordered]@{streetview=(StreetView-OK);orthophoto=(Ortho-OK);terrain=(Terrain-OK);consumer=(Consumer-OK);blender=(Blender-OK);scenex=(SceneX-OK);os_artifacts=(OSArtifacts-OK);os_approved=(OSApproval-OK);os_delivery=(OSDelivery-OK)}}
+function DriveReview-OK{
+  $r=Read-Json (Join-Path $WorkspaceRoot 'acceptance\openworker-final\drive-review-prepare.json');if($null -eq $r -or [string]$r.schema_version -ne 'openworker-case0003-drive-review-prepare/v1' -or [string]$r.status -ne 'WAITING_DRIVE_REVIEW'){return $false}
+  $rid=[string]$r.revision_id;if([string]::IsNullOrWhiteSpace($rid)){return $false};$manifest=Join-Path $WorkspaceRoot ('.openworker\reviews\'+$rid+'\manifest.json');return SHA-OK $manifest ([string]$r.bundle_manifest_sha256)
+}
+function ConnectorReview-OK{
+  $drive=Read-Json (Join-Path $WorkspaceRoot 'acceptance\openworker-final\drive-review-prepare.json');$r=Read-Json (Join-Path $WorkspaceRoot 'acceptance\openworker-final\connector-review-apply.json')
+  if($null -eq $drive -or $null -eq $r){return $false};return [string]$r.schema_version -eq 'openworker-case0003-connector-review-apply/v2' -and [string]$r.verdict -eq 'PASS' -and [string]$r.status -eq 'ACCEPTED_PENDING_FINALIZE' -and [string]$r.revision_id -eq [string]$drive.revision_id -and [string]$r.accepted_revision_id -eq [string]$drive.revision_id
+}
+function Finalized-OK{
+  $r=Read-Json (Join-Path $WorkspaceRoot 'acceptance\openworker-final\reviewed-delivery-finalize.json');if($null -eq $r){return $false};return [string]$r.schema_version -eq 'openworker-case0003-reviewed-delivery-finalize/v1' -and $r.ok -and [string]$r.status -eq 'DELIVERED' -and [string]$r.accepted_revision_id -eq [string]$r.revision_id -and [string]$r.delivered_revision_id -eq [string]$r.revision_id
+}
+function Gates{return [ordered]@{streetview=(StreetView-OK);orthophoto=(Ortho-OK);terrain=(Terrain-OK);consumer=(Consumer-OK);blender=(Blender-OK);scenex=(SceneX-OK);os_artifacts=(OSArtifacts-OK);os_approved=(OSApproval-OK);os_delivery=(OSDelivery-OK);drive_review=(DriveReview-OK);connector_review_pass=(ConnectorReview-OK);finalized=(Finalized-OK)}}
 
 $node=Invoke-RestMethod -Method Get -Uri "$OpenWorkerUrl/v1/node/status"
 $agents=Invoke-RestMethod -Method Get -Uri "$OpenWorkerUrl/v1/cluster/agents"
 $jobSnapshot=Invoke-RestMethod -Method Get -Uri "$OpenWorkerUrl/v1/jobs?limit=1000"
 $activeStates=@('accepted','queued_local','starting','running')
-function Active-Prefix([string]$Prefix){
-  foreach($j in @($jobSnapshot.jobs)){
-    if(([string]$j.job_id).StartsWith($Prefix,[StringComparison]::OrdinalIgnoreCase) -and $activeStates -contains [string]$j.status){return $true}
-  }
-  return $false
-}
-$active=[ordered]@{
-  streetview=(Active-Prefix 'case0003-streetview-')
-  orthophoto=(Active-Prefix 'case0003-orthophoto-')
-  terrain=(Active-Prefix 'case0003-terrain-aoi-')
-  consumer=(Active-Prefix 'case0003-terrain-consumer-')
-  blender=(Active-Prefix 'case0003-terrain-blender-')
-  scenex=(Active-Prefix 'case0003-scenex-')
-  os_artifacts=(Active-Prefix 'case0003-os-artifacts-')
-  os_delivery=(Active-Prefix 'case0003-os-delivery-')
-}
+function Active-Prefix([string]$Prefix){foreach($j in @($jobSnapshot.jobs)){if(([string]$j.job_id).StartsWith($Prefix,[StringComparison]::OrdinalIgnoreCase) -and $activeStates -contains [string]$j.status){return $true}};return $false}
+$active=[ordered]@{streetview=(Active-Prefix 'case0003-streetview-');orthophoto=(Active-Prefix 'case0003-orthophoto-');terrain=(Active-Prefix 'case0003-terrain-aoi-');consumer=(Active-Prefix 'case0003-terrain-consumer-');blender=(Active-Prefix 'case0003-terrain-blender-');scenex=(Active-Prefix 'case0003-scenex-');os_artifacts=(Active-Prefix 'case0003-os-artifacts-');os_delivery=(Active-Prefix 'case0003-os-delivery-');drive_review=(Active-Prefix 'case0003-drive-review-');finalize=(Active-Prefix 'case0003-review-finalize-')}
 $before=Gates;$submitted=@();$suppressed=@()
-if(-not($before.streetview -and $before.orthophoto)){
-  if(($before.streetview -or -not $active.streetview) -and ($before.orthophoto -or -not $active.orthophoto)){
-    & (Join-Path $scriptRoot 'case0003_local_imagery_parallel.ps1') -OpenWorkerUrl $OpenWorkerUrl -WorkspaceRoot $WorkspaceRoot -Machine $Machine -GoToolRoot $GoToolRoot -TerrainRoot $TerrainRoot;$submitted+='imagery_parallel'
-  } else {$suppressed+='imagery_parallel_active'}
-}
+if(-not($before.streetview -and $before.orthophoto)){if(($before.streetview -or -not $active.streetview) -and ($before.orthophoto -or -not $active.orthophoto)){& (Join-Path $scriptRoot 'case0003_local_imagery_parallel.ps1') -OpenWorkerUrl $OpenWorkerUrl -WorkspaceRoot $WorkspaceRoot -Machine $Machine -GoToolRoot $GoToolRoot -TerrainRoot $TerrainRoot;$submitted+='imagery_parallel'}else{$suppressed+='imagery_parallel_active'}}
 if(-not $before.terrain){if($active.terrain){$suppressed+='terrain_aoi_active'}elseif(Test-Path -LiteralPath $CatalogPath){& (Join-Path $scriptRoot 'case0003_local_terrain_aoi.ps1') -OpenWorkerUrl $OpenWorkerUrl -WorkspaceRoot $WorkspaceRoot -Machine $Machine -GoToolRoot $GoToolRoot -TerrainRoot $TerrainRoot -CatalogPath $CatalogPath;$submitted+='terrain_aoi'}else{Write-Warning "DTM catalog missing; AOI not submitted: $CatalogPath"}}
 $afterImmediate=Gates
 if($afterImmediate.terrain -and -not $afterImmediate.scenex){if($active.scenex){$suppressed+='scenex_active'}elseif([string]::IsNullOrWhiteSpace($SceneXRoot)){Write-Warning 'SCENEX_ROOT missing; SceneX not submitted'}else{& (Join-Path $scriptRoot 'case0003_local_scenex.ps1') -OpenWorkerUrl $OpenWorkerUrl -WorkspaceRoot $WorkspaceRoot -Machine $Machine -GoToolRoot $GoToolRoot -SceneXRoot $SceneXRoot;$submitted+='scenex'}}
@@ -72,7 +67,11 @@ $afterRender=Gates
 if($afterRender.blender -and $afterRender.scenex -and -not $afterRender.os_artifacts){if($active.os_artifacts){$suppressed+='os_artifacts_active'}elseif([string]::IsNullOrWhiteSpace($EngineeringOSRoot) -or [string]::IsNullOrWhiteSpace($OSProjectId) -or [string]::IsNullOrWhiteSpace($OSJobId)){Write-Warning 'Engineering OS root/project/job identity missing; artifact ingest not submitted'}else{& (Join-Path $scriptRoot 'case0003_local_os_artifacts.ps1') -OpenWorkerUrl $OpenWorkerUrl -WorkspaceRoot $WorkspaceRoot -Machine $Machine -GoToolRoot $GoToolRoot -EngineeringOSRoot $EngineeringOSRoot -OSProjectId $OSProjectId -OSJobId $OSJobId;$submitted+='os_artifacts'}}
 $afterRegistry=Gates
 if($afterRegistry.os_artifacts -and $afterRegistry.os_approved -and -not $afterRegistry.os_delivery){if($active.os_delivery){$suppressed+='os_delivery_active'}elseif([string]::IsNullOrWhiteSpace($EngineeringOSRoot)){Write-Warning 'ENGINEERING_OS_ROOT missing; delivery not submitted'}else{& (Join-Path $scriptRoot 'case0003_local_os_delivery.ps1') -OpenWorkerUrl $OpenWorkerUrl -WorkspaceRoot $WorkspaceRoot -Machine $Machine -GoToolRoot $GoToolRoot -EngineeringOSRoot $EngineeringOSRoot -OSJobId $OSJobId -EngineeringOSBaseUrl $EngineeringOSBaseUrl;$submitted+='os_delivery'}}
+$afterDelivery=Gates
+if($afterDelivery.os_delivery -and -not $afterDelivery.drive_review){if($active.drive_review){$suppressed+='drive_review_active'}elseif([string]::IsNullOrWhiteSpace($OpenWorkerRoot) -or [string]::IsNullOrWhiteSpace($DriveSyncRoot)){Write-Warning 'OPENWORKER_ROOT / OPENWORKER_REVIEW_DRIVE_ROOT missing; Drive review prepare not submitted'}else{& (Join-Path $scriptRoot 'case0003_local_drive_review_prepare.ps1') -OpenWorkerUrl $OpenWorkerUrl -WorkspaceRoot $WorkspaceRoot -Machine $Machine -OpenWorkerRoot $OpenWorkerRoot -DriveSyncRoot $DriveSyncRoot;$submitted+='drive_review_prepare'}}
+$afterReview=Gates
+if($afterReview.connector_review_pass -and -not $afterReview.finalized){if($active.finalize){$suppressed+='review_finalize_active'}elseif([string]::IsNullOrWhiteSpace($OpenWorkerRoot)){Write-Warning 'OPENWORKER_ROOT missing; reviewed delivery finalizer not submitted'}else{& (Join-Path $scriptRoot 'case0003_local_finalize_reviewed_delivery.ps1') -OpenWorkerUrl $OpenWorkerUrl -WorkspaceRoot $WorkspaceRoot -Machine $Machine -OpenWorkerRoot $OpenWorkerRoot;$submitted+='reviewed_delivery_finalize'}}
 $final=Gates
-$next=if($final.os_delivery){'GOOGLE_DRIVE_CHATGPT_FINAL_QC_REQUIRED'}elseif($final.os_artifacts -and -not $final.os_approved){'OS_REVIEW_APPROVAL_REQUIRED'}elseif($final.os_artifacts){'OS_DELIVERY_PUBLICATION_REQUIRED'}elseif($final.blender -and $final.scenex){'OS_ARTIFACT_REGISTRY_REQUIRED'}elseif($final.terrain){'SCENEX_CONSUMER_BLENDER_REAL_QC_REQUIRED'}else{'LOCAL_JOBS_AND_PHYSICAL_QC_REQUIRED'}
-$receipt=[ordered]@{schema='openworker/case0003-local-continue/v5';case_id='0003';machine=$Machine;workspace_root=$WorkspaceRoot;transport='openworker-local-first';github_business_transport=$false;checked_at=[DateTimeOffset]::UtcNow.ToString('o');node=$node;agents=$agents;active_stage_snapshot=$active;gates_before=$before;gates_after_submission=$final;submitted=$submitted;suppressed_duplicate_submissions=$suppressed;next_boundary=$next}
+$next=if($final.finalized){'CASE0003_DELIVERED'}elseif($final.connector_review_pass){'REVIEWED_DELIVERY_FINALIZE_REQUIRED'}elseif($final.drive_review){'CHATGPT_GOOGLE_DRIVE_CONNECTOR_REVIEW_REQUIRED'}elseif($final.os_delivery){'GOOGLE_DRIVE_REVIEW_PREPARE_REQUIRED'}elseif($final.os_artifacts -and -not $final.os_approved){'OS_REVIEW_APPROVAL_REQUIRED'}elseif($final.os_artifacts){'OS_DELIVERY_PUBLICATION_REQUIRED'}elseif($final.blender -and $final.scenex){'OS_ARTIFACT_REGISTRY_REQUIRED'}elseif($final.terrain){'SCENEX_CONSUMER_BLENDER_REAL_QC_REQUIRED'}else{'LOCAL_JOBS_AND_PHYSICAL_QC_REQUIRED'}
+$receipt=[ordered]@{schema='openworker/case0003-local-continue/v6';case_id='0003';machine=$Machine;workspace_root=$WorkspaceRoot;transport='openworker-local-first';github_business_transport=$false;checked_at=[DateTimeOffset]::UtcNow.ToString('o');node=$node;agents=$agents;active_stage_snapshot=$active;gates_before=$before;gates_after_submission=$final;submitted=$submitted;suppressed_duplicate_submissions=$suppressed;next_boundary=$next}
 $path=Join-Path $evidenceDir 'case0003-local-continue.json';$receipt|ConvertTo-Json -Depth 12|Set-Content -LiteralPath $path -Encoding utf8;$receipt|ConvertTo-Json -Depth 12|Write-Host
