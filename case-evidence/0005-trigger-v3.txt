@@ -1,2 +1,2 @@
-Case 0005 Snow White ODA resident OpenWorker local-controller trigger.
-Retry after transport concurrency fix. Use DESKTOP-ODAQN0D. Sync stable resident runtime, POST /v1/cases/bootstrap, require durable ACK, then ODA local supervisor owns all business execution with up to 4 parallel agent slots. Workspace: D:\AI-Work\jobs\0005-SNOW-WHITE.
+Case 0005 Snow White cluster-routed resident OpenWorker trigger.
+Target machine is DESKTOP-ODAQN0D. GitHub Action is transport only: call local OpenWorker cluster route, POST /v1/cases/bootstrap with machine=DESKTOP-ODAQN0D, require durable ACK, then ODA resident local supervisor owns business execution with up to 4 local agent slots. Workspace: D:\AI-Work\jobs\0005-SNOW-WHITE.
