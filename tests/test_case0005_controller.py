@@ -88,6 +88,37 @@ def test_scene_batch_acceptance_requires_matching_arrays(tmp_path: Path):
     assert evidence["scene_sha256"] == ["c" * 64]
 
 
+def test_atomic_shot_real_bind_claim_and_acceptance(tmp_path: Path):
+    controller = Case0005Controller(tmp_path)
+    worklist = _worklist(tmp_path)
+    step = CaseStep(
+        step_id="0005-050",
+        title="shot join",
+        kind="work",
+        dependencies=["0005-030", "0005-040"],
+        allowed_actions=["comfyx-studio.storyboard.real-bind"],
+        acceptance=["shot_image_receipts", "shot_images", "shot_image_sha256", "bound_storyboard_request"],
+    )
+    inputs = controller._claim_inputs(worklist, step, "comfyx-studio.storyboard.real-bind", {})
+    assert inputs["request_relpath"] == "presentation/storyboard-request.json"
+    assert inputs["output_relpath"] == "presentation/storyboard-request.bound.json"
+
+    result = {
+        "status": "completed",
+        "capability_id": "comfyx-studio.storyboard.real-bind",
+        "evidence": {
+            "shot_image_receipts": [{"status": "succeeded"}],
+            "shot_images": [r"D:\AI-Work\jobs\0005-SNOW-WHITE\visual-assets\shots\shot-001.png"],
+            "shot_image_sha256": ["d" * 64],
+            "bound_request": r"D:\AI-Work\jobs\0005-SNOW-WHITE\presentation\storyboard-request.bound.json",
+            "bind_receipt": r"D:\AI-Work\jobs\0005-SNOW-WHITE\evidence\storyboard-bind-receipt.json",
+        },
+    }
+    evidence = controller._acceptance_evidence(step, result)
+    assert evidence["shot_image_sha256"] == ["d" * 64]
+    assert evidence["bound_storyboard_request"].endswith("storyboard-request.bound.json")
+
+
 def test_child_job_keeps_case0005_controller(tmp_path: Path):
     controller = Case0005Controller(tmp_path)
     worklist = _worklist(tmp_path)
