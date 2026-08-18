@@ -1,6 +1,7 @@
 package inventory
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -18,34 +19,31 @@ func TestCollectCapabilitiesAreNormalized(t *testing.T) {
 }
 
 func TestCollectRootsReportsConfiguredExistingDirectories(t *testing.T) {
-	tmp:=t.TempDir()
-	root:=filepath.Join(tmp,"terrain")
-	if err:=os.MkdirAll(root,0o755);err!=nil{t.Fatal(err)}
-	old:=os.Getenv("TERRAIN_ROOT")
-	defer os.Setenv("TERRAIN_ROOT",old)
-	if err:=os.Setenv("TERRAIN_ROOT",root);err!=nil{t.Fatal(err)}
-
-	s:=Collect()
-	var got *Root
-	for i:=range s.Roots{if s.Roots[i].Env=="TERRAIN_ROOT"{got=&s.Roots[i];break}}
-	if got==nil{t.Fatal("TERRAIN_ROOT inventory missing")}
-	if !got.Available{t.Fatalf("expected available root: %#v",got)}
-	want,err:=filepath.Abs(root);if err!=nil{t.Fatal(err)}
-	if got.Path!=filepath.Clean(want){t.Fatalf("path=%q want=%q",got.Path,filepath.Clean(want))}
+	tmp:=t.TempDir();root:=filepath.Join(tmp,"terrain");if err:=os.MkdirAll(root,0o755);err!=nil{t.Fatal(err)}
+	old:=os.Getenv("TERRAIN_ROOT");defer os.Setenv("TERRAIN_ROOT",old);if err:=os.Setenv("TERRAIN_ROOT",root);err!=nil{t.Fatal(err)}
+	s:=Collect();var got *Root;for i:=range s.Roots{if s.Roots[i].Env=="TERRAIN_ROOT"{got=&s.Roots[i];break}}
+	if got==nil||!got.Available{t.Fatalf("expected available root: %#v",got)}
+	want,err:=filepath.Abs(root);if err!=nil{t.Fatal(err)};if got.Path!=filepath.Clean(want){t.Fatalf("path=%q want=%q",got.Path,filepath.Clean(want))}
+	if got.Source!="process-env"{t.Fatalf("source=%q",got.Source)}
 }
 
 func TestCollectRootsDoesNotClaimMissingDirectoryAvailable(t *testing.T) {
-	missing:=filepath.Join(t.TempDir(),"missing")
-	old:=os.Getenv("SCENEX_ROOT")
-	defer os.Setenv("SCENEX_ROOT",old)
-	if err:=os.Setenv("SCENEX_ROOT",missing);err!=nil{t.Fatal(err)}
+	missing:=filepath.Join(t.TempDir(),"missing");old:=os.Getenv("SCENEX_ROOT");defer os.Setenv("SCENEX_ROOT",old);if err:=os.Setenv("SCENEX_ROOT",missing);err!=nil{t.Fatal(err)}
+	s:=Collect();for _,root:=range s.Roots{if root.Env=="SCENEX_ROOT"{if root.Available{t.Fatalf("missing root reported available: %#v",root)};return}};t.Fatal("SCENEX_ROOT inventory missing")
+}
 
-	s:=Collect()
-	for _,root:=range s.Roots{
-		if root.Env=="SCENEX_ROOT"{
-			if root.Available{t.Fatalf("missing root reported available: %#v",root)}
-			return
-		}
-	}
-	t.Fatal("SCENEX_ROOT inventory missing")
+func TestCollectRootsUsesPersistedRegistryWithoutProcessEnv(t *testing.T) {
+	tmp:=t.TempDir();terrain:=filepath.Join(tmp,"terrain");if err:=os.MkdirAll(terrain,0o755);err!=nil{t.Fatal(err)}
+	registry:=filepath.Join(tmp,"machine-roots.json");data,_:=json.Marshal(map[string]string{"TERRAIN_ROOT":terrain});if err:=os.WriteFile(registry,data,0o644);err!=nil{t.Fatal(err)}
+	oldFile:=os.Getenv("OPENWORKER_MACHINE_ROOTS_FILE");oldTerrain:=os.Getenv("TERRAIN_ROOT");defer os.Setenv("OPENWORKER_MACHINE_ROOTS_FILE",oldFile);defer os.Setenv("TERRAIN_ROOT",oldTerrain)
+	_ = os.Setenv("OPENWORKER_MACHINE_ROOTS_FILE",registry);_ = os.Unsetenv("TERRAIN_ROOT")
+	s:=Collect();for _,root:=range s.Roots{if root.Env=="TERRAIN_ROOT"{if !root.Available||root.Source!="machine-registry"{t.Fatalf("unexpected root: %#v",root)};return}};t.Fatal("TERRAIN_ROOT inventory missing")
+}
+
+func TestProcessEnvOverridesPersistedRegistry(t *testing.T) {
+	tmp:=t.TempDir();persisted:=filepath.Join(tmp,"persisted");override:=filepath.Join(tmp,"override");_ = os.MkdirAll(persisted,0o755);_ = os.MkdirAll(override,0o755)
+	registry:=filepath.Join(tmp,"machine-roots.json");data,_:=json.Marshal(map[string]string{"SCENEX_ROOT":persisted});_ = os.WriteFile(registry,data,0o644)
+	oldFile:=os.Getenv("OPENWORKER_MACHINE_ROOTS_FILE");oldSceneX:=os.Getenv("SCENEX_ROOT");defer os.Setenv("OPENWORKER_MACHINE_ROOTS_FILE",oldFile);defer os.Setenv("SCENEX_ROOT",oldSceneX)
+	_ = os.Setenv("OPENWORKER_MACHINE_ROOTS_FILE",registry);_ = os.Setenv("SCENEX_ROOT",override)
+	s:=Collect();for _,root:=range s.Roots{if root.Env=="SCENEX_ROOT"{want,_:=filepath.Abs(override);if root.Path!=filepath.Clean(want)||root.Source!="process-env"{t.Fatalf("unexpected override root: %#v",root)};return}};t.Fatal("SCENEX_ROOT inventory missing")
 }
