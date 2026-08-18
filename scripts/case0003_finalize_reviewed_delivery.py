@@ -1,9 +1,8 @@
 """Finalize Case 0003 WorkLedger delivery after connector-grounded ChatGPT PASS.
 
-This step is intentionally separate from review application. It binds the already
-accepted review revision to the current Engineering OS Delivery receipt and the
-exact Google Drive publication identity that ChatGPT reviewed. No historical
-GitHub run/delivery constants are trusted.
+This step is separate from review application. It binds the accepted review revision
+to the current Engineering OS Delivery receipt and the exact local-first Google Drive
+revision folder/ZIP identity reviewed by ChatGPT.
 """
 from __future__ import annotations
 
@@ -74,9 +73,10 @@ def main(argv: list[str] | None = None) -> int:
     os_receipt_path = Path(args.os_delivery_receipt).expanduser().resolve() if args.os_delivery_receipt else workspace / "evidence" / "case0003-os-delivery-receipt.json"
     review = _load(review_apply_path, "connector review apply")
     os_delivery = _load(os_receipt_path, "Engineering OS delivery receipt")
+    prepare = _load(acceptance / f"drive-review-prepare-{revision_id}.json", "Drive review prepare receipt")
 
-    if review.get("schema_version") not in {"openworker-case0003-connector-review-apply/v2"}:
-        raise FinalizeError("connector review apply schema mismatch")
+    if review.get("schema_version") != "openworker-case0003-connector-review-apply/v3":
+        raise FinalizeError("connector review apply v3 required")
     if str(review.get("revision_id") or "") != revision_id:
         raise FinalizeError("connector review revision identity mismatch")
     if str(review.get("verdict") or "").upper() != "PASS":
@@ -87,11 +87,13 @@ def main(argv: list[str] | None = None) -> int:
         raise FinalizeError("accepted revision identity mismatch")
     if str(review.get("delivered_revision_id") or ""):
         raise FinalizeError("review apply unexpectedly already declares delivery")
+    if prepare.get("schema_version") != "openworker-case0003-drive-review-prepare/v2" or str(prepare.get("revision_id") or "") != revision_id:
+        raise FinalizeError("Drive review prepare v2 identity mismatch")
 
     cloud = review.get("cloud_publication") or {}
     if not isinstance(cloud, dict):
         raise FinalizeError("cloud_publication must be an object")
-    for key in ("drive_revision_folder_id", "drive_file_id", "cloud_zip_sha256", "bundle_manifest_sha256"):
+    for key in ("drive_revision_folder_id", "drive_zip_file_id", "review_zip_sha256", "bundle_manifest_sha256"):
         if not str(cloud.get(key) or "").strip():
             raise FinalizeError(f"cloud publication missing {key}")
     bundle_sha = str(review.get("bundle_manifest_sha256") or "").strip().lower()
@@ -99,6 +101,12 @@ def main(argv: list[str] | None = None) -> int:
         raise FinalizeError("review/cloud bundle manifest identity mismatch")
     local_bundle_manifest = workspace / ".openworker" / "reviews" / revision_id / "manifest.json"
     _same_sha(local_bundle_manifest, bundle_sha, "review bundle manifest")
+    local_zip = Path(str(prepare.get("review_zip_path") or "")).expanduser().resolve()
+    local_zip_sha = _same_sha(local_zip, prepare.get("review_zip_sha256"), "immutable review ZIP")
+    if local_zip_sha != str(review.get("review_zip_sha256") or "").strip().lower():
+        raise FinalizeError("review apply ZIP SHA mismatch")
+    if local_zip_sha != str(cloud.get("review_zip_sha256") or "").strip().lower():
+        raise FinalizeError("Drive reviewed ZIP SHA mismatch")
 
     if os_delivery.get("ok") is not True or os_delivery.get("schema_version") != "engineering-os-local-delivery-receipt/v1":
         raise FinalizeError("Engineering OS delivery receipt rejected")
@@ -163,8 +171,8 @@ def main(argv: list[str] | None = None) -> int:
                     },
                     "google_drive": {
                         "drive_revision_folder_id": cloud["drive_revision_folder_id"],
-                        "drive_file_id": cloud["drive_file_id"],
-                        "cloud_zip_sha256": cloud["cloud_zip_sha256"],
+                        "drive_zip_file_id": cloud["drive_zip_file_id"],
+                        "review_zip_sha256": local_zip_sha,
                         "bundle_manifest_sha256": bundle_sha,
                     },
                 },
@@ -173,7 +181,7 @@ def main(argv: list[str] | None = None) -> int:
         if final_work.get("delivered_revision_id") != revision_id or final_work.get("status") != "delivered":
             raise FinalizeError("WorkLedger delivery pointer verification failed")
         output = {
-            "schema_version": "openworker-case0003-reviewed-delivery-finalize/v1",
+            "schema_version": "openworker-case0003-reviewed-delivery-finalize/v2",
             "case_id": "0003",
             "revision_id": revision_id,
             "status": "DELIVERED",
@@ -191,8 +199,8 @@ def main(argv: list[str] | None = None) -> int:
             },
             "google_drive": {
                 "drive_revision_folder_id": cloud["drive_revision_folder_id"],
-                "drive_file_id": cloud["drive_file_id"],
-                "cloud_zip_sha256": cloud["cloud_zip_sha256"],
+                "drive_zip_file_id": cloud["drive_zip_file_id"],
+                "review_zip_sha256": local_zip_sha,
                 "bundle_manifest_sha256": bundle_sha,
             },
             "ledger": ledger.snapshot(work["work_id"]),
