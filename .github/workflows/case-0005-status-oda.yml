@@ -19,9 +19,9 @@ jobs:
   status:
     strategy:
       fail-fast: false
-      max-parallel: 3
+      max-parallel: 6
       matrix:
-        slot: [1,2,3,4,5,6,7,8,9,10,11,12]
+        slot: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24]
     runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 5
     steps:
