@@ -70,3 +70,5 @@ if not any(r[0]=='google_drive' and r[1]=='OPENWORKER_GOOGLE_DRIVE_ACCESS_TOKEN'
           python $tmp
           if ($LASTEXITCODE -ne 0) { throw 'Drive credential metadata verification failed' }
           Write-Host 'GTR_DRIVE_CREDENTIAL_METADATA_PASS gh_cli_untouched=true gh_token_untouched=true'
+
+# 2026-08-18 rerun after additive local executor deployment; gh CLI / GH_TOKEN remain untouched.
