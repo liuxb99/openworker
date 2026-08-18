@@ -17,6 +17,84 @@
 - GitHub Actions 不再是本案例主要 business execution boundary；既有 operator workflows 僅保留作 fallback、CI、遠端 bootstrap 或 evidence transport，不能因 Action success 就宣稱 business success。
 - assigned host 與 workspace 仍由 persisted OpenWorker state 決定；localexec 必須再次檢核 `claim.assigned_host == local COMPUTERNAME`，不允許模型自行換機。
 
+## 新舊架構差異：GitHub-first → OpenWorker local-first
+
+### 舊版：GitHub-first business execution
+
+舊流程常見路徑：
+
+```text
+ChatGPT / operator
+→ workflow_dispatch
+→ GitHub Actions queue
+→ self-hosted runner routing / label / condition
+→ checkout / environment bootstrap
+→ owning tool
+→ Action artifact / log
+→ 再判斷 business result
+```
+
+這個模式的主要問題不是 GitHub Actions 本身不能用，而是它被放在了不適合的位置：把 CI/遠端 transport 當成日常本機 business execution plane。結果會增加大量與真正工程成果無關的中間狀態：workflow condition、runner label、排隊、checkout、artifact upload/download、Action success/failed 等。
+
+對 Case 0003 這種需要固定 UL7、固定 workspace、同時跑多個本機工具、最後還要檢查實體圖像/地形/3D 成果的案例，GitHub-first 會讓「工具問題」與「transport 問題」混在一起。Action 綠燈也不代表 Street View 不是黑圖、Orthophoto 可視、DTM usable tiles > 0，或 Blender 成果正確。
+
+### 新版：OpenWorker local-first business execution
+
+新版 canonical 路徑：
+
+```text
+ChatGPT / local supervisor
+→ OpenWorker 本機總控
+→ durable jobs / agent slots / fixed host / canonical workspace
+→ go-tool localexec capability registry
+→ owning repo local CLI / service / script
+→ workspace physical artifact + evidence
+→ physical / semantic QC
+```
+
+這個改變把責任分開：
+
+- OpenWorker 管「在哪台機器、哪個 workspace、哪個 durable job、哪個 agent slot、queue 是否阻塞」。
+- go-tool 管「目前有哪些正式 capability，以及要呼叫哪個本機 handler」。
+- owning tool 管「真正的工程/影像/3D 邏輯」。
+- ChatGPT / QC 層只在實體成果與 evidence 足夠時才接受結果。
+
+因此現在發現問題後，理想路徑變成：
+
+```text
+發現成果不對
+→ 定位 owning capability
+→ OpenWorker 本機提交/重跑
+→ go-tool localexec
+→ 直接看 canonical workspace 實體成果
+→ 缺口回 owning repo 修
+→ 再跑
+```
+
+而不是：
+
+```text
+發現成果不對
+→ 先改 workflow / condition / runner
+→ dispatch
+→ 等 GitHub queue / runner
+→ 看 Action log
+→ 再猜是 transport 還是工具壞
+→ 回本機修
+```
+
+### 新版對本案例的直接效果
+
+1. **並行更直接**：Street View 與 Orthophoto 不互相依賴，OpenWorker 可直接分配不同 agent slot 同時跑，不需要建立兩條 GitHub workflow 再等待 runner 排程。
+2. **固定機器更可靠**：UL7 是 OpenWorker persisted host authority，localexec 會再次驗證實際 `COMPUTERNAME`；不再靠 GitHub runner 搶單或複雜 label condition 當主要保證。
+3. **queue 處理更簡單**：本機總控可直接看到 durable job/agent 狀態；若發現阻塞，應使用 OpenWorker 新版 one-call queue drain，而不是逐筆處理 GitHub workflow queue。
+4. **成果直接落 canonical workspace**：Street View、Orthophoto、Terrain、Blender 等成果直接寫入 `D:\AI-Work\jobs\0003-YUJING-BRIDGE`，下游不需要先經 Action artifact 搬運才能繼續。
+5. **錯誤定位更乾淨**：本機 handler 成功但實體成果失敗，直接修 owning tool；不必先排除 workflow/checkout/artifact transport 的干擾。
+6. **business acceptance 更嚴格**：Action success 不再是 acceptance gate；PNG visibility、DTM usable tiles、SHA256、Blender render、SceneX screenshot 等 physical evidence 才是 gate。
+7. **GitHub 回到正確角色**：GitHub 主要保留 code review、commit、CI、fallback、bootstrap、必要 evidence transport；不再要求大部分並行 business action 經 GitHub。
+
+結論：新版不是單純把 workflow 換成 PowerShell，而是把 execution authority 從 GitHub Actions 移回 OpenWorker 本機總控，使 GitHub 從「主要執行平面」退回「代碼/CI/備援平面」。後續 Case 0003 新增 capability 時，除非 local execution 暫時不可行，否則不得重新把 GitHub workflow_dispatch 當 canonical business path。
+
 ## 已接受
 
 ### Step 1/2 — OpenWorker / go-tool control plane
