@@ -24,7 +24,7 @@ permissions:
 
 jobs:
   install:
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[bootstrap-oda-node]')
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[bootstrap-oda-node]') || contains(github.event.head_commit.message, '[upgrade-openworker-nodes]')
     runs-on: [self-hosted, Windows, X64, ODA]
     timeout-minutes: 15
     steps:
@@ -52,9 +52,11 @@ jobs:
           PEERS: ${{ inputs.peers }}
         run: |
           & "$env:GITHUB_WORKSPACE\scripts\install_openworker_node_service.ps1" -SourceExe "$env:GITHUB_WORKSPACE\go-runtime\openworker-node.exe" -Workers 4 -Capabilities 'case0002,case0005,comfyx,minimax-h3,video,storyboard,presentation,local-supervisor' -Listen $env:LISTEN -Advertise $env:ADVERTISE -Peers $env:PEERS
-      - name: Verify service node identity inventory lease and upgrade receipt
+      - name: Verify installed service and authoritative upgrade status
         shell: powershell
         run: |
+          $svc=Get-Service OpenWorkerNode
+          if($svc.Status -ne 'Running'){throw "service status=$($svc.Status)"}
           $s=Invoke-RestMethod 'http://127.0.0.1:8787/v1/node/status'
           if($s.machine -ine 'DESKTOP-ODAQN0D'){throw "node machine=$($s.machine)"}
           if($s.build.commit -ne $env:GITHUB_SHA){throw "node commit=$($s.build.commit) expected=$env:GITHUB_SHA"}
