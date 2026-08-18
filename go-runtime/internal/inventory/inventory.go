@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -13,7 +14,8 @@ import (
 type Tool struct { Name string `json:"name"`; Available bool `json:"available"`; Path string `json:"path,omitempty"` }
 type Root struct { Name string `json:"name"`; Env string `json:"env"`; Path string `json:"path,omitempty"`; Available bool `json:"available"`; Source string `json:"source,omitempty"` }
 type GPU struct { Index string `json:"index"`; Name string `json:"name"`; MemoryMiB string `json:"memory_mib,omitempty"` }
-type Snapshot struct { Capabilities []string `json:"capabilities"`; Tools []Tool `json:"tools"`; Roots []Root `json:"roots"`; GPUs []GPU `json:"gpus"`; CollectedAt time.Time `json:"collected_at"` }
+type RunnerService struct { Name string `json:"name"`; Status string `json:"status"`; Running bool `json:"running"`; StartType string `json:"start_type,omitempty"` }
+type Snapshot struct { Capabilities []string `json:"capabilities"`; Tools []Tool `json:"tools"`; Roots []Root `json:"roots"`; GPUs []GPU `json:"gpus"`; RunnerServices []RunnerService `json:"runner_services"`; RunnerReady bool `json:"runner_ready"`; CollectedAt time.Time `json:"collected_at"` }
 
 var defaultTools=[]string{"git","go","python","powershell","blender","nvidia-smi"}
 var authorityRoots=[]struct{Name,Env string}{
@@ -29,7 +31,8 @@ func Collect() Snapshot {
 	caps:=splitCSV(os.Getenv("OPENWORKER_NODE_CAPABILITIES"))
 	tools:=make([]Tool,0,len(defaultTools))
 	for _,name:=range defaultTools{p,err:=exec.LookPath(name);tools=append(tools,Tool{Name:name,Available:err==nil,Path:p})}
-	return Snapshot{Capabilities:caps,Tools:tools,Roots:collectRoots(),GPUs:collectGPUs(),CollectedAt:time.Now().UTC()}
+	runners:=collectRunnerServices();ready:=false;for _,r:=range runners{if r.Running{ready=true;break}}
+	return Snapshot{Capabilities:caps,Tools:tools,Roots:collectRoots(),GPUs:collectGPUs(),RunnerServices:runners,RunnerReady:ready,CollectedAt:time.Now().UTC()}
 }
 
 func machineRootsFile() string {
@@ -71,4 +74,20 @@ func collectGPUs() []GPU {
 		parts:=strings.Split(line,",");if len(parts)<2{continue}
 		g:=GPU{Index:strings.TrimSpace(parts[0]),Name:strings.TrimSpace(parts[1])};if len(parts)>2{g.MemoryMiB=strings.TrimSpace(parts[2])};out=append(out,g)}
 	return out
+}
+
+func collectRunnerServices() []RunnerService {
+	if runtime.GOOS!="windows"{return []RunnerService{}}
+	ps:="Get-CimInstance Win32_Service | Where-Object { $_.Name -like 'actions.runner.*' -or $_.DisplayName -like 'GitHub Actions Runner*' } | ForEach-Object { [Console]::WriteLine(('{0}`t{1}`t{2}' -f $_.Name,$_.State,$_.StartMode)) }"
+	b,err:=exec.Command("powershell","-NoLogo","-NoProfile","-NonInteractive","-Command",ps).Output();if err!=nil{return []RunnerService{}}
+	return parseRunnerServices(string(b))
+}
+
+func parseRunnerServices(v string) []RunnerService {
+	out:=[]RunnerService{}
+	for _,line:=range strings.Split(strings.ReplaceAll(v,"\r\n","\n"),"\n"){
+		line=strings.TrimSpace(line);if line==""{continue};parts:=strings.Split(line,"\t");if len(parts)<2{continue}
+		r:=RunnerService{Name:strings.TrimSpace(parts[0]),Status:strings.TrimSpace(parts[1])};if len(parts)>2{r.StartType=strings.TrimSpace(parts[2])};r.Running=strings.EqualFold(r.Status,"Running");out=append(out,r)
+	}
+	sort.Slice(out,func(i,j int)bool{return out[i].Name<out[j].Name});return out
 }
