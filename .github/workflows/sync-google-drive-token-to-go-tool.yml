@@ -8,13 +8,14 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   sync:
     name: sync-${{ matrix.machine }}
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         include:
           - machine: O87
@@ -33,10 +34,15 @@ jobs:
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
     env:
       EXPECTED_HOST: ${{ matrix.host }}
+      MACHINE_KEY: ${{ matrix.machine }}
       GTR_SHARED_GOOGLE_DRIVE_ACCESS_TOKEN: ${{ secrets.OPENWORKER_GOOGLE_DRIVE_ACCESS_TOKEN }}
       GTR_CREDENTIAL_DB_PATH: C:\ProgramData\go-tool-runtime\runtime.db
       GTR_CREDENTIAL_IMPORT: C:\ProgramData\go-tool-runtime\work-agent\gtr-credential-import.exe
     steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: false
+
       - name: Verify fixed machine and additive secret
         run: |
           if ($env:COMPUTERNAME -ine $env:EXPECTED_HOST) { throw "wrong host expected=$env:EXPECTED_HOST actual=$env:COMPUTERNAME" }
@@ -54,21 +60,30 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Drive credential import failed: $LASTEXITCODE" }
           Write-Host "GTR_DRIVE_CREDENTIAL_IMPORT_PASS machine=$env:COMPUTERNAME provider=google_drive name=OPENWORKER_GOOGLE_DRIVE_ACCESS_TOKEN"
 
-      - name: Verify metadata only, never secret value
+      - name: Verify and persist metadata only
         run: |
           $py=@'
 import json, sqlite3
 p=r"C:\ProgramData\go-tool-runtime\runtime.db"
 db=sqlite3.connect(p)
 rows=list(db.execute("select provider,name,status from local_credentials where provider in ('github','google_drive') order by provider,name"))
-print(json.dumps([{'provider':r[0],'name':r[1],'status':r[2]} for r in rows]))
+items=[{'provider':r[0],'name':r[1],'status':r[2]} for r in rows]
 if not any(r[0]=='google_drive' and r[1]=='OPENWORKER_GOOGLE_DRIVE_ACCESS_TOKEN' and r[2]=='active' for r in rows):
     raise SystemExit('google_drive credential metadata missing')
+print(json.dumps(items))
 '@
           $tmp=Join-Path $env:RUNNER_TEMP 'verify-gtr-drive-credential.py'
           $py|Set-Content -LiteralPath $tmp -Encoding UTF8
-          python $tmp
+          $raw=python $tmp
           if ($LASTEXITCODE -ne 0) { throw 'Drive credential metadata verification failed' }
+          $items=$raw|ConvertFrom-Json
+          $dest=('evidence\credentials\latest-google-drive-' + $env:MACHINE_KEY + '.json')
+          New-Item -ItemType Directory -Force -Path (Split-Path $dest)|Out-Null
+          $payload=[ordered]@{schema_version='openworker-gtr-drive-credential-metadata/v1';machine=$env:COMPUTERNAME;machine_key=$env:MACHINE_KEY;run_id=$env:GITHUB_RUN_ID;credentials=@($items);google_drive_active=$true;gh_cli_untouched=$true;gh_token_untouched=$true;observed_at=(Get-Date).ToUniversalTime().ToString('o')}
+          $payload|ConvertTo-Json -Depth 6|Set-Content -LiteralPath $dest -Encoding UTF8
+          git config user.name 'openworker-credential-bot';git config user.email 'openworker-credential-bot@users.noreply.github.com'
+          git pull --rebase origin main;git add $dest;git diff --cached --quiet
+          if($LASTEXITCODE -ne 0){git commit -m "credential: record additive Drive slot $env:MACHINE_KEY $env:GITHUB_RUN_ID";git push origin HEAD:main;if($LASTEXITCODE -ne 0){throw 'failed to persist credential metadata'}}
           Write-Host 'GTR_DRIVE_CREDENTIAL_METADATA_PASS gh_cli_untouched=true gh_token_untouched=true'
 
-# 2026-08-18 rerun after additive local executor deployment; gh CLI / GH_TOKEN remain untouched.
+# Metadata evidence only; secret bytes are never persisted or printed.
