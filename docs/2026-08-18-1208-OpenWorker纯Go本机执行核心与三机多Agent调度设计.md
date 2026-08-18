@@ -1,42 +1,15 @@
 # OpenWorker 纯 Go 本机执行核心与三机多 Agent 调度设计
 
 日期：2026-08-18
-状态：P1 BATCH-4 IMPLEMENTED — WAITING FOR O87 SERVICE + REAL-CASE VERIFICATION
+状态：P1 BATCH-5 IMPLEMENTED — ENTERING P2 CLUSTER PREP
 
 ## 1. 架构结论
 
-OpenWorker 采用双层结构：Python 保留案例、WorkLedger、知识、审核、Drive 与上层 orchestration；纯 Go `openworker-node.exe` 成为本机执行内核，负责 durable queue、多 Agent slots、真实进程、资源锁、heartbeat、timeout、cancel、drain、retry/recover，以及后续三机 cluster。
+OpenWorker 继续采用双层结构：Python 保留案例、WorkLedger、知识、审核、Drive 与上层 orchestration；纯 Go `openworker-node.exe` 作为本机执行内核，负责 durable queue、多 Agent slots、真实进程、资源锁、heartbeat、timeout、cancel、drain、retry/recover，以及三机节点状态。
 
-GitHub Action 逐步退化为 transport：`runner accepted -> COMPUTERNAME -> submit -> durable ACK -> Action completed`。Action 完成不代表真实任务完成。
+GitHub Action 继续退化为 transport：`runner accepted -> COMPUTERNAME -> submit -> durable ACK -> Action completed`。Action completed 永远不等于业务 succeeded。
 
-## 2. Action 工作目录兼容
-
-canonical checkout 继续位于原 Action `_work`，例如 `D:\actions-runner\_work\openworker\openworker`。Git 修改型并行 Agent 使用同层 `_agents/Axx/<repo>` worktree；业务 workspace 继续保持 `D:\AI-Work\jobs\...`。
-
-## 3. P0 已完成
-
-核心提交 `9a528a3a`：SQLite durable store、4 worker pool、command/cwd/env、stdout/stderr、PID、heartbeat、timeout、cancel、Windows process-tree kill、queued drain、startup stale recovery、HTTP submit/status/list/cancel/drain、COMPUTERNAME fail-closed。
-
-## 4. P1 Batch-1 已完成
-
-- `00b4b786` / `8f10ef3a` / `7bff6416`：resource lock、schema、TryAcquire/Requeue/Release；
-- `eca0c6c1`：Action-compatible Git worktree slots；
-- `ebe99bea`：`scripts/submit_openworker_node.ps1`；
-- `70a2f1fd`：P0-P1 self-hosted verification workflow。
-
-等待锁的 job 会 requeue，不长期占 worker slot。`use_worktree=true` 时 `cwd/GITHUB_WORKSPACE` 会切到 `_agents/Axx/<repo>`。
-
-## 5. P1 Batch-2 已完成
-
-Python adapter：`2e37a322` 新增 `coworker/node_client.py`，支持 `node_status/submit/jobs/job_status/cancel/retry/drain`。
-
-Retry/recover：`4e04d148` 只允许 `failed/timed_out/cancelled/stale` 显式 retry；`34bda54e` 验证 stale -> queued。
-
-Drain all：`75e8cae4` 让 `queued/starting/running` 统一走 Cancel，running 会 context cancel + Windows process-tree kill + lock release；`e5f87923` 暴露 retry/drain API。
-
-`03a7f112` 扩展 self-hosted 验证 workflow。
-
-## 6. 当前 Go Node API
+## 2. 当前 Go Node API
 
 ```text
 GET  /healthz
@@ -51,235 +24,212 @@ POST /v1/jobs/{job_id}/retry
 POST /v1/queue/drain?mode=queued|all
 ```
 
-统一 `job_id` 贯穿 Action、Go Core、Python Control Plane、WorkLedger、artifact、QC receipt；`dispatch_id` 负责派工幂等。
+`job_id` 贯穿 Action、Go Core、Python Control Plane、WorkLedger、artifact、QC receipt；`dispatch_id` 负责派工幂等。
 
-## 7. 当前调度铁律
+## 3. P0 ~ P1 Batch-4 已完成摘要
 
-- `COMPUTERNAME` 是固定机器最终权威；
-- `machine=<fixed>` 不允许其他机器执行；
-- `machine=any` 才允许未来 P2 自动路由；
-- resource lock busy 必须 requeue；
-- Git 修改型并行任务必须独立 worktree；
-- restart 后未知 running 必须 stale，不能假成功；
-- retry 必须显式；
-- `drain queued` 与 `drain all` 必须分开；
-- Action durable ACK 后即可结束；
-- Action completed 永远不能直接当作业务 succeeded。
+已完成：SQLite durable store、4 worker pool、Action `_work` worktree slots、resource locks、真实 process supervisor、heartbeat/timeout/cancel、Windows process-tree kill、queued/all drain、显式 retry、Python node adapter、Action durable ACK bridge、原生 Windows Service、build identity、durable job event ledger，以及 Case 0004 O87 `submit -> ACK -> exit` + 独立 result verify 样板。
 
-## 8. P1 Batch-3：真实 Case 0004 迁移样板
+O87 service bootstrap 与真实 Case 0004 仍需 self-hosted REAL receipt，因此未宣称真实验收完成。
 
-`ab157b7c` 新增 `scripts/case0004_worklist_state_local.ps1`，在真实 `D:\AI-Work\jobs\0004-DWG-TO-3D` 上执行现有 Worklist ensure/show，并把结果写入：
+## 4. P1 Batch-5：Restart PID 存活恢复
+
+旧逻辑在 Host 启动时把所有 `starting/running` 一律标 stale，无法分辨旧 PID 是否仍活着。
+
+本批新增：
+
+- `68f91006`：Windows 使用 `OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION)` + `GetExitCodeProcess` 检查 PID 是否 `STILL_ACTIVE`；
+- `ff9c8b0d`：非 Windows 使用 signal 0 做存活探测；
+- `2458a1be`：Store 增加 `ActiveJobs()` 与 `MarkStale(job_id,detail)`；
+- `12721533`：Host startup recovery 改为逐 job reconciliation；
+- `2c57529f`：验证遗留 active job 在 startup 被标 stale 并写 durable event。
+
+当前 fail-closed policy：
 
 ```text
-D:\AI-Work\jobs\0004-DWG-TO-3D\.openworker\evidence\latest-worklist-state-node.json
+读取 starting/running
+-> 检查 PID
+-> PID 已死：直接 stale
+-> PID 仍活：先 kill 整个 orphan process tree
+-> stale
+-> durable stale event 记录 pid/alive/处理结果
+-> 只有显式 retry 才能重新执行
 ```
 
-`cff7b53f` 新增 `.github/workflows/case0004-o87-worklist-state-node.yml`：O87 runner 只检查 COMPUTERNAME + node health，submit real job，收到 durable ACK 后结束；真实工作继续由 Go Node 的独立 worktree/worker slot 执行。
+这样避免服务重启后“旧进程还活着 + 新 retry 又跑一份”的双执行风险。
 
-旧 `matrix slot [1,2,3]` workflow 暂时保留作 A/B fallback。
+## 5. P1 Batch-5：Node Capability / Tool / GPU Inventory
 
-## 9. P1 Batch-3：go-tool 接线
+提交 `ea07e3e5` 新增 `internal/inventory`。
 
-OpenWorker `5cc8b44d` 新增 O87 node control workflow，提供：
+`GET /v1/node/info` 与 `/v1/node/status` 现在可以发布：
 
 ```text
-node.status
-job.status
-job.cancel
-job.retry
-queue.drain queued|all
+capabilities
+installed tool availability/path
+gpu index/name/memory
+collected_at
 ```
 
-go-tool-runtime `8b2be98c` 新增：
+默认 tool probe：
 
 ```text
-openworker.node.o87.control
-openworker.case0004.worklist-state.node
+git
+go
+python
+powershell
+blender
+nvidia-smi
 ```
 
-Capability 描述已经写入负面知识：GitHub Action completed 只表示 dispatch/control workflow 完成，真实业务状态必须继续通过 durable `job_id` 查询。
+GPU inventory 使用 `nvidia-smi --query-gpu=index,name,memory.total`；没有 NVIDIA 环境时返回空 GPU list，不伪造资源。
 
-## 10. P1 Batch-4：原生 Windows Service Host
+`b6030628` 增加 capability normalization test。
 
-本批不使用 NSSM，也不把普通 console exe 硬塞给 SCM。
+## 6. P1 Batch-5：Heartbeat / Lease Contract
 
-新增/调整：
-
-- `6cf96748`：把 node lifecycle 抽成可复用 `runNode(ctx,cfg)`；
-- `d6e9b935`：`openworker-node.exe` 支持 console 与 `-service` 双模式；
-- `f0518c7c`：Windows 专用 `service_windows.go`，使用 Go 原生 Windows Service Control Manager protocol；
-- `d4813f94`：非 Windows `-service` fail-closed；
-- `12c68ce0`：加入 `golang.org/x/sys/windows/svc` 依赖。
-
-服务名固定：
+提交 `0673bf21` 扩充 `/healthz` 与 `/v1/node/status`：
 
 ```text
-OpenWorkerNode
+node_id
+heartbeat_at
+lease_seconds = 15
+lease_until
 ```
 
-SCM Stop/Shutdown 会 cancel node context，HTTP server graceful shutdown，再由 runtime 停 worker/process。
+P2 Registry 后续只要定期抓 node status，即可按 `lease_until` 判断节点是否仍可调度。超过 lease 的节点必须视为 unavailable，不允许继续派 `machine=any` 新任务。
 
-## 11. P1 Batch-4：Windows 安装/升级入口
+目前 lease 是 node response contract，还没有中央 Registry 持久化，这是下一阶段 P2 的工作。
 
-提交 `87ce1151` 新增：
+## 7. P1 Batch-5：Service Capability 配置
+
+提交：
+
+- `81d29a7c`：nodeConfig 支持 `Capabilities`；
+- `c4dc97fe`：`openworker-node.exe -capabilities`；
+- `be79d2ed`：Windows service installer 支持 `-Capabilities`，并持久写入 SCM `binPath`。
+
+因此 capability 不依赖临时 Action 环境变量；服务重启后仍保留节点角色。
+
+## 8. 三机 Service Bootstrap
+
+### O87
+
+`96bd056c` 更新 O87 bootstrap：
 
 ```text
-scripts/install_openworker_node_service.ps1
+COMPUTERNAME = DESKTOP-O87PJNR
+capabilities = case0004,dwg,story-index,engineering
 ```
 
-行为：
+并验证 `lease_until`、build commit 与 `dwg` capability。
+
+### UL7
+
+`d9749c97` 新增：
 
 ```text
-管理员权限检查
--> 停现有 OpenWorkerNode
--> 复制新版 openworker-node.exe
--> sc.exe create/config start=auto
--> 配置失败自动 restart
--> Start-Service
--> /healthz 自检
--> 输出 machine-readable install receipt
+.github/workflows/bootstrap-openworker-node-ul7.yml
 ```
 
-默认路径：
+固定：
 
 ```text
-C:\ProgramData\OpenWorker\bin\openworker-node.exe
-C:\ProgramData\OpenWorker\node\openworker-node.sqlite3
+COMPUTERNAME = DESKTOP-UL7V2VV
+capabilities = case0003,bridge,blender,scenex,engineering,drive-review
 ```
 
-默认：`127.0.0.1:8787`、4 workers。
+### ODA
 
-## 12. P1 Batch-4：Build Identity / Node 自检
-
-`bbe6e68a` 新增 `internal/buildinfo`，可通过 ldflags 写入：
+`8b20d520` 新增：
 
 ```text
-version
-commit
-build_time
+.github/workflows/bootstrap-openworker-node-oda.yml
 ```
 
-`510438ee` 把 build identity 加到：
+当前固定检查：
 
 ```text
-GET /healthz
-GET /v1/node/info
-GET /v1/node/status
+COMPUTERNAME = DESKTOP-ODAQN0D
+capabilities = case0002,comfyx,minimax-h3,video,storyboard,presentation
 ```
 
-因此不只知道 node 在线，也能知道当前常驻服务到底跑的是哪一个 commit。
+该 hostname 必须由真实 ODA self-hosted run receipt 再确认；若实际 COMPUTERNAME 不同，workflow 会 fail-closed，不会静默在错误机器安装服务。
 
-## 13. P1 Batch-4：Durable Job Event Ledger
-
-`5d44736c` / `db50735f` 新增 job event 查询：
+## 9. 当前三机目标状态
 
 ```text
-GET /v1/jobs/{job_id}/events?limit=100
+UL7  -> OpenWorkerNode :8787 -> bridge/blender/scenex/engineering
+ODA  -> OpenWorkerNode :8787 -> comfyx/minimax-h3/video/storyboard
+O87  -> OpenWorkerNode :8787 -> dwg/story-index/engineering
 ```
 
-`69b26712` 补齐运行轨迹事件：
+每台默认 4 worker slots；实际并行能力仍由 resource locks / GPU locks / workspace locks 限制，不把“4 workers”误解为“所有 GPU 任务都可以四份同时跑”。
+
+## 10. 当前恢复铁律
+
+- service restart 不可直接重跑旧 active job；
+- PID 存活必须先处理 orphan process；
+- 旧 active job 最终进入 stale；
+- stale 必须显式 retry；
+- retry 保留同一 durable `job_id`；
+- event ledger 必须记录 recovery 原因；
+- 固定机器最后权威仍是 COMPUTERNAME；
+- capability 是调度条件，不是机器身份替代品。
+
+## 11. 当前真实验收状态
+
+代码层已经进入三节点准备，但以下仍需 REAL self-hosted receipt：
+
+1. O87 OpenWorkerNode service 安装/升级 + inventory/lease；
+2. UL7 OpenWorkerNode service 安装/升级 + inventory/lease；
+3. ODA OpenWorkerNode service 安装/升级 + COMPUTERNAME 最终确认；
+4. Case 0004 durable ACK -> job succeeded -> event ledger -> local artifact -> GitHub result receipt；
+5. restart 时真实 orphan PID recovery 行为。
+
+因此本批状态是：**IMPLEMENTED，尚未宣称三机 REAL VERIFIED。**
+
+## 12. 下一阶段 P2：Cluster Registry
+
+下一批开始建立中央 cluster authority：
 
 ```text
-running
-succeeded
-failed
-timed_out
-cancel_requested
-cancelled
-drained
-retried
+cluster_nodes
+cluster_agents
+cluster_capabilities
+cluster_jobs
 ```
 
-因此 cancel/drain/retry 不再只有“目前状态”，也能追出“为什么变成这个状态”。
-
-`1f333dd4` 扩充 self-hosted 验证：失败 job 必须出现 durable `failed` event；retry 后执行 `drain all`，event ledger 必须出现 `drained`。
-
-## 14. P1 Batch-4：O87 服务安装 workflow
-
-提交 `2b2800b7` 新增：
+每个 node 以 heartbeat/lease 更新：
 
 ```text
-.github/workflows/bootstrap-openworker-node-o87.yml
+node_id
+computer_name
+endpoint
+build.commit
+heartbeat_at
+lease_until
+workers busy/free
+capabilities
+tools
+gpus
+queue depth
 ```
 
-它会在 `DESKTOP-O87PJNR`：
+目标 API / go-tool：
 
 ```text
-Go build
--> ldflags 注入 GITHUB_SHA/build_time
--> install/upgrade OpenWorkerNode service
--> GET /v1/node/status
--> 验证 service build.commit == GITHUB_SHA
-```
-
-这会成为 O87 本机执行核心的 authority bootstrap。
-
-## 15. P1 Batch-4：Case 0004 独立结果验证
-
-提交 `ab7c830b` 新增：
-
-```text
-.github/workflows/case0004-o87-worklist-state-node-verify.yml
-```
-
-输入 durable `job_id` 后，它不会看原 dispatch Action 是否绿色，而是独立执行：
-
-```text
-GET /v1/jobs/{job_id}
--> 必须 status=succeeded
--> GET /v1/jobs/{job_id}/events
--> 检查本机 .openworker/evidence/latest-worklist-state-node.json
--> artifact.job_id 必须等于查询 job_id
--> artifact.machine 必须等于 O87
--> 形成 evidence/case0004/latest-node-worklist-state-result.json
--> commit/push GitHub
-```
-
-这样形成两条独立证据链：
-
-```text
-Dispatch receipt = Action 成功派工
-Result receipt   = Go Node 真实完成 + 实体成果
-```
-
-## 16. 当前真实迁移状态
-
-截至本文档更新：代码已完成，但仍未取得以下 REAL receipt，因此不宣称 VERIFIED：
-
-1. O87 `OpenWorkerNode` service 的 Running + build.commit receipt；
-2. Case 0004 新版 dispatch 的 durable ACK；
-3. 对应 `job_id` 的 final `succeeded`；
-4. durable event ledger；
-5. 本机实体 `latest-worklist-state-node.json`；
-6. GitHub `latest-node-worklist-state-result.json`。
-
-当前结论：**P1 Batch-4 IMPLEMENTED，等待 O87 服务与真实案例验收。**
-
-## 17. 下一批 P1
-
-1. 更细的 restart recovery：PID 存活检查，而不是启动时一律 stale；
-2. 把 service bootstrap 复制到 UL7 / ODA；
-3. node capabilities / GPU / tool inventory；
-4. 统一三机 node heartbeat/lease，为 P2 cluster registry 做准备；
-5. 真实 Case 0004 跑通后，把同样 dispatch/result 分离模式复制到 Case 0002/0003。
-
-## 18. P2：三机 Cluster
-
-UL7 / ODA / O87 各运行 `openworker-node.exe`。下一阶段增加 registry heartbeat/lease、node capabilities、cluster status/jobs、node-to-node query、`machine=any` capability-aware scheduler、跨 node resource lease 与 failover policy。
-
-目标：
-
-```text
-openworker.node.status
-openworker.job.status
 openworker.cluster.status
 openworker.cluster.jobs
+openworker.cluster.capabilities
 ```
 
-## 19. 验收铁律
+之后才允许 `machine=any` 根据 online lease + capability + free slots + resource/GPU availability 自动选机器。固定 machine job 不参与自动漂移。
 
-真实验证必须覆盖：四任务并行、第五排队、同锁串行且不占死 worker、hang 不阻塞其他 workers、timeout 回收 slot、cancel 终止 process tree、drain queued、drain all、重复 drain、重复 dispatch 幂等、restart lost running -> recover/stale、stale 可显式 retry、Action `_work` worktree 语义、COMPUTERNAME fail-closed、Action durable ACK 后独立结束、Windows Service SCM stop/start/restart、build identity 对齐，以及真实 Case 在 Action 结束后继续由 Go Node 完成。
+## 13. 验收铁律
 
-## 20. 最终目标
+必须持续覆盖：四任务并行、第五排队、同锁串行、不占死 worker、timeout、process-tree cancel、drain queued/all、dispatch 幂等、restart PID recovery、stale 显式 retry、Action `_work` worktree、COMPUTERNAME fail-closed、Windows SCM service、build identity、inventory、lease，以及真实 Case 在 Action 结束后由 Go Node 独立完成。
 
-OpenWorker 从 GitHub Actions 驱动的单 runner 执行，升级为 OpenWorker 自己拥有的三节点、多 Agent、可并行、可恢复、可观察的本机执行系统。GitHub Actions 保留版本、入口、CI 与证据职责，不再成为长任务 scheduler。
+## 14. 最终目标
+
+OpenWorker 从 GitHub Actions 驱动的单 runner 执行，升级为 OpenWorker 自己拥有的三节点、多 Agent、可并行、可恢复、可观察、本机优先的执行系统。GitHub Actions 只保留版本、入口、CI 与证据通道，不再承担长任务 scheduler。
