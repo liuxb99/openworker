@@ -93,9 +93,34 @@ jobs:
           git push origin HEAD:main
           if($LASTEXITCODE -ne 0){throw 'push failed'}
 
+      - name: Publish failure diagnostic
+        if: always() && steps.route.outputs.run == 'true'
+        run: |
+          if(Test-Path 'evidence\ops\latest-queue-drain.json'){ exit 0 }
+          New-Item -ItemType Directory -Force -Path 'evidence\ops'|Out-Null
+          $queryPath='go-tool-queue-query.json'
+          $diag=[ordered]@{
+            schema='openworker.queue-drain.failure.v1'
+            case_id='0004'
+            run_id=$env:GITHUB_RUN_ID
+            machine=$env:COMPUTERNAME
+            runner=$env:RUNNER_NAME
+            capability='dwg.story_index.queue.admin'
+            go_tool_query_exists=(Test-Path $queryPath)
+            go_tool_query_raw=$(if(Test-Path $queryPath){Get-Content -LiteralPath $queryPath -Raw}else{$null})
+            queue_drain_output_exists=$false
+          }
+          [IO.File]::WriteAllText('evidence\ops\latest-queue-drain-failure.json',($diag|ConvertTo-Json -Depth 50),(New-Object Text.UTF8Encoding($false)))
+          git config user.name 'openworker-queue-drain'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -- evidence/ops/latest-queue-drain-failure.json
+          if(-not(git diff --cached --quiet)){git commit -m "ops(case0004): publish queue drain failure diagnostic $env:GITHUB_RUN_ID"}
+          git pull --rebase origin main
+          git push origin HEAD:main
+
       - name: Non-target candidate exits cleanly
         if: steps.route.outputs.run != 'true'
         shell: cmd
         run: echo CASE0004_QUEUE_DRAIN_SKIP machine=%COMPUTERNAME% runner=%RUNNER_NAME%
 
-# retrigger case0004 queue drain: 2026-08-18T11:28+08:00
+# retrigger case0004 queue drain with failure receipt: 2026-08-18T11:30+08:00
