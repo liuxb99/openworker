@@ -116,40 +116,46 @@ jobs:
           $ErrorActionPreference='Stop'
           $claim='C:\ProgramData\OpenWorker\case0005-bootstrap-through-upgrade.lock'
           $claimed=$false
-          try {
-            $fs=[IO.File]::Open($claim,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
-            $fs.Dispose(); $claimed=$true
-          } catch {}
-          if(-not $claimed){ Write-Host 'CASE0005_UPGRADE_TRANSPORT_DUPLICATE_SKIP'; exit 0 }
+          try {$fs=[IO.File]::Open($claim,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None);$fs.Dispose();$claimed=$true}catch{}
+          if(-not $claimed){Write-Host 'CASE0005_UPGRADE_TRANSPORT_DUPLICATE_SKIP';exit 0}
           try {
             & "$env:GITHUB_WORKSPACE\scripts\case0005_resident_bootstrap.ps1"
             $outcomePath='C:\ProgramData\OpenWorker\node\case0005-last-bootstrap-outcome.json'
             $outcome=$null
-            if(Test-Path -LiteralPath $outcomePath -PathType Leaf){ $outcome=Get-Content -Raw -LiteralPath $outcomePath }
-            if(-not $outcome){
-              $outcome=([ordered]@{schema='openworker/case0005-bootstrap-upgrade-transport/v1';case_id='0005';machine=$env:COMPUTERNAME;succeeded=$false;stage='missing_script_outcome';reason='case0005 resident bootstrap produced no durable outcome';observed_at=[DateTimeOffset]::UtcNow.ToString('o');run_id=$env:GITHUB_RUN_ID}|ConvertTo-Json -Depth 10 -Compress)
-            }
+            if(Test-Path -LiteralPath $outcomePath -PathType Leaf){$outcome=Get-Content -Raw -LiteralPath $outcomePath}
+            if(-not $outcome){$outcome=([ordered]@{schema='openworker/case0005-bootstrap-upgrade-transport/v1';case_id='0005';machine=$env:COMPUTERNAME;succeeded=$false;stage='missing_script_outcome';reason='case0005 resident bootstrap produced no durable outcome';observed_at=[DateTimeOffset]::UtcNow.ToString('o');run_id=$env:GITHUB_RUN_ID}|ConvertTo-Json -Depth 10 -Compress)}
             $headers=@{Authorization="Bearer $env:GH_TOKEN";Accept='application/vnd.github+json';'X-GitHub-Api-Version'='2022-11-28'}
             function Put([string]$path,[string]$content,[string]$message){
-              $uri="https://api.github.com/repos/$env:GITHUB_REPOSITORY/contents/$path"
-              $readUri='{0}?ref={1}' -f $uri,[uri]::EscapeDataString($env:GITHUB_REF_NAME)
-              $b64=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($content))
-              for($i=1;$i -le 10;$i++){
-                $sha=$null
-                try{$e=Invoke-RestMethod -Uri $readUri -Headers $headers;$sha=$e.sha}catch{$st=$null;try{$st=$_.Exception.Response.StatusCode.value__}catch{};if($st -ne 404){throw}}
-                $body=@{message=$message;content=$b64;branch=$env:GITHUB_REF_NAME};if($sha){$body.sha=$sha}
-                try{Invoke-RestMethod -Method Put -Uri $uri -Headers $headers -ContentType 'application/json' -Body ($body|ConvertTo-Json -Compress)|Out-Null;return}catch{$st=$null;try{$st=$_.Exception.Response.StatusCode.value__}catch{};if($st -ne 409 -or $i -eq 10){throw};Start-Sleep -Milliseconds (250*$i)}
-              }
+              $uri="https://api.github.com/repos/$env:GITHUB_REPOSITORY/contents/$path";$readUri='{0}?ref={1}' -f $uri,[uri]::EscapeDataString($env:GITHUB_REF_NAME);$b64=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($content))
+              for($i=1;$i -le 10;$i++){$sha=$null;try{$e=Invoke-RestMethod -Uri $readUri -Headers $headers;$sha=$e.sha}catch{$st=$null;try{$st=$_.Exception.Response.StatusCode.value__}catch{};if($st -ne 404){throw}};$body=@{message=$message;content=$b64;branch=$env:GITHUB_REF_NAME};if($sha){$body.sha=$sha};try{Invoke-RestMethod -Method Put -Uri $uri -Headers $headers -ContentType 'application/json' -Body ($body|ConvertTo-Json -Compress)|Out-Null;return}catch{$st=$null;try{$st=$_.Exception.Response.StatusCode.value__}catch{};if($st -ne 409 -or $i -eq 10){throw};Start-Sleep -Milliseconds (250*$i)}}
             }
             Put 'evidence/case0005/latest-bootstrap-result.json' $outcome 'case0005: publish bootstrap via verified ODA transport'
             $obj=$outcome|ConvertFrom-Json
-            if([bool]$obj.succeeded){
-              $local='D:\AI-Work\jobs\0005-SNOW-WHITE\evidence\case0005-resident-bootstrap.json'
-              if(-not(Test-Path -LiteralPath $local -PathType Leaf)){throw "missing local bootstrap receipt $local"}
-              $r=Get-Content -Raw -LiteralPath $local|ConvertFrom-Json
-              $ack=[ordered]@{schema='openworker/case0005-bootstrap-ack/v5';case_id='0005';machine='DESKTOP-ODAQN0D';workspace_root='D:\AI-Work\jobs\0005-SNOW-WHITE';accepted=[bool]$r.ack.job.accepted;work_id=[string]$r.ack.job.id;authority='openworker-local-supervisor';routing_authority='COMPUTERNAME';transport='verified-node-upgrade';github_action_used_for_business_execution=$false;run_id=$env:GITHUB_RUN_ID;observed_at=[DateTimeOffset]::UtcNow.ToString('o')}
-              Put 'evidence/case0005/latest-bootstrap-ack.json' ($ack|ConvertTo-Json -Depth 10 -Compress) 'case0005: record bootstrap ack via verified ODA transport'
-            }
-            if($LASTEXITCODE -ne 0 -or -not [bool]$obj.succeeded){throw "Case 0005 bootstrap failed; authoritative result published"}
-          }
-          finally { Remove-Item -LiteralPath $claim -Force -ErrorAction SilentlyContinue }
+            if([bool]$obj.succeeded){$local='D:\AI-Work\jobs\0005-SNOW-WHITE\evidence\case0005-resident-bootstrap.json';if(-not(Test-Path -LiteralPath $local -PathType Leaf)){throw "missing local bootstrap receipt $local"};$r=Get-Content -Raw -LiteralPath $local|ConvertFrom-Json;$ack=[ordered]@{schema='openworker/case0005-bootstrap-ack/v6';case_id='0005';machine='DESKTOP-ODAQN0D';workspace_root='D:\AI-Work\jobs\0005-SNOW-WHITE';accepted=[bool]$r.ack.job.accepted;work_id=[string]$r.ack.job.job_id;authority='openworker-local-supervisor';routing_authority='COMPUTERNAME';transport='verified-node-upgrade';github_action_used_for_business_execution=$false;run_id=$env:GITHUB_RUN_ID;observed_at=[DateTimeOffset]::UtcNow.ToString('o')};Put 'evidence/case0005/latest-bootstrap-ack.json' ($ack|ConvertTo-Json -Depth 10 -Compress) 'case0005: record bootstrap ack via verified ODA transport'}
+            if($LASTEXITCODE -ne 0 -or -not [bool]$obj.succeeded){throw 'Case 0005 bootstrap failed; authoritative result published'}
+          } finally {Remove-Item -LiteralPath $claim -Force -ErrorAction SilentlyContinue}
+
+      - name: Publish read-only Case 0005 local status from ODA
+        if: steps.detect.outputs.node == 'oda' && contains(github.event.head_commit.message, '[case0005-status-through-upgrade]')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $workspace='D:\AI-Work\jobs\0005-SNOW-WHITE'
+          $worklistPath=Join-Path $workspace '.openworker\case-worklist.json'
+          $controllerPath=Join-Path $workspace '.openworker\case-controller-last.json'
+          $bootstrapReceipt=Join-Path $workspace 'evidence\case0005-resident-bootstrap.json'
+          $worklist=$null;$controller=$null;$bootstrap=$null;$bootstrapExplain=$null
+          if(Test-Path -LiteralPath $worklistPath -PathType Leaf){$worklist=Get-Content -Raw -LiteralPath $worklistPath|ConvertFrom-Json}
+          if(Test-Path -LiteralPath $controllerPath -PathType Leaf){$controller=Get-Content -Raw -LiteralPath $controllerPath|ConvertFrom-Json}
+          if(Test-Path -LiteralPath $bootstrapReceipt -PathType Leaf){$bootstrap=Get-Content -Raw -LiteralPath $bootstrapReceipt|ConvertFrom-Json}
+          $bootstrapID=''
+          if($bootstrap -and $bootstrap.ack -and $bootstrap.ack.job){$bootstrapID=[string]$bootstrap.ack.job.job_id}
+          if($bootstrapID){try{$bootstrapExplain=Invoke-RestMethod "http://127.0.0.1:8787/v1/jobs/$bootstrapID/explain" -TimeoutSec 10}catch{$bootstrapExplain=[ordered]@{error=$_.Exception.Message}}}
+          $jobs=Invoke-RestMethod 'http://127.0.0.1:8787/v1/jobs?limit=100' -TimeoutSec 10
+          $caseJobs=@($jobs.jobs|Where-Object{([string]$_.job_id -like 'case0005-*') -or ([string]$_.workspace_root -ieq $workspace)})
+          $payload=[ordered]@{schema='openworker/case0005-local-status/v1';case_id='0005';machine=$env:COMPUTERNAME;workspace_root=$workspace;observed_at=[DateTimeOffset]::UtcNow.ToString('o');authority='openworker-local-durable-ledger';worklist=$worklist;controller=$controller;bootstrap_job_id=$bootstrapID;bootstrap_explain=$bootstrapExplain;case_jobs=$caseJobs;github_action_used_for_business_execution=$false}
+          $json=$payload|ConvertTo-Json -Depth 40
+          $headers=@{Authorization="Bearer $env:GH_TOKEN";Accept='application/vnd.github+json';'X-GitHub-Api-Version'='2022-11-28'}
+          $path='evidence/case0005/latest-local-status.json';$uri="https://api.github.com/repos/$env:GITHUB_REPOSITORY/contents/$path";$readUri='{0}?ref={1}' -f $uri,[uri]::EscapeDataString($env:GITHUB_REF_NAME);$b64=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($json))
+          for($i=1;$i -le 10;$i++){$sha=$null;try{$e=Invoke-RestMethod -Uri $readUri -Headers $headers;$sha=$e.sha}catch{$st=$null;try{$st=$_.Exception.Response.StatusCode.value__}catch{};if($st -ne 404){throw}};$body=@{message='case0005: publish read-only local status';content=$b64;branch=$env:GITHUB_REF_NAME};if($sha){$body.sha=$sha};try{Invoke-RestMethod -Method Put -Uri $uri -Headers $headers -ContentType 'application/json' -Body ($body|ConvertTo-Json -Compress)|Out-Null;break}catch{$st=$null;try{$st=$_.Exception.Response.StatusCode.value__}catch{};if($st -ne 409 -or $i -eq 10){throw};Start-Sleep -Milliseconds (250*$i)}}
