@@ -3,7 +3,7 @@
   "case_id": "0002",
   "workspace_root": "D:\\AI-Example\\0002",
   "assigned_host": "DESKTOP-ODAQN0D",
-  "revision": 2,
+  "revision": 3,
   "steps": [
     {
       "step_id": "0002-010",
@@ -110,10 +110,23 @@
       "allow_skip": false
     },
     {
+      "step_id": "0002-057",
+      "title": "Wait for user approval of illustrated storyboard PPTX",
+      "kind": "approval",
+      "dependencies": ["0002-055"],
+      "allowed_actions": ["openworker.user.approval"],
+      "acceptance": ["approved_illustrated_storyboard_sha256", "approval_decision", "approval_receipt"],
+      "status": "PENDING",
+      "evidence": {},
+      "blocker": "",
+      "repair_parent_step": "",
+      "allow_skip": false
+    },
+    {
       "step_id": "0002-060",
       "title": "Generate four REAL video shots through audited ComfyX production",
       "kind": "work",
-      "dependencies": ["0002-055"],
+      "dependencies": ["0002-057"],
       "allowed_actions": ["comfyx.production.video.real"],
       "acceptance": ["shot_video_receipts", "shot_videos", "shot_video_sha256", "execution_ledger"],
       "status": "PENDING",
