@@ -12,17 +12,21 @@ if ([string]::IsNullOrWhiteSpace($TerrainRoot)) { throw 'TERRAIN_ROOT/TerrainRoo
 if (-not (Test-Path -LiteralPath (Join-Path $GoToolRoot 'go.mod'))) { throw "invalid go-tool root: $GoToolRoot" }
 if (-not (Test-Path -LiteralPath (Join-Path $TerrainRoot 'go.mod'))) { throw "invalid Terrain root: $TerrainRoot" }
 $geo=Join-Path $WorkspaceRoot 'geo\geolocation.json'
-if (-not (Test-Path -LiteralPath $geo)) { throw "accepted geolocation missing: $geo" }
+if (-not (Test-Path -LiteralPath $geo -PathType Leaf)) { throw "accepted geolocation missing: $geo" }
+$acceptedGeo=Get-Content -LiteralPath $geo -Raw|ConvertFrom-Json
+if($null -eq $acceptedGeo -or -not $acceptedGeo.ok){throw 'accepted geolocation is not ok'}
+$acceptedLat=[double]$acceptedGeo.geolocation.lat;$acceptedLng=[double]$acceptedGeo.geolocation.lng
 $claimDir=Join-Path $WorkspaceRoot '.openworker\localexec'
 $evidenceDir=Join-Path $WorkspaceRoot 'evidence'
 New-Item -ItemType Directory -Force -Path $claimDir,$evidenceDir | Out-Null
 function Read-Json([string]$Path){if(-not(Test-Path -LiteralPath $Path)){return $null};try{return Get-Content -LiteralPath $Path -Raw|ConvertFrom-Json}catch{return $null}}
 function File-OK([string]$Path){return (Test-Path -LiteralPath $Path -PathType Leaf) -and ((Get-Item -LiteralPath $Path).Length -gt 0)}
 function SHA-OK([string]$Path,[string]$Expected){if(-not(File-OK $Path) -or [string]::IsNullOrWhiteSpace($Expected)){return $false};$want=$Expected.ToLowerInvariant().Replace('sha256:','');return ((Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() -eq $want)}
+function Geo-OK($g){if($null -eq $g){return $false};return ([math]::Abs(([double]$g.lat)-$acceptedLat) -le 0.0000001) -and ([math]::Abs(([double]$g.lng)-$acceptedLng) -le 0.0000001)}
 function StreetView-OK{
   $m=Read-Json (Join-Path $WorkspaceRoot 'streetview\browser\streetview-browser-screenshots.json')
-  if($null -eq $m -or -not $m.ok -or $m.schema_version -ne 'streetview-browser-screenshots/v2' -or [string]$m.transport -ne 'localexec'){return $false}
-  if(-not ([string]$m.assigned_host).Equals($Machine,[StringComparison]::OrdinalIgnoreCase)){return $false}
+  if($null -eq $m -or -not $m.ok -or $m.schema_version -ne 'streetview-browser-screenshots/v3' -or [string]$m.transport -ne 'localexec'){return $false}
+  if(-not ([string]$m.assigned_host).Equals($Machine,[StringComparison]::OrdinalIgnoreCase) -or -not(Geo-OK $m.geolocation)){return $false}
   $r=@($m.renders);if($r.Count -ne 4){return $false}
   $seen=@{}
   foreach($x in $r){
@@ -38,10 +42,11 @@ function StreetView-OK{
 }
 function Ortho-OK{
   $m=Read-Json (Join-Path $WorkspaceRoot 'orthophoto\nlsc-photo2\orthophoto-photo2-workspace.json')
-  if($null -eq $m -or -not $m.ok -or [string]$m.schema_version -ne 'orthophoto-workspace/v1' -or [string]$m.transport -ne 'localexec'){return $false}
-  if(-not ([string]$m.assigned_host).Equals($Machine,[StringComparison]::OrdinalIgnoreCase)){return $false}
+  if($null -eq $m -or -not $m.ok -or [string]$m.schema_version -ne 'orthophoto-workspace/v2' -or [string]$m.transport -ne 'localexec'){return $false}
+  if(-not ([string]$m.assigned_host).Equals($Machine,[StringComparison]::OrdinalIgnoreCase) -or -not(Geo-OK $m.geolocation)){return $false}
   $r=$m.producer_receipt;if($null -eq $r -or -not $r.ok -or [string]$r.schema_version -ne 'orthophoto-nlsc-photo2/v1'){return $false}
   if([string]$r.plan.provider -ne 'nlsc' -or [string]$r.plan.layer -ne 'PHOTO2' -or [int]$r.plan.zoom -ne 19){return $false}
+  if([math]::Abs(([double]$r.plan.latitude)-$acceptedLat) -gt 0.0000001 -or [math]::Abs(([double]$r.plan.longitude)-$acceptedLng) -gt 0.0000001){return $false}
   if([int]$r.plan.tile_count -lt 1 -or [int]$r.plan.tile_count -gt 25){return $false}
   if($null -eq $r.visibility -or -not [bool]$r.visibility.visible){return $false}
   if([double]$r.visibility.useful_pixel_ratio -lt 0.20 -or [double]$r.visibility.luma_stddev -lt 0.02 -or [double]$r.visibility.luma_range -lt 0.10){return $false}
@@ -72,6 +77,6 @@ foreach($spec in $specs){
 $node=Invoke-RestMethod -Method Get -Uri "$OpenWorkerUrl/v1/node/status"
 $agents=Invoke-RestMethod -Method Get -Uri "$OpenWorkerUrl/v1/cluster/agents"
 $acks=@();foreach($job in $jobs){$acks+=Invoke-RestMethod -Method Post -Uri "$OpenWorkerUrl/v1/jobs" -ContentType 'application/json' -Body ($job|ConvertTo-Json -Depth 8 -Compress)}
-$receipt=[ordered]@{schema='openworker/case0003-local-imagery-parallel/v3';case_id='0003';machine=$Machine;workspace_root=$WorkspaceRoot;transport='openworker-local-jobs+go-tool-localexec';github_business_transport=$false;streetview_gate=(StreetView-OK);orthophoto_gate=(Ortho-OK);submitted_at=[DateTimeOffset]::UtcNow.ToString('o');node=$node;agents=$agents;submitted_count=$acks.Count;durable_acks=$acks}
+$receipt=[ordered]@{schema='openworker/case0003-local-imagery-parallel/v4';case_id='0003';machine=$Machine;workspace_root=$WorkspaceRoot;transport='openworker-local-jobs+go-tool-localexec';github_business_transport=$false;accepted_geolocation=[ordered]@{lat=$acceptedLat;lng=$acceptedLng};streetview_gate=(StreetView-OK);orthophoto_gate=(Ortho-OK);submitted_at=[DateTimeOffset]::UtcNow.ToString('o');node=$node;agents=$agents;submitted_count=$acks.Count;durable_acks=$acks}
 $receiptPath=Join-Path $evidenceDir 'case0003-local-imagery-parallel-submit.json';$receipt|ConvertTo-Json -Depth 12|Set-Content -LiteralPath $receiptPath -Encoding utf8
 Write-Host "CASE0003_LOCAL_IMAGERY_PARALLEL_ACK count=$($acks.Count) receipt=$receiptPath";$acks|ConvertTo-Json -Depth 8|Write-Host
