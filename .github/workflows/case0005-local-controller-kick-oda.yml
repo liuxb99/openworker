@@ -1,0 +1,74 @@
+name: Case 0005 Local Controller Kick ODA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: case0005-local-controller-kick-oda
+  cancel-in-progress: true
+
+jobs:
+  kick-local-controller:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[case0005-local-kick]')
+    runs-on: [self-hosted, Windows, X64, ODA]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify resident ODA OpenWorker
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          if($env:COMPUTERNAME -ine 'DESKTOP-ODAQN0D'){throw "wrong host $env:COMPUTERNAME"}
+          $s=Invoke-RestMethod 'http://127.0.0.1:8787/v1/node/status'
+          if(-not $s.online){throw 'resident OpenWorker offline'}
+          if($s.machine -ine 'DESKTOP-ODAQN0D'){throw "node machine=$($s.machine)"}
+          if([int]$s.max_workers -lt 4){throw "max_workers=$($s.max_workers), expected >=4"}
+          Write-Host "OPENWORKER_LOCAL_AUTHORITY machine=$($s.machine) workers=$($s.max_workers) busy=$($s.busy_workers) queued=$($s.queued_jobs)"
+
+      - name: Kick Case 0005 local controller only
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          # Transport only. This command bootstraps the durable CaseWorklist into the
+          # already-resident OpenWorker node. Business actions run afterwards as
+          # local OpenWorker jobs / agent slots, not as GitHub Actions steps.
+          ./scripts/case0005_parallel_bootstrap.ps1
+
+      - name: Snapshot durable local state
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Continue'
+          $base='http://127.0.0.1:8787'
+          $workspace='D:\AI-Work\jobs\0005-SNOW-WHITE'
+          $node=Invoke-RestMethod "$base/v1/node/status"
+          $raw=Invoke-RestMethod "$base/v1/jobs?limit=1000"
+          $items=@(); if($raw.jobs){$items=@($raw.jobs)} elseif($raw -is [System.Array]){$items=@($raw)}
+          $jobs=@($items | Where-Object {$_.job_id -like 'case0005-*'} | Sort-Object created_at -Descending | Select-Object -First 50)
+          $receipt=[ordered]@{
+            schema='openworker/case0005-local-controller-kick/v1'
+            case_id='0005'
+            machine=$env:COMPUTERNAME
+            workspace_root=$workspace
+            observed_at=[DateTimeOffset]::UtcNow.ToString('o')
+            github_action_role='transport_only'
+            business_execution_authority='resident_openworker_local_supervisor'
+            node=$node
+            case_jobs=$jobs
+          }
+          New-Item -ItemType Directory -Force -Path 'case-evidence/0005' | Out-Null
+          $receipt | ConvertTo-Json -Depth 20 | Set-Content 'case-evidence/0005/local-controller-kick.json' -Encoding utf8
+          git config user.name 'openworker-evidence-bot'
+          git config user.email 'openworker-evidence-bot@users.noreply.github.com'
+          git add -- case-evidence/0005/local-controller-kick.json
+          git diff --cached --quiet
+          if($LASTEXITCODE -ne 0){
+            git commit -m 'evidence(case0005): record local controller kick'
+            git pull --rebase origin main
+            git push origin HEAD:main
+          }
