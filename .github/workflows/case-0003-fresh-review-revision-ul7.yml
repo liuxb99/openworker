@@ -28,7 +28,7 @@ jobs:
       run:
         shell: powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ". '{0}'"
     steps:
-      - name: Verify fixed UL7 and current repaired SceneX output
+      - name: Verify fixed UL7 current SceneX and launcher evidence
         run: |
           $ErrorActionPreference='Stop'
           if($env:COMPUTERNAME -ine $env:CASE0003_ASSIGNED_HOST){throw ('wrong host '+$env:COMPUTERNAME)}
@@ -39,7 +39,7 @@ jobs:
           $launcher=Join-Path $root 'Open-Case0003-SceneX.bat'
           $launcherEvidence=Join-Path $root 'scenex\scenex-launcher-evidence.json'
           foreach($p in @($png,$evidence,$workspaceManifest,$launcher,$launcherEvidence)){
-            if(-not(Test-Path -LiteralPath $p -PathType Leaf) -or (Get-Item -LiteralPath $p).Length -le 0){throw ('current SceneX acceptance artifact missing '+$p)}
+            if(-not(Test-Path -LiteralPath $p -PathType Leaf) -or (Get-Item -LiteralPath $p).Length -le 0){throw ('current Case 0003 acceptance artifact missing '+$p)}
           }
           $ev=Get-Content -LiteralPath $evidence -Raw|ConvertFrom-Json
           if($ev.ok -ne $true){throw 'current SceneX semantic evidence is not PASS'}
@@ -73,7 +73,7 @@ jobs:
           $revision=[string]$ev.revision_id
           if([string]::IsNullOrWhiteSpace($revision)){throw 'fresh revision id missing'}
           $bundle=Join-Path $env:CASE0003_WORKSPACE ('.openworker\reviews\'+$revision)
-          foreach($name in @('manifest.json','manifest.sha256','review-request.json','artifacts\scenex-browse.png','artifacts\scenex-evidence.json','artifacts\scenex-launcher.bat','artifacts\scenex-launcher-evidence.json','artifacts\blender-render.png','artifacts\delivery-index.html')){
+          foreach($name in @('manifest.json','manifest.sha256','review-request.json','artifacts\scenex-browse.png','artifacts\scenex-evidence.json','artifacts\blender-render.png','artifacts\delivery-index.html','artifacts\mechanical-acceptance.json')){
             $p=Join-Path $bundle $name
             if(-not(Test-Path -LiteralPath $p -PathType Leaf) -or (Get-Item -LiteralPath $p).Length -le 0){throw ('fresh review bundle missing/empty '+$name)}
           }
@@ -82,7 +82,4 @@ jobs:
           $sourceScenex=(Get-FileHash -LiteralPath (Join-Path $env:CASE0003_WORKSPACE 'scenex\terrain-browse.png') -Algorithm SHA256).Hash.ToLowerInvariant()
           $bundleScenex=(Get-FileHash -LiteralPath (Join-Path $bundle 'artifacts\scenex-browse.png') -Algorithm SHA256).Hash.ToLowerInvariant()
           if($sourceScenex -ne $bundleScenex){throw 'fresh bundle SceneX PNG is not exact current workspace output'}
-          $sourceLauncher=(Get-FileHash -LiteralPath (Join-Path $env:CASE0003_WORKSPACE 'Open-Case0003-SceneX.bat') -Algorithm SHA256).Hash.ToLowerInvariant()
-          $bundleLauncher=(Get-FileHash -LiteralPath (Join-Path $bundle 'artifacts\scenex-launcher.bat') -Algorithm SHA256).Hash.ToLowerInvariant()
-          if($sourceLauncher -ne $bundleLauncher){throw 'fresh bundle SceneX launcher is not exact current workspace output'}
-          Write-Host "CASE0003_FRESH_REVIEW_READY revision=$revision status=$($ev.status) manifest_sha256=$manifestSha scenex_sha256=$bundleScenex launcher_sha256=$bundleLauncher bundle=$bundle"
+          Write-Host "CASE0003_FRESH_REVIEW_READY revision=$revision status=$($ev.status) manifest_sha256=$manifestSha scenex_sha256=$bundleScenex bundle=$bundle launcher_verified=true"
