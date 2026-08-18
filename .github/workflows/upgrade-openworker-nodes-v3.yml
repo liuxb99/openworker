@@ -22,20 +22,8 @@ jobs:
       fail-fast: false
       max-parallel: 3
       matrix:
-        include:
-          - node: ul7
-            label: UL7
-            machine: DESKTOP-UL7V2VV
-            capabilities: case0003,bridge,blender,scenex,engineering,drive-review
-          - node: o87
-            label: O87
-            machine: DESKTOP-O87PJNR
-            capabilities: case0004,dwg,story-index,engineering
-          - node: oda
-            label: ODA
-            machine: DESKTOP-ODAQN0D
-            capabilities: case0002,case0005,comfyx,minimax-h3,video,storyboard,presentation,local-supervisor
-    runs-on: [self-hosted, Windows, X64, ${{ matrix.label }}]
+        slot: [1, 2, 3, 4, 5, 6]
+    runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 15
     defaults:
       run:
@@ -43,23 +31,36 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Verify fixed machine
+      - name: Detect machine and configuration
+        id: detect
         run: |
           $ErrorActionPreference='Stop'
-          if($env:COMPUTERNAME -ine '${{ matrix.machine }}'){throw "wrong host $env:COMPUTERNAME expected=${{ matrix.machine }}"}
-          Write-Host "OPENWORKER_UPGRADE_CLAIM node=${{ matrix.node }} machine=$env:COMPUTERNAME"
+          $m=$env:COMPUTERNAME.ToUpperInvariant()
+          switch($m){
+            'DESKTOP-UL7V2VV' { $node='ul7'; $caps='case0003,bridge,blender,scenex,engineering,drive-review' }
+            'DESKTOP-O87PJNR' { $node='o87'; $caps='case0004,dwg,story-index,engineering' }
+            'DESKTOP-ODAQN0D' { $node='oda'; $caps='case0002,case0005,comfyx,minimax-h3,video,storyboard,presentation,local-supervisor' }
+            default { Write-Host "OPENWORKER_UPGRADE_SKIP_UNKNOWN_MACHINE machine=$m"; "eligible=false" >> $env:GITHUB_OUTPUT; exit 0 }
+          }
+          "eligible=true" >> $env:GITHUB_OUTPUT
+          "node=$node" >> $env:GITHUB_OUTPUT
+          "machine=$m" >> $env:GITHUB_OUTPUT
+          "capabilities=$caps" >> $env:GITHUB_OUTPUT
+          Write-Host "OPENWORKER_UPGRADE_ROUTE authority=COMPUTERNAME node=$node machine=$m slot=${{ matrix.slot }}"
 
       - uses: actions/setup-go@v5
+        if: steps.detect.outputs.eligible == 'true'
         with:
           go-version: '1.23.x'
           cache-dependency-path: go-runtime/go.sum
 
       - name: Build install verify and persist canonical receipts
+        if: steps.detect.outputs.eligible == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          NODE: ${{ matrix.node }}
-          MACHINE: ${{ matrix.machine }}
-          CAPABILITIES: ${{ matrix.capabilities }}
+          NODE: ${{ steps.detect.outputs.node }}
+          MACHINE: ${{ steps.detect.outputs.machine }}
+          CAPABILITIES: ${{ steps.detect.outputs.capabilities }}
         run: |
           $ErrorActionPreference='Stop'
           $lockDir='C:\ProgramData\OpenWorker'
@@ -68,7 +69,7 @@ jobs:
           $lock=$null
           try {
             try { $lock=[IO.File]::Open($lockPath,[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None) }
-            catch { throw "unexpected duplicate upgrade on fixed node=$env:NODE machine=$env:MACHINE" }
+            catch { Write-Host "OPENWORKER_UPGRADE_DUPLICATE_SKIP node=$env:NODE machine=$env:MACHINE slot=${{ matrix.slot }}"; exit 0 }
 
             function Put-Receipt([string]$phase,[hashtable]$payload){
               $headers=@{Authorization="Bearer $env:GH_TOKEN";Accept='application/vnd.github+json';'X-GitHub-Api-Version'='2022-11-28'}
@@ -79,34 +80,17 @@ jobs:
               $b64=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($json))
               for($attempt=1;$attempt -le 8;$attempt++){
                 $sha=$null
-                try { $existing=Invoke-RestMethod -Uri $readUri -Headers $headers; $sha=$existing.sha }
-                catch {
-                  $status=$null
-                  try { $status=$_.Exception.Response.StatusCode.value__ } catch {}
-                  if($status -ne 404){ throw }
-                }
-                $body=@{message="receipt: $env:NODE $phase $env:GITHUB_SHA";content=$b64;branch=$env:GITHUB_REF_NAME}
-                if($sha){$body.sha=$sha}
-                try {
-                  Invoke-RestMethod -Method Put -Uri $uri -Headers $headers -ContentType 'application/json' -Body ($body|ConvertTo-Json -Compress) | Out-Null
-                  return
-                } catch {
-                  $status=$null
-                  try { $status=$_.Exception.Response.StatusCode.value__ } catch {}
-                  if($status -ne 409 -or $attempt -eq 8){ throw }
-                  Start-Sleep -Milliseconds (250 * $attempt)
-                }
+                try { $existing=Invoke-RestMethod -Uri $readUri -Headers $headers; $sha=$existing.sha } catch { $status=$null;try{$status=$_.Exception.Response.StatusCode.value__}catch{};if($status -ne 404){throw} }
+                $body=@{message="receipt: $env:NODE $phase $env:GITHUB_SHA";content=$b64;branch=$env:GITHUB_REF_NAME};if($sha){$body.sha=$sha}
+                try { Invoke-RestMethod -Method Put -Uri $uri -Headers $headers -ContentType 'application/json' -Body ($body|ConvertTo-Json -Compress) | Out-Null; return }
+                catch { $status=$null;try{$status=$_.Exception.Response.StatusCode.value__}catch{};if($status -ne 409 -or $attempt -eq 8){throw};Start-Sleep -Milliseconds (250*$attempt) }
               }
             }
 
-            Put-Receipt 'ACCEPTED' ([ordered]@{schema='openworker/node-upgrade-receipt/v3';phase='ACCEPTED';node=$env:NODE;machine=$env:MACHINE;runner_name=$env:RUNNER_NAME;target_commit=$env:GITHUB_SHA;run_id=$env:GITHUB_RUN_ID;accepted_at=[DateTimeOffset]::UtcNow.ToString('o')})
+            Put-Receipt 'ACCEPTED' ([ordered]@{schema='openworker/node-upgrade-receipt/v4';phase='ACCEPTED';routing_authority='COMPUTERNAME';node=$env:NODE;machine=$env:MACHINE;runner_name=$env:RUNNER_NAME;target_commit=$env:GITHUB_SHA;run_id=$env:GITHUB_RUN_ID;slot='${{ matrix.slot }}';accepted_at=[DateTimeOffset]::UtcNow.ToString('o')})
 
             $already=$false
-            try {
-              $s=Invoke-RestMethod 'http://127.0.0.1:8787/v1/node/status' -TimeoutSec 3
-              if($s.service.running_commit -eq $env:GITHUB_SHA -and $s.service.upgrade_verified){$already=$true}
-            } catch {}
-
+            try { $s=Invoke-RestMethod 'http://127.0.0.1:8787/v1/node/status' -TimeoutSec 3; if($s.service.running_commit -eq $env:GITHUB_SHA -and $s.service.upgrade_verified){$already=$true} } catch {}
             if(-not $already){
               Push-Location go-runtime
               go mod tidy
@@ -120,8 +104,6 @@ jobs:
             $s=Invoke-RestMethod 'http://127.0.0.1:8787/v1/node/status' -TimeoutSec 10
             if($s.machine -ine $env:MACHINE){throw "node machine=$($s.machine) expected=$env:MACHINE"}
             if($s.service.running_commit -ne $env:GITHUB_SHA -or $s.service.target_commit -ne $env:GITHUB_SHA -or -not $s.service.upgrade_verified){throw "upgrade not verified: $($s.service|ConvertTo-Json -Compress)"}
-
-            Put-Receipt 'VERIFIED' ([ordered]@{schema='openworker/node-upgrade-receipt/v3';phase='VERIFIED';node=$env:NODE;machine=$s.machine;runner_name=$env:RUNNER_NAME;target_commit=$env:GITHUB_SHA;running_commit=$s.service.running_commit;upgrade_status=$s.service.upgrade_status;upgrade_verified=$s.service.upgrade_verified;service_started_at=$s.service.service_started_at;run_id=$env:GITHUB_RUN_ID;verified_at=[DateTimeOffset]::UtcNow.ToString('o')})
-            Write-Host "OPENWORKER_UPGRADE_VERIFIED node=$env:NODE machine=$env:MACHINE commit=$env:GITHUB_SHA"
+            Put-Receipt 'VERIFIED' ([ordered]@{schema='openworker/node-upgrade-receipt/v4';phase='VERIFIED';routing_authority='COMPUTERNAME';node=$env:NODE;machine=$s.machine;runner_name=$env:RUNNER_NAME;target_commit=$env:GITHUB_SHA;running_commit=$s.service.running_commit;upgrade_status=$s.service.upgrade_status;upgrade_verified=$s.service.upgrade_verified;service_started_at=$s.service.service_started_at;run_id=$env:GITHUB_RUN_ID;slot='${{ matrix.slot }}';verified_at=[DateTimeOffset]::UtcNow.ToString('o')})
           }
           finally { if($lock){$lock.Dispose()} }
