@@ -1,8 +1,8 @@
 # 0003 臺南市玉井橋 — STATUS
 
-更新時間：2026-08-16 Asia/Taipei
+更新時間：2026-08-18 Asia/Taipei
 
-狀態：`IMPLEMENTING / GEO+STREETVIEW ACCEPTED / TERRAIN DTM FULL BOOTSTRAP`
+狀態：`IMPLEMENTING / GEO ACCEPTED / STREETVIEW REPAIR-RERUN REQUIRED / ORTHOPHOTO NEW GATE / TERRAIN DTM CONTINUES`
 
 ## Canonical execution contract
 
@@ -34,42 +34,62 @@
 
 已透過 Terrain formal Operator 取得並 materialize `workspace\geo\geolocation.json`，OpenWorker accepted。
 
-### Step 4 — Street View
+## Step 4 — Street View：舊 acceptance 作廢，必須同 Step REAL rerun
 
-已透過 Terrain headless browser formal Operator 取得四向 Google Maps Street View：
+舊 STATUS 曾把四向 headless PNG 標成 accepted；2026-08-18 依案例實際回報重新審查後，確認舊 headless producer 只驗證「PNG 存在 / 非 0 bytes / SHA256」，沒有對 headless screenshot 本身做 semantic visibility gate，因此黑畫面或近乎不可讀畫面仍可能被誤判成功。
 
-- heading `0 / 90 / 180 / 270`
-- 實體 PNG
-- manifest + SHA256
-- OpenWorker accepted
+因此：
 
-證據：`evidence/0004-street-view-acquisition.md`
+- 舊 Street View business acceptance **撤銷**；
+- 舊 PNG 只能保留作歷史 evidence，不得再餵給 Blender / consumer orchestration；
+- `Terrain_To_DXF` 已補 headless screenshot semantic visibility fail-closed；
+- 修復 commit：`027915e7e4ddf8384ab680cdb4a1f5105834fad6`；
+- 測試同步 commit：`d1c58f96e5a0a6ca3448c45af79732bf1e9af96a`；
+- 必須由最新版 `terrain.streetview.acquire` 在 UL7 重跑同一 Step；
+- 四向 0/90/180/270 每張都必須 decode、通過 visibility gate、存在於 bound workspace、SHA256 與 manifest 一致後，才可重新標 `ACCEPTED`。
 
-## 目前 Step 5 — terrain / elevation AOI
+證據主檔：`evidence/0004-street-view-acquisition.md`。
 
-已新增正式能力：
+## 新增 Step 4B — 正射影像 Orthophoto
+
+案例回報顯示「正射影像沒有成功」並非單純 runner failure，而是原本 go-tool 正式 capability registry 根本沒有 orthophoto imagery acquisition。
+
+Owning repair 已新增到 `Terrain_To_DXF`：
+
+- NLSC PHOTO2 bounded WMTS acquisition / JPEG decode / mosaic / tile SHA256 provenance；
+- CLI：`terrain-orthophoto-acquire`；
+- Operator：`.github/workflows/operator-orthophoto-acquire.yml`；
+- workspace output：`orthophoto\nlsc-photo2\`；
+- 禁止全臺大量 cache；只允許 bounded AOI tile window；
+- imagery 只能做 visual/reference truth，不得取代 DTM elevation geometry truth。
+
+2026-08-18 已正式註冊 go-tool capability fragment：
+
+- capability：`terrain.orthophoto.acquire`
+- registry：`go-tool-runtime/capabilities.d/terrain-orthophoto.yaml`
+- commit：`09e8e4da7d749fc6f46f5eda10da50a42f5fd63e`
+
+接受條件：
+
+1. go-tool discovery 能看見 `terrain.orthophoto.acquire`；
+2. schema / readiness / preflight PASS；
+3. UL7 assigned-host gate PASS；
+4. 從 accepted `geo/geolocation.json` 取得中心點，不硬寫 lat/lng；
+5. REAL NLSC PHOTO2 tiles 全部 HTTP / JPEG decode PASS；
+6. bounded mosaic 非空且可視；
+7. tile/mosaic physical SHA256 與 evidence 一致；
+8. 成果 materialize 到 `D:\AI-Work\jobs\0003-YUJING-BRIDGE\orthophoto\nlsc-photo2`；
+9. OpenWorker append-only evidence 記錄 run/job/runner/producer SHA；
+10. 只有以上全部成立才標 `ACCEPTED`。
+
+## Terrain / elevation AOI
+
+既有正式能力：
 
 - Terrain Operator：`terrain.aoi.build`
-- `Terrain_To_DXF` commit：`da41d2c24563fbcb50599f99b1dad9c661e16d2a`
-- go-tool capability registry commit：`d99e8d22...`
-- AI-Engineering-OS resume-aware driver commit：`0ed3a893...`
+- 第一個 REAL terrain AOI 曾因 `D:\TaiwanDTM\catalog\dtm_catalog.sqlite missing` fail-closed。
 
-第一個 REAL terrain AOI：
-
-- outer OS run：`31923998028`
-- Terrain target run：`31924030088`
-- UL7 job：`95108616144`
-- runner：`DESKTOP-UL7V2VV-R006`
-
-fail-closed blocker：
-
-```text
-D:\TaiwanDTM\catalog\dtm_catalog.sqlite missing
-```
-
-## 使用者決策：本機沒有 DEM 就完整重新下載
-
-因此不做玉井橋單點 workaround，而是完整建立 UL7 共用 Taiwan 20m DTM 基礎資料：
+使用者已決策：本機沒有 DEM 就完整重新下載，因此共用 Taiwan 20m DTM bootstrap 路線維持不變：
 
 ```text
 D:\TaiwanDTM
@@ -80,41 +100,17 @@ D:\TaiwanDTM
   cog\
 ```
 
-官方 dataset `176927` 第一層只有約 5.42 KB CSV index，不是 DEM 本體。
+既有 bootstrap evidence：`evidence/0005-terrain-aoi-and-dtm-bootstrap.md`。
 
-REAL index probe：
+## 目前正確下一步
 
-- run `31924300126`
-- UL7 job `95109313914`
-- runner `DESKTOP-UL7V2VV-R006`
-
-索引確認包含正式 TGOS ZIP：各縣市分幅 + schema + 不分幅全台 20m DEM。
-
-Owning gap 已補：
-
-- recursive official index downloader：`tools/download_taiwan_dtm_recursive.py`
-- commit：`a6adfb387bf9ac8a5ce81fc5725d55e1dda63c2c`
-- full bootstrap workflow：`.github/workflows/operator-dtm-bootstrap-full.yml`
-- latest commit：`48e104fcc75fc0c64ce91a843cc39e781468e144`
-
-目前 REAL full download：
-
-- run：`31924347661`
-- business job：`95109431249`
-- runner：`DESKTOP-UL7V2VV-R006`
-- current step：`Recursively expand official index and fully download all resources`
-
-完整過程：`evidence/0005-terrain-aoi-and-dtm-bootstrap.md`
-
-## 下一步
-
-1. 完成官方 TGOS ZIP 全量下載與 safe extract。
-2. 檢查實際解壓格式與 CRS。
-3. 將全量資料 normalize / materialize 成 canonical raster/COG。
-4. 建立 `D:\TaiwanDTM\catalog\dtm_catalog.sqlite` + RTree。
-5. 驗證玉井橋 AOI 可 query 到 `ready=true` tile。
-6. 由 AI-Engineering-OS / go-tool **重跑同一個 `terrain.aoi.build`**。
-7. 接既有 Terrain consumer orchestration → REAL Blender 5.2 → Blender QC。
+1. 用最新版 go-tool 驗證 `terrain.streetview.acquire` 與 `terrain.orthophoto.acquire` discovery/schema/readiness。
+2. UL7 重跑 Street View，同 Step 驗證四向 PNG semantic visibility，不接受僅有 bytes 的假成功。
+3. UL7 執行 Orthophoto REAL acquisition，產生 PHOTO2 bounded mosaic + tile evidence。
+4. 把 Street View / Orthophoto REAL run/job/runner/artifact hashes 即時回寫 evidence。
+5. 兩個 imagery gate 都重新 accepted 後，consumer orchestration 才能引用新 artifacts。
+6. DTM bootstrap / AOI 繼續完成，geometry truth 仍以 DTM 為權威。
+7. 接 Terrain consumer orchestration → REAL Blender 5.2 → Blender QC。
 8. SceneX import → REAL renderer/screenshot browse。
 9. OS Artifact Registry → Delivery Revision → `delivery/website/index.html`。
 
