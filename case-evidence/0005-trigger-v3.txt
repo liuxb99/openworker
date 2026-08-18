@@ -1,2 +1,2 @@
-Case 0005 Snow White ODA local supervisor parallel v3 trigger.
-Restarted 2026-08-18 Asia/Taipei after OpenWorker three-node VERIFIED upgrade; fixed host DESKTOP-ODAQN0D; require real workspace landing at D:\AI-Work\jobs\0005-SNOW-WHITE.
+Case 0005 Snow White ODA resident OpenWorker local-controller trigger.
+Use DESKTOP-ODAQN0D. GitHub Action is transport only; business execution must be resident OpenWorker local supervisor with up to 4 parallel agent slots. Workspace must land at D:\AI-Work\jobs\0005-SNOW-WHITE.
