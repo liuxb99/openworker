@@ -2,7 +2,7 @@
 
 更新時間：2026-08-18 Asia/Taipei
 
-狀態：`IMPLEMENTING / GEO ACCEPTED / IMAGERY+AOI REAL QC REQUIRED / CONSUMER+BLENDER+SCENEX LOCALIZED / OS ARTIFACT+DELIVERY LOCALIZED / DRIVE REVIEW RETURN LOOP LOCALIZED / UL7 REAL REQUIRED`
+狀態：`IMPLEMENTING / GEO ACCEPTED / IMAGERY STRICT REAL QC REQUIRED / AOI+CONSUMER+BLENDER+SCENEX LOCALIZED / OS ARTIFACT+DELIVERY LOCALIZED / DRIVE REVIEW RETURN LOOP LOCALIZED / UL7 REAL REQUIRED`
 
 ## 1. Canonical execution contract — 新版
 
@@ -63,7 +63,7 @@ Accepted：
 
 所有 Terrain / imagery / SceneX handler 必須讀 accepted state，不得自行硬寫座標。
 
-## 3. Step 4 — Imagery
+## 3. Step 4 — Imagery：producer 已修，strict REAL acceptance 待 UL7
 
 ### Street View
 
@@ -72,7 +72,16 @@ Accepted：
 - `027915e7e4ddf8384ab680cdb4a1f5105834fad6`
 - tests：`d1c58f96e5a0a6ca3448c45af79732bf1e9af96a`
 
-REAL gate：0 / 90 / 180 / 270 四張 PNG 必須 decode、可視、非黑圖、manifest/SHA 一致。
+Producer 現在會 decode PNG、做 panorama visibility analysis，黑/近黑/近均勻圖直接失敗；成功 receipt 帶 physical SHA256。
+
+Strict REAL gate 必須同時滿足：
+
+- 0 / 90 / 180 / 270 四張、不得重複 heading；
+- `streetview-browser-screenshots/v2`、`transport=localexec`、assigned host = UL7；
+- producer = Google / `headless-render-webgl` / `angle-swiftshader-webgl`；
+- 1920×1080、bytes > 0；
+- 每張 PNG physical SHA256 = producer receipt SHA256；
+- receipt output path = manifest physical path。
 
 ### Orthophoto
 
@@ -81,12 +90,33 @@ REAL gate：0 / 90 / 180 / 270 四張 PNG 必須 decode、可視、非黑圖、m
 - local capability：`terrain.orthophoto.acquire`
 - Windows same-path rerun-safe：`e4c427f7a7f805d437ee8254e0ea2677ce2d5846`
 - rerun regression test：`d502506b78faaf33662dba4f4d51987882e4a247`
+- go-tool workspace QC manifest：`5fd7f65bcf416646040c52ac824b10d3860fe3bd`
+
+Canonical workspace acceptance manifest：
+
+`orthophoto\nlsc-photo2\orthophoto-photo2-workspace.json`
+
+Strict REAL gate：
+
+- schema `orthophoto-workspace/v1`、`transport=localexec`、assigned host = UL7；
+- producer schema `orthophoto-nlsc-photo2/v1`；
+- provider = `nlsc`、layer = `PHOTO2`、zoom = 19、tile count 1..25；
+- `visibility.visible=true`；
+- useful pixel ratio >= 0.20；
+- luma stddev >= 0.02；
+- luma range >= 0.10；
+- physical JPEG SHA256 = producer `output_sha256`；
+- dimensions / bytes > 0。
+
+舊只有 `orthophoto-photo2-evidence.json` 的成果不再足以 PASS；缺 workspace QC manifest 會自動重新取得正射影像。
 
 ### 本機並行
 
 OpenWorker：`scripts/case0003_local_imagery_parallel.ps1`
 
-Street View + Orthophoto 使用不同 locks，可由不同 agent slots 並行；`github_business_transport=false`。
+目前 schema：`openworker/case0003-local-imagery-parallel/v3`
+
+Street View + Orthophoto 使用不同 locks，可由不同 agent slots 並行；單邊已 strict PASS 時只重跑缺失的另一邊；`github_business_transport=false`。
 
 ## 4. Step 5 — Terrain AOI
 
@@ -142,7 +172,7 @@ go-tool capability：`engineering_os.artifacts.ingest`
 
 OpenWorker：`scripts/case0003_local_os_artifacts.ps1`
 
-OS identity 必須來自 persisted `ENGINEERING_OS_PROJECT_ID` / `ENGINEERING_OS_JOB_ID`，不得用 OpenWorker work code 冒充。
+OS project/job identity 現由 canonical JobBinding `workspace\.openworker\job-binding.json` 提供；explicit override 若與 JobBinding 不一致則 fail-closed，不再要求人工每次重填。
 
 ## 9. Step 9 — OS Review / Approval / Delivery Revision
 
@@ -168,7 +198,7 @@ Google Drive 只作審查交換面，不作 business execution transport。
 
 Prepare schema：`openworker-case0003-drive-review-prepare/v2`
 
-每個 review revision 會建立 immutable review folder 與 deterministic `<revision_id>.zip`；本機 ZIP 與 Drive sync ZIP SHA256 必須一致。
+每個 review revision 會建立 immutable review folder 與 deterministic `<revision_id>.zip`；本機 ZIP 與 Drive sync ZIP SHA256 必須一致。若 prepare 已成功而 seal/sync 暫時失敗，重跑會 resume seal，不建立第二個 review revision。
 
 ### ChatGPT connector review receipt
 
@@ -176,14 +206,7 @@ Drive-synced revision folder 的 canonical return inbox：
 
 `connector-review-receipt.json`
 
-receipt 必須綁定：
-
-- current `revision_id`
-- exact bundle manifest SHA
-- exact immutable review ZIP SHA
-- connector-observed `drive_revision_folder_id`
-- connector-observed `drive_zip_file_id`
-- `transport=google-drive-connector`
+receipt 必須綁定 current revision、bundle manifest SHA、immutable ZIP SHA、connector-observed Drive folder/file IDs 與 `transport=google-drive-connector`。
 
 OpenWorker ingress：`scripts/case0003_local_apply_drive_review.ps1`
 
@@ -195,32 +218,47 @@ PASS 只進 `ACCEPTED_PENDING_FINALIZE`；不直接標記 delivered。
 
 - `scripts/case0003_finalize_reviewed_delivery.py`
 - `scripts/case0003_local_finalize_reviewed_delivery.ps1`
-- finalize schema：`openworker-case0003-reviewed-delivery-finalize/v2`
+- semantic finalizer schema：`openworker-case0003-reviewed-delivery-finalize/v3`
 
-Finalizer 再次綁定 current OS Delivery identity、manifest/checksum/website SHA、Drive folder/ZIP identity 與 WorkLedger accepted pointer；全部一致才寫 `delivered_revision_id`。
-
-舊 `.github/workflows/case-0003-drive-api-publish-ul7.yml` 已 retired：只保留 manual migration evidence，執行會立即拒絕；沒有 push trigger、沒有 self-hosted business publication、沒有 Drive access-token publication。
+Finalizer 再次綁定 current OS Delivery identity、manifest/checksum/website physical SHA、Drive folder/ZIP identity 與 WorkLedger accepted pointer；而且 current OS delivery bytes 必須與 ChatGPT 當時審過的 bundle 中 delivery-manifest/checksum-manifest/delivery-index bytes 完全一致，否則舊 PASS 失效。
 
 ## 11. Case 0003 一鍵 local-first continuation controller
 
-入口：`scripts/case0003_local_continue.ps1`
+Canonical auto entrypoint：
 
-目前 schema：`openworker/case0003-local-continue/v8`
+`scripts/case0003_local_continue_auto.ps1`
 
-最新 commit：`ddc3a0c56173e171dc30bb39a9c68ba5b172f17c`
+執行順序：
+
+```text
+persisted machine-root registry / node inventory
+→ JobBinding OS identity
+→ case0003_local_preflight.ps1
+→ canonical physical-gate controller
+```
+
+OpenWorker machine roots 由持久 registry 提供，預設 `%ProgramData%\OpenWorker\machine-roots.json`；service 不必碰巧繼承 interactive user shell environment。
+
+REAL preflight 在任何 business job submit 前先驗 UL7 identity、required tools/roots、workspace/JobBinding、DTM catalog、Engineering OS health；失敗時不提交 business jobs。
+
+內部 controller：`scripts/case0003_local_continue.ps1`
+
+目前 schema：`openworker/case0003-local-continue/v9`
+
+v9 最大變更：Imagery gate 已升成 `SHA + producer provenance + semantic visibility` authority；舊 file-exists evidence 不再能解鎖 Consumer。
 
 目前依 physical / identity gates 自動續跑：
 
 ```text
-Imagery incomplete
-→ Street View + Orthophoto parallel
+Strict imagery incomplete
+→ Street View + Orthophoto parallel / missing-side-only retry
 
 Terrain incomplete + DTM catalog ready
 → AOI
 
 Terrain physical gate
 ├→ SceneX
-└→ Imagery pass → Consumer → Blender
+└→ Strict imagery pass → Consumer → Blender
 
 Blender + SceneX pass
 → OS Artifact Registry
@@ -254,18 +292,18 @@ Controller 對 queued/running stages 做 duplicate suppression，不把 submitte
 
 ## 13. UL7 下一個 REAL 執行順序
 
-1. 確認 OpenWorker node / agents online；阻塞時使用 one-call queue drain。
-2. 確認 `OPENWORKER_ROOT`、`GO_TOOL_ROOT`、`TERRAIN_ROOT`、`SCENEX_ROOT`、`ENGINEERING_OS_ROOT`、`OPENWORKER_REVIEW_DRIVE_ROOT`。
-3. 提供真正 OS persisted `ENGINEERING_OS_PROJECT_ID` / `ENGINEERING_OS_JOB_ID`。
-4. 執行 `scripts/case0003_local_continue.ps1`。
-5. 驗 Street View 四向可視 PNG、PHOTO2 mosaic、Terrain 10 artifacts。
-6. Terrain gate 後並行推 SceneX 與 Consumer→Blender。
-7. 驗 Blender REAL render、SceneX REAL screenshot / geometry / SHA。
-8. 進 OS Artifact Registry；完成 current Artifact review / approval。
-9. Controller 發布 OS Delivery，驗 manifest/checksum/site。
-10. Controller 自動準備 Drive revision folder + immutable ZIP。
-11. ChatGPT connector 實際下載/查看 ZIP 內 Blender render、SceneX screenshot、evidence、delivery website，產生 PASS / TUNE / FAIL / TOOL_GAP receipt。
-12. `connector-review-receipt.json` 回到 Drive sync folder 後，controller 自動 apply。
-13. PASS 才 finalizer → WorkLedger delivered；TUNE/FAIL/TOOL_GAP 回 owning repo rework。
+1. OpenWorker service 使用 persisted machine-root registry；必要時先執行 `scripts/openworker_set_machine_roots.ps1`。
+2. 確認 OpenWorker node / agents online；若確有 queue blockage，再使用 one-call queue drain，不無條件清其他案例工作。
+3. 執行 `scripts/case0003_local_continue_auto.ps1`。
+4. auto entrypoint 從 node inventory / JobBinding 解析 roots 與 OS identity，先跑 REAL preflight。
+5. v9 controller 會把舊 imagery evidence 視為 incomplete，提交 Street View / Orthophoto 缺失側的 local durable jobs。
+6. 驗四向 Street View producer provenance + physical SHA；驗 NLSC PHOTO2 visibility thresholds + physical SHA。
+7. strict imagery + Terrain gate 後才推 Consumer→Blender；Terrain gate 可並行推 SceneX。
+8. 驗 Blender REAL render、SceneX REAL screenshot / geometry / SHA。
+9. 進 OS Artifact Registry；完成 current Artifact review / approval。
+10. Controller 發布 OS Delivery，驗 manifest/checksum/site。
+11. Controller 自動準備 Drive revision folder + immutable ZIP。
+12. ChatGPT connector 實際查看 Blender render、SceneX screenshot、evidence、delivery website，產生 PASS / TUNE / FAIL / TOOL_GAP receipt。
+13. receipt 回到 Drive sync folder 後 controller 自動 apply；PASS 才 finalizer → WorkLedger delivered。
 
 任何新缺口：案例暴露缺口 → 修 owning repo / go-tool local handler → OpenWorker local REAL rerun → physical artifact QC → OS review/delivery → Drive connector review → append-only WorkLedger evidence。
