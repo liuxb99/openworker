@@ -6,8 +6,10 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/liuxb99/openworker/go-runtime/internal/buildinfo"
+	"github.com/liuxb99/openworker/go-runtime/internal/inventory"
 	"github.com/liuxb99/openworker/go-runtime/internal/model"
 	owruntime "github.com/liuxb99/openworker/go-runtime/internal/runtime"
 	"github.com/liuxb99/openworker/go-runtime/internal/store"
@@ -19,9 +21,9 @@ func(s *Server)Handler()http.Handler{return s.mux}
 func writeJSON(w http.ResponseWriter,status int,v any){w.Header().Set("Content-Type","application/json");w.WriteHeader(status);_=json.NewEncoder(w).Encode(v)}
 func writeErr(w http.ResponseWriter,status int,e error){writeJSON(w,status,map[string]any{"ok":false,"error":e.Error()})}
 func(s *Server)routes(){
-	s.mux.HandleFunc("GET /healthz",func(w http.ResponseWriter,r *http.Request){writeJSON(w,200,map[string]any{"ok":true,"machine":s.machine,"build":buildinfo.Snapshot()})})
-	s.mux.HandleFunc("GET /v1/node/info",func(w http.ResponseWriter,r *http.Request){writeJSON(w,200,map[string]any{"machine":s.machine,"build":buildinfo.Snapshot()})})
-	s.mux.HandleFunc("GET /v1/node/status",func(w http.ResponseWriter,r *http.Request){v:=s.runtime.NodeStatus();v["build"]=buildinfo.Snapshot();writeJSON(w,200,v)})
+	s.mux.HandleFunc("GET /healthz",func(w http.ResponseWriter,r *http.Request){now:=time.Now().UTC();writeJSON(w,200,map[string]any{"ok":true,"machine":s.machine,"heartbeat_at":now,"lease_until":now.Add(15*time.Second),"build":buildinfo.Snapshot()})})
+	s.mux.HandleFunc("GET /v1/node/info",func(w http.ResponseWriter,r *http.Request){writeJSON(w,200,map[string]any{"machine":s.machine,"build":buildinfo.Snapshot(),"inventory":inventory.Collect()})})
+	s.mux.HandleFunc("GET /v1/node/status",func(w http.ResponseWriter,r *http.Request){now:=time.Now().UTC();v:=s.runtime.NodeStatus();v["node_id"]=strings.ToLower(s.machine);v["heartbeat_at"]=now;v["lease_seconds"]=15;v["lease_until"]=now.Add(15*time.Second);v["build"]=buildinfo.Snapshot();v["inventory"]=inventory.Collect();writeJSON(w,200,v)})
 	s.mux.HandleFunc("POST /v1/jobs",s.submit);s.mux.HandleFunc("GET /v1/jobs",s.list);s.mux.HandleFunc("GET /v1/jobs/{jobID}",s.get)
 	s.mux.HandleFunc("GET /v1/jobs/{jobID}/events",s.events)
 	s.mux.HandleFunc("POST /v1/jobs/{jobID}/cancel",s.cancel);s.mux.HandleFunc("POST /v1/jobs/{jobID}/retry",s.retry);s.mux.HandleFunc("POST /v1/queue/drain",s.drain)
