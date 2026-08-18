@@ -31,11 +31,11 @@
                                     "controller_module":  "coworker.case0005_controller",
                                     "github_action_used":  false,
                                     "job":  {
-                                                "job_id":  "case0005-bootstrap-1787079850053277300",
-                                                "dispatch_id":  "local-supervisor-case0005-bootstrap-1787079850053277300",
+                                                "job_id":  "case0005-bootstrap-1787079962903791900",
+                                                "dispatch_id":  "local-supervisor-case0005-bootstrap-1787079962903791900",
                                                 "machine":  "DESKTOP-ODAQN0D",
                                                 "accepted":  true,
-                                                "accepted_at":  "2026-08-18T19:04:10.0532773Z",
+                                                "accepted_at":  "2026-08-18T19:06:02.9037919Z",
                                                 "queue_position":  1,
                                                 "duplicate":  false
                                             },
@@ -70,11 +70,11 @@
                 "controller_module":  "coworker.case0005_controller",
                 "github_action_used":  false,
                 "job":  {
-                            "job_id":  "case0005-bootstrap-1787079850053277300",
-                            "dispatch_id":  "local-supervisor-case0005-bootstrap-1787079850053277300",
+                            "job_id":  "case0005-bootstrap-1787079962903791900",
+                            "dispatch_id":  "local-supervisor-case0005-bootstrap-1787079962903791900",
                             "machine":  "DESKTOP-ODAQN0D",
                             "accepted":  true,
-                            "accepted_at":  "2026-08-18T19:04:10.0532773Z",
+                            "accepted_at":  "2026-08-18T19:06:02.9037919Z",
                             "queue_position":  1,
                             "duplicate":  false
                         },
@@ -92,7 +92,7 @@
                    "node_online":  true,
                    "node_machine":  "DESKTOP-ODAQN0D",
                    "node_max_workers":  4,
-                   "node_running_commit":  "6e494ed4c29bdf9176da29f4bc454a45292861ac",
+                   "node_running_commit":  "abd320810ce40978517f65fb9212361889718cb4",
                    "resident_root_exists":  true,
                    "manifest_exists":  true,
                    "spec_exists":  true,
@@ -111,7 +111,7 @@
                    "workspace_exists":  true,
                    "dot_openworker_exists":  true
                },
-    "started_at":  "2026-08-18T19:03:57.6397968+00:00",
-    "observed_at":  "2026-08-18T19:04:10.0752814+00:00",
+    "started_at":  "2026-08-18T19:05:52.2564801+00:00",
+    "observed_at":  "2026-08-18T19:06:02.9200323+00:00",
     "next_action":  "continue with OpenWorker local supervisor"
 }
