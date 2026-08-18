@@ -1,0 +1,151 @@
+param(
+    [string]$Workspace = 'D:\AI-Work\jobs\0005-SNOW-WHITE',
+    [string]$OpenWorkerRoot = '',
+    [string]$GoToolRoot = '',
+    [string]$PythonExe = '',
+    [switch]$SkipCodeSync,
+    [switch]$SkipParallelVerification
+)
+
+$ErrorActionPreference = 'Stop'
+$expectedHost = 'DESKTOP-ODAQN0D'
+$actualHost = [Environment]::MachineName
+if ($actualHost -ine $expectedHost) { throw "Case 0005 must activate on $expectedHost; actual=$actualHost" }
+
+function Resolve-RepoRoot {
+    param([string]$Explicit,[string[]]$Candidates,[string[]]$Markers,[string]$Name)
+    $items = @()
+    if (-not [string]::IsNullOrWhiteSpace($Explicit)) { $items += $Explicit }
+    $items += $Candidates
+    foreach ($candidate in $items) {
+        if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+        try { $root = (Resolve-Path -LiteralPath $candidate -ErrorAction Stop).Path } catch { continue }
+        $valid = $true
+        foreach ($marker in $Markers) {
+            if (-not (Test-Path -LiteralPath (Join-Path $root $marker) -PathType Leaf)) { $valid = $false; break }
+        }
+        if ($valid) { return $root }
+    }
+    throw "$Name checkout not found"
+}
+
+function Resolve-Python([string]$Explicit) {
+    $candidates = @()
+    if (-not [string]::IsNullOrWhiteSpace($Explicit)) { $candidates += $Explicit }
+    $candidates += @('C:\Python314\python.exe','C:\Python313\python.exe','C:\Python312\python.exe','C:\Python311\python.exe','C:\Python310\python.exe')
+    foreach ($candidate in $candidates) {
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) { return (Resolve-Path -LiteralPath $candidate).Path }
+    }
+    $cmd = Get-Command python.exe -ErrorAction SilentlyContinue
+    if ($null -ne $cmd) { return $cmd.Source }
+    throw 'Python executable not found'
+}
+
+$OpenWorkerRoot = Resolve-RepoRoot -Explicit $OpenWorkerRoot -Name 'OpenWorker' -Markers @('case-specs\0005.json','coworker\case0005_local_supervisor.py') -Candidates @(
+    'C:\github-runners\openworker\_work\openworker\openworker',
+    'D:\AI\openworker','D:\AIWork\openworker','D:\PyWork\openworker'
+)
+$GoToolRoot = Resolve-RepoRoot -Explicit $GoToolRoot -Name 'go-tool-runtime' -Markers @('go.mod','scripts\windows\install-gtr-local-work-runtime.ps1','scripts\windows\verify-gtr-local-supervisor.ps1') -Candidates @(
+    'C:\github-runners\go-tool-runtime\_work\go-tool-runtime\go-tool-runtime',
+    'D:\AI\go-tool-runtime','D:\AIWork\go-tool-runtime','D:\PyWork\go-tool-runtime'
+)
+$PythonExe = Resolve-Python $PythonExe
+
+# Repository network use is code synchronization only. No workflow dispatch,
+# runner scheduling, Case business execution, status query or artifact transfer
+# is performed through GitHub Actions.
+if (-not $SkipCodeSync) {
+    foreach ($repo in @($GoToolRoot,$OpenWorkerRoot)) {
+        if (Test-Path -LiteralPath (Join-Path $repo '.git') -PathType Container) {
+            Push-Location $repo
+            try {
+                $dirty = (& git status --porcelain)
+                if ($LASTEXITCODE -ne 0) { throw "git status failed: $repo" }
+                if (-not [string]::IsNullOrWhiteSpace(($dirty -join "`n"))) { throw "refuse code sync on dirty checkout: $repo" }
+                & git pull --ff-only origin main
+                if ($LASTEXITCODE -ne 0) { throw "git pull --ff-only failed: $repo" }
+            } finally { Pop-Location }
+        }
+    }
+}
+
+$installer = Join-Path $GoToolRoot 'scripts\windows\install-gtr-local-work-runtime.ps1'
+& powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $installer -MaxParallelActions 4 -OpenWorkerRoot $OpenWorkerRoot
+if ($LASTEXITCODE -ne 0) { throw "true local supervisor install failed: $LASTEXITCODE" }
+
+$health = Invoke-RestMethod -Method Get -Uri 'http://127.0.0.1:8848/health' -TimeoutSec 5
+if ($null -eq $health) { throw 'go-tool :8848 health did not return a body' }
+
+$verifyReceipt = "$env:ProgramData\go-tool-runtime\work-agent\local-supervisor-verification.json"
+if (-not $SkipParallelVerification) {
+    $verify = Join-Path $GoToolRoot 'scripts\windows\verify-gtr-local-supervisor.ps1'
+    & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $verify -ExpectedSlots 4 -SmokeCount 5 -HoldMS 4000 -ReceiptPath $verifyReceipt
+    if ($LASTEXITCODE -ne 0) { throw "four-slot local verification failed: $LASTEXITCODE" }
+}
+if (-not (Test-Path -LiteralPath $verifyReceipt -PathType Leaf) -and -not $SkipParallelVerification) { throw 'parallel verification receipt missing' }
+
+New-Item -ItemType Directory -Force -Path $Workspace | Out-Null
+$specPath = Join-Path $OpenWorkerRoot 'case-specs\0005.json'
+$manifestPath = Join-Path $OpenWorkerRoot 'case-worklists\0005.json'
+$controllerModule = 'coworker.case0005_local_supervisor'
+
+$bootstrap = [ordered]@{
+    case_id = '0005'
+    machine = $expectedHost
+    workspace_root = $Workspace
+    openworker_root = $OpenWorkerRoot
+    controller_module = $controllerModule
+    manifest_path = $manifestPath
+    spec_path = $specPath
+    python_exe = $PythonExe
+    env = [ordered]@{
+        GTR_WORK_QUEUE_URL = 'http://127.0.0.1:8848'
+        GTR_LOCAL_WORKERS = '4'
+    }
+}
+$bootstrapJSON = $bootstrap | ConvertTo-Json -Depth 8 -Compress
+$bootstrapAck = Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:8848/api/openworker/case/bootstrap' -ContentType 'application/json' -Body $bootstrapJSON -TimeoutSec 60
+if ([string]$bootstrapAck.status -ne 'completed') { throw "Case 0005 local bootstrap failed: $($bootstrapAck | ConvertTo-Json -Depth 8 -Compress)" }
+if ([bool]$bootstrapAck.github_action_used_for_business_execution) { throw 'Case bootstrap unexpectedly reports GitHub business execution' }
+
+# Wait until the first Case action has materialized into :8848 local-work.
+$runtime = $null
+$routeProven = $false
+$deadline = [DateTime]::UtcNow.AddSeconds(90)
+while ([DateTime]::UtcNow -lt $deadline) {
+    try {
+        $runtime = Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:8848/api/openworker/case/runtime?case_id=0005&machine=$expectedHost&limit=500" -TimeoutSec 5
+        if ([bool]$runtime.route_resolved_from_local_evidence -and [string]$runtime.route_label -eq 'LOCAL_SUPERVISOR') {
+            $routeProven = $true
+            break
+        }
+    } catch {}
+    Start-Sleep -Milliseconds 500
+}
+if (-not $routeProven) { throw 'Case 0005 did not materialize LOCAL_SUPERVISOR route evidence within 90 seconds' }
+
+$controlDir = Join-Path $Workspace '.openworker'
+New-Item -ItemType Directory -Force -Path $controlDir | Out-Null
+$receiptPath = Join-Path $controlDir 'true-local-supervisor-activation.json'
+$receipt = [ordered]@{
+    schema_version = 'openworker-case0005-true-local-activation/v1'
+    status = 'ACTIVATED'
+    case_id = '0005'
+    machine = $actualHost
+    workspace_root = $Workspace
+    controller_module = $controllerModule
+    business_execution_authority = 'go-tool-runtime-local-supervisor'
+    process_kernel = 'OpenWorker:8787'
+    local_queue = 'go-tool-runtime:8848'
+    max_parallel_actions = 4
+    github_action_used_for_business_execution = $false
+    code_sync_transport = $(if ($SkipCodeSync) { 'skipped' } else { 'local-git-pull-ff-only' })
+    parallel_verification_receipt = $verifyReceipt
+    bootstrap_ack = $bootstrapAck
+    initial_case_runtime = $runtime
+    activated_at = [DateTime]::UtcNow.ToString('o')
+}
+$temp = "$receiptPath.tmp"
+[IO.File]::WriteAllText($temp, ($receipt | ConvertTo-Json -Depth 20), [Text.UTF8Encoding]::new($false))
+Move-Item -LiteralPath $temp -Destination $receiptPath -Force
+Write-Host "CASE0005_TRUE_LOCAL_SUPERVISOR_ACTIVATED host=$actualHost workspace=$Workspace receipt=$receiptPath"
