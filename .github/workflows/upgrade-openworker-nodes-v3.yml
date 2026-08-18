@@ -49,13 +49,13 @@ jobs:
           Write-Host "OPENWORKER_UPGRADE_ROUTE authority=COMPUTERNAME node=$node machine=$m slot=${{ matrix.slot }}"
 
       - uses: actions/setup-go@v5
-        if: steps.detect.outputs.eligible == 'true'
+        if: steps.detect.outputs.eligible == 'true' && !contains(github.event.head_commit.message, '[case0005-status-only]')
         with:
           go-version: '1.23.x'
           cache-dependency-path: go-runtime/go.sum
 
       - name: Build install verify and persist canonical receipts
-        if: steps.detect.outputs.eligible == 'true'
+        if: steps.detect.outputs.eligible == 'true' && !contains(github.event.head_commit.message, '[case0005-status-only]')
         env:
           GH_TOKEN: ${{ github.token }}
           NODE: ${{ steps.detect.outputs.node }}
@@ -136,7 +136,7 @@ jobs:
           } finally {Remove-Item -LiteralPath $claim -Force -ErrorAction SilentlyContinue}
 
       - name: Publish read-only Case 0005 local status from ODA
-        if: steps.detect.outputs.node == 'oda' && contains(github.event.head_commit.message, '[case0005-status-through-upgrade]')
+        if: steps.detect.outputs.node == 'oda' && (contains(github.event.head_commit.message, '[case0005-status-through-upgrade]') || contains(github.event.head_commit.message, '[case0005-status-only]'))
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
