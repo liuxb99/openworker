@@ -2,7 +2,8 @@
 
 This step is separate from review application. It binds the accepted review revision
 to the current Engineering OS Delivery receipt and the exact local-first Google Drive
-revision folder/ZIP identity reviewed by ChatGPT.
+revision folder/ZIP identity reviewed by ChatGPT. Current OS delivery bytes must match
+the delivery artifacts that were inside the reviewed immutable bundle.
 """
 from __future__ import annotations
 
@@ -55,6 +56,16 @@ def _same_sha(path: Path, expected: Any, label: str) -> str:
     return actual
 
 
+def _reviewed_artifact_sha(bundle_manifest: dict[str, Any], logical_name: str) -> str:
+    matches = [item for item in (bundle_manifest.get("files") or []) if isinstance(item, dict) and str(item.get("logical_name") or "") == logical_name]
+    if len(matches) != 1:
+        raise FinalizeError(f"review bundle must contain exactly one {logical_name!r} artifact")
+    sha = str(matches[0].get("sha256") or "").strip().lower()
+    if len(sha) != 64 or any(c not in "0123456789abcdef" for c in sha):
+        raise FinalizeError(f"review bundle {logical_name!r} SHA is invalid")
+    return sha
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--workspace", required=True)
@@ -101,6 +112,7 @@ def main(argv: list[str] | None = None) -> int:
         raise FinalizeError("review/cloud bundle manifest identity mismatch")
     local_bundle_manifest = workspace / ".openworker" / "reviews" / revision_id / "manifest.json"
     _same_sha(local_bundle_manifest, bundle_sha, "review bundle manifest")
+    bundle_manifest = _load(local_bundle_manifest, "review bundle manifest")
     local_zip = Path(str(prepare.get("review_zip_path") or "")).expanduser().resolve()
     local_zip_sha = _same_sha(local_zip, prepare.get("review_zip_sha256"), "immutable review ZIP")
     if local_zip_sha != str(review.get("review_zip_sha256") or "").strip().lower():
@@ -127,6 +139,16 @@ def main(argv: list[str] | None = None) -> int:
     if not website_path.is_file() or website_path.stat().st_size <= 0:
         raise FinalizeError(f"OS delivery website missing/empty: {website_path}")
     website_sha = _sha256(website_path)
+
+    reviewed_manifest_sha = _reviewed_artifact_sha(bundle_manifest, "delivery-manifest")
+    reviewed_checksum_sha = _reviewed_artifact_sha(bundle_manifest, "checksum-manifest")
+    reviewed_website_sha = _reviewed_artifact_sha(bundle_manifest, "delivery-index")
+    if manifest_sha != reviewed_manifest_sha:
+        raise FinalizeError("current OS delivery manifest differs from the manifest reviewed by ChatGPT")
+    if checksum_sha != reviewed_checksum_sha:
+        raise FinalizeError("current OS checksum manifest differs from the checksum manifest reviewed by ChatGPT")
+    if website_sha != reviewed_website_sha:
+        raise FinalizeError("current OS delivery website differs from the website reviewed by ChatGPT")
 
     delivery_manifest = _load(manifest_path, "OS delivery manifest")
     if delivery_manifest.get("schema_version") != "delivery-manifest/1.0":
@@ -181,13 +203,18 @@ def main(argv: list[str] | None = None) -> int:
         if final_work.get("delivered_revision_id") != revision_id or final_work.get("status") != "delivered":
             raise FinalizeError("WorkLedger delivery pointer verification failed")
         output = {
-            "schema_version": "openworker-case0003-reviewed-delivery-finalize/v2",
+            "schema_version": "openworker-case0003-reviewed-delivery-finalize/v3",
             "case_id": "0003",
             "revision_id": revision_id,
             "status": "DELIVERED",
             "ok": True,
             "accepted_revision_id": final_work.get("accepted_revision_id"),
             "delivered_revision_id": final_work.get("delivered_revision_id"),
+            "reviewed_delivery_bytes": {
+                "manifest_sha256": reviewed_manifest_sha,
+                "checksum_manifest_sha256": reviewed_checksum_sha,
+                "website_sha256": reviewed_website_sha,
+            },
             "engineering_os": {
                 "project_id": os_project_id,
                 "job_id": os_job_id,
