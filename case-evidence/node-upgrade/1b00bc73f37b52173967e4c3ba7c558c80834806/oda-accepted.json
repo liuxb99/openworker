@@ -1,1 +1,1 @@
-{"schema":"openworker/node-upgrade-receipt/v2","target_commit":"1b00bc73f37b52173967e4c3ba7c558c80834806","run_id":"32129326135","accepted_at":"2026-08-18T10:58:03.3977613+00:00","slot":"1","phase":"ACCEPTED","node":"oda","machine":"DESKTOP-ODAQN0D","runner_name":"DESKTOP-ODAQN0D-R001"}
+{"schema":"openworker/node-upgrade-receipt/v2","target_commit":"1b00bc73f37b52173967e4c3ba7c558c80834806","run_id":"32129326135","accepted_at":"2026-08-18T10:58:27.8114206+00:00","slot":"4","phase":"ACCEPTED","node":"oda","machine":"DESKTOP-ODAQN0D","runner_name":"DESKTOP-ODAQN0D-R001"}
