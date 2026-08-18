@@ -5,47 +5,90 @@ param(
 )
 $ErrorActionPreference='Stop'
 if (-not $env:COMPUTERNAME.Equals($Machine,[StringComparison]::OrdinalIgnoreCase)) { throw "wrong host expected=$Machine actual=$env:COMPUTERNAME" }
-New-Item -ItemType Directory -Force -Path $WorkspaceRoot,(Join-Path $WorkspaceRoot 'evidence'),(Join-Path $WorkspaceRoot 'parallel') | Out-Null
+
+$repo = (Resolve-Path $PSScriptRoot\..).Path
+$manifest = Join-Path $repo 'case-worklists\0005.json'
+$spec = Join-Path $repo 'case-specs\0005.json'
+if(-not (Test-Path -LiteralPath $manifest)){ throw "missing Case 0005 manifest: $manifest" }
+if(-not (Test-Path -LiteralPath $spec)){ throw "missing Case 0005 spec: $spec" }
+
 $node = Invoke-RestMethod -Method Get -Uri "$OpenWorkerUrl/v1/node/status"
-$agents = Invoke-RestMethod -Method Get -Uri "$OpenWorkerUrl/v1/cluster/agents"
-$stamp=[DateTimeOffset]::UtcNow.ToString('yyyyMMddTHHmmssfffZ')
-$jobs=@(
-  @{
-    job_id="case0005-director-$stamp"; dispatch_id="case0005-parallel-$stamp-01"; machine=$Machine; priority=100;
-    cwd=$WorkspaceRoot; workspace_root=$WorkspaceRoot; timeout_sec=120;
-    command=('powershell -NoProfile -ExecutionPolicy Bypass -Command "gh workflow run operator-director-preproduction.yml -R liuxb99/Comfyx-Studio --ref main -f case_id=0005 -f workspace_root=' + $WorkspaceRoot + ' -f assigned_host=' + $Machine + ' -f source_title=''Snow White'' -f source_story=''A cinematic fairy-tale short: Snow White appears in a forest and castle world; the Queen and magic mirror establish danger; a poisoned apple causes the crisis; the ending restores hope. Keep Snow White, Queen, apple, castle, forest and mirror visually consistent across shots.''; if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}"')
-    locks=@('case0005-director-dispatch')
-  },
-  @{
-    job_id="case0005-preflight-studio-$stamp"; dispatch_id="case0005-parallel-$stamp-02"; machine=$Machine; priority=80;
-    cwd=$WorkspaceRoot; workspace_root=$WorkspaceRoot; timeout_sec=120;
-    command=('powershell -NoProfile -ExecutionPolicy Bypass -Command "$o=''' + (Join-Path $WorkspaceRoot 'parallel\studio-workflows.txt') + '''; gh workflow list -R liuxb99/Comfyx-Studio | Out-File -Encoding utf8 $o; if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}"')
-    locks=@('case0005-preflight-studio')
-  },
-  @{
-    job_id="case0005-preflight-comfyx-$stamp"; dispatch_id="case0005-parallel-$stamp-03"; machine=$Machine; priority=80;
-    cwd=$WorkspaceRoot; workspace_root=$WorkspaceRoot; timeout_sec=120;
-    command=('powershell -NoProfile -ExecutionPolicy Bypass -Command "$o=''' + (Join-Path $WorkspaceRoot 'parallel\comfyx-workflows.txt') + '''; gh workflow list -R liuxb99/ComfyX | Out-File -Encoding utf8 $o; if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}"')
-    locks=@('case0005-preflight-comfyx')
-  },
-  @{
-    job_id="case0005-preflight-gotool-$stamp"; dispatch_id="case0005-parallel-$stamp-04"; machine=$Machine; priority=80;
-    cwd=$WorkspaceRoot; workspace_root=$WorkspaceRoot; timeout_sec=120;
-    command=('powershell -NoProfile -ExecutionPolicy Bypass -Command "$o=''' + (Join-Path $WorkspaceRoot 'parallel\go-tool-head.txt') + '''; gh api repos/liuxb99/go-tool-runtime/commits/main --jq ''.sha'' | Out-File -Encoding utf8 $o; if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}"')
-    locks=@('case0005-preflight-gotool')
+if(-not $node.online){ throw 'OpenWorker node is not online' }
+if(-not ([string]$node.machine).Equals($Machine,[StringComparison]::OrdinalIgnoreCase)){ throw "OpenWorker node mismatch actual=$($node.machine)" }
+
+function Resolve-RepoRoot([string]$Name,[string[]]$Markers){
+  $candidates=@(
+    (Join-Path 'D:\actions-runner\_work' "$Name\$Name"),
+    (Join-Path 'D:\AI' $Name),
+    (Join-Path 'D:\AIWork' $Name),
+    (Join-Path 'D:\PyWork' $Name)
+  )
+  foreach($c in $candidates){
+    if(-not (Test-Path -LiteralPath $c -PathType Container)){ continue }
+    $ok=$true
+    foreach($m in $Markers){ if(-not (Test-Path -LiteralPath (Join-Path $c $m))){ $ok=$false; break } }
+    if($ok){ return (Resolve-Path $c).Path }
   }
-)
-$acks=@()
-foreach($job in $jobs){
-  $json=$job|ConvertTo-Json -Depth 8 -Compress
-  $ack=Invoke-RestMethod -Method Post -Uri "$OpenWorkerUrl/v1/jobs" -ContentType 'application/json' -Body $json
-  $acks += $ack
+  $roots=@('D:\actions-runner\_work','D:\AI','D:\AIWork','D:\PyWork') | Where-Object { Test-Path -LiteralPath $_ }
+  foreach($base in $roots){
+    $dirs=Get-ChildItem -LiteralPath $base -Directory -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.Name -ieq $Name } | Select-Object -First 8
+    foreach($d in $dirs){
+      $ok=$true
+      foreach($m in $Markers){ if(-not (Test-Path -LiteralPath (Join-Path $d.FullName $m))){ $ok=$false; break } }
+      if($ok){ return $d.FullName }
+    }
+  }
+  throw "local checkout not found for $Name markers=$($Markers -join ',')"
 }
+
+$env:OPENWORKER_ROOT=$repo
+$env:GO_TOOL_ROOT=Resolve-RepoRoot 'go-tool-runtime' @('go.mod','cmd\gtr-local-exec\main.go')
+$env:COMFYX_ROOT=Resolve-RepoRoot 'ComfyX' @('go.mod','cmd\comfyx-synthesis-video-real')
+$env:COMFYX_STUDIO_ROOT=Resolve-RepoRoot 'Comfyx-Studio' @('go.mod','cmd\operator-director-preproduction')
+$env:OPENMAIC_ROOT=Resolve-RepoRoot 'OpenMAIC' @('package.json')
+
+if(-not $env:COMFYX_COMFYUI_OUTPUT_ROOT){
+  $outputCandidates=@(
+    'D:\Comfy-Desktop\ComfyUI-Installs\ComfyUI\ComfyUI\output',
+    'D:\ComfyUI\output'
+  )
+  foreach($p in $outputCandidates){ if(Test-Path -LiteralPath $p -PathType Container){ $env:COMFYX_COMFYUI_OUTPUT_ROOT=$p; break } }
+}
+if(-not $env:COMFYX_COMFYUI_OUTPUT_ROOT){ throw 'COMFYX_COMFYUI_OUTPUT_ROOT authority not found on ODA' }
+
+New-Item -ItemType Directory -Force -Path $WorkspaceRoot,(Join-Path $WorkspaceRoot 'evidence') | Out-Null
+
+# Compile the exact local executor before mutating the durable CaseWorklist.
+Push-Location $env:GO_TOOL_ROOT
+try {
+  $exe=Join-Path $WorkspaceRoot '.openworker\bin\gtr-local-exec.exe'
+  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $exe) | Out-Null
+  go build -trimpath -o $exe ./cmd/gtr-local-exec
+  if($LASTEXITCODE -ne 0){ throw "gtr-local-exec build failed rc=$LASTEXITCODE" }
+  $env:GTR_LOCAL_EXEC_EXE=$exe
+} finally { Pop-Location }
+
+# One bootstrap transport only. Business execution after this point is local durable jobs.
+Push-Location $repo
+try {
+  $json = python -m coworker.case_controller --node-url $OpenWorkerUrl bootstrap --workspace $WorkspaceRoot --manifest $manifest --spec $spec
+  if($LASTEXITCODE -ne 0){ throw "Case controller bootstrap failed rc=$LASTEXITCODE" }
+} finally { Pop-Location }
+
+$controller = $json | ConvertFrom-Json
 $receipt=[ordered]@{
-  schema='openworker/case0005-local-parallel-bootstrap/v1'; case_id='0005'; machine=$Machine; workspace_root=$WorkspaceRoot;
-  transport_run_id=$env:GITHUB_RUN_ID; submitted_at=[DateTimeOffset]::UtcNow.ToString('o'); node=$node; agents=$agents; durable_acks=$acks
+  schema='openworker/case0005-local-first-bootstrap/v2';
+  case_id='0005'; machine=$Machine; workspace_root=$WorkspaceRoot;
+  transport_run_id=$env:GITHUB_RUN_ID; submitted_at=[DateTimeOffset]::UtcNow.ToString('o');
+  node=$node;
+  roots=[ordered]@{
+    openworker=$env:OPENWORKER_ROOT; go_tool=$env:GO_TOOL_ROOT; comfyx=$env:COMFYX_ROOT;
+    comfyx_studio=$env:COMFYX_STUDIO_ROOT; openmaic=$env:OPENMAIC_ROOT; comfyui_output=$env:COMFYX_COMFYUI_OUTPUT_ROOT
+  };
+  controller=$controller;
+  github_action_used_for_business_execution=$false
 }
-$receiptPath=Join-Path $WorkspaceRoot 'evidence\case0005-parallel-bootstrap.json'
-$receipt|ConvertTo-Json -Depth 12|Set-Content -LiteralPath $receiptPath -Encoding utf8
-Write-Host "CASE0005_PARALLEL_BOOTSTRAP_ACK count=$($acks.Count) receipt=$receiptPath"
-$acks|ConvertTo-Json -Depth 8|Write-Host
+$receiptPath=Join-Path $WorkspaceRoot 'evidence\case0005-local-first-bootstrap.json'
+$receipt|ConvertTo-Json -Depth 20|Set-Content -LiteralPath $receiptPath -Encoding utf8
+Write-Host "CASE0005_LOCAL_FIRST_BOOTSTRAP receipt=$receiptPath"
+$receipt|ConvertTo-Json -Depth 20|Write-Host
