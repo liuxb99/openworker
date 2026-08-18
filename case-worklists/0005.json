@@ -3,7 +3,7 @@
   "case_id": "0005",
   "workspace_root": "D:\\AI-Work\\jobs\\0005-SNOW-WHITE",
   "assigned_host": "DESKTOP-ODAQN0D",
-  "revision": 3,
+  "revision": 4,
   "parallel_policy": {
     "authority": "openworker-local-supervisor",
     "max_local_slots": 4,
@@ -20,7 +20,7 @@
     {"step_id":"0005-027","title":"Wait for user approval of text-only Snow White storyboard PPTX","kind":"approval","dependencies":["0005-025"],"allowed_actions":["openworker.user.approval"],"acceptance":["approved_storyboard_pptx_sha256","approval_decision","approval_receipt"],"status":"PENDING","evidence":{},"blocker":"","repair_parent_step":"","allow_skip":false},
     {"step_id":"0005-030","title":"Generate REAL Snow White character master images after storyboard approval","kind":"work","dependencies":["0005-027"],"allowed_actions":["image.comfyx.storyboard-real"],"acceptance":["character_receipts","character_images","character_sha256"],"status":"PENDING","evidence":{},"blocker":"","repair_parent_step":"","allow_skip":false},
     {"step_id":"0005-040","title":"Generate REAL Snow White scene concept images in parallel with character masters","kind":"work","dependencies":["0005-027"],"allowed_actions":["image.comfyx.storyboard-real"],"acceptance":["scene_receipts","scene_images","scene_sha256"],"status":"PENDING","evidence":{},"blocker":"","repair_parent_step":"","allow_skip":false},
-    {"step_id":"0005-050","title":"Join character/scene branches, then generate and bind REAL Snow White shot images","kind":"work","dependencies":["0005-030","0005-040"],"allowed_actions":["image.comfyx.storyboard-real","comfyx-studio.storyboard.bind"],"acceptance":["shot_image_receipts","shot_images","shot_image_sha256","bound_storyboard_request"],"status":"PENDING","evidence":{},"blocker":"","repair_parent_step":"","allow_skip":false},
+    {"step_id":"0005-050","title":"Join character/scene branches, then generate and bind REAL Snow White shot images","kind":"work","dependencies":["0005-030","0005-040"],"allowed_actions":["comfyx-studio.storyboard.real-bind"],"acceptance":["shot_image_receipts","shot_images","shot_image_sha256","bound_storyboard_request"],"status":"PENDING","evidence":{},"blocker":"","repair_parent_step":"","allow_skip":false},
     {"step_id":"0005-055","title":"Generate illustrated Snow White storyboard PPTX through OpenMAIC","kind":"work","dependencies":["0005-050"],"allowed_actions":["presentation.openmaic"],"acceptance":["illustrated_storyboard_pptx","illustrated_storyboard_manifest","illustrated_storyboard_sha256","slide_count","reopen_receipt","bound_image_count"],"status":"PENDING","evidence":{},"blocker":"","repair_parent_step":"","allow_skip":false},
     {"step_id":"0005-057","title":"Wait for user approval of illustrated Snow White storyboard PPTX","kind":"approval","dependencies":["0005-055"],"allowed_actions":["openworker.user.approval"],"acceptance":["approved_illustrated_storyboard_sha256","approval_decision","approval_receipt"],"status":"PENDING","evidence":{},"blocker":"","repair_parent_step":"","allow_skip":false},
     {"step_id":"0005-060","title":"Fan out approved Snow White shots as independent REAL video durable jobs","kind":"fanout","dependencies":["0005-057"],"allowed_actions":["comfyx.production.video.real"],"acceptance":["shot_job_ids","shot_video_receipts","shot_videos","shot_video_sha256","execution_ledger","all_shots_terminal_succeeded"],"status":"PENDING","evidence":{},"blocker":"","repair_parent_step":"","allow_skip":false},
