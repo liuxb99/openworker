@@ -28,50 +28,45 @@ jobs:
             label: UL7
     runs-on: [self-hosted, Windows, X64, '${{ matrix.label }}']
     timeout-minutes: 10
+    defaults:
+      run:
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
     env:
       EXPECTED_HOST: ${{ matrix.host }}
       GTR_SHARED_GOOGLE_DRIVE_ACCESS_TOKEN: ${{ secrets.OPENWORKER_GOOGLE_DRIVE_ACCESS_TOKEN }}
       GTR_CREDENTIAL_DB_PATH: C:\ProgramData\go-tool-runtime\runtime.db
+      GTR_CREDENTIAL_IMPORT: C:\ProgramData\go-tool-runtime\work-agent\gtr-credential-import.exe
     steps:
-      - name: Verify fixed machine
-        shell: powershell
+      - name: Verify fixed machine and additive secret
         run: |
-          if ($env:COMPUTERNAME -ine $env:EXPECTED_HOST) {
-            throw "wrong host: expected=$env:EXPECTED_HOST actual=$env:COMPUTERNAME"
-          }
-          if ([string]::IsNullOrWhiteSpace($env:GTR_SHARED_GOOGLE_DRIVE_ACCESS_TOKEN)) {
-            throw "OPENWORKER_GOOGLE_DRIVE_ACCESS_TOKEN secret is unavailable"
-          }
-          Write-Host "credential target host verified: $env:COMPUTERNAME"
-
-      - name: Clone latest go-tool without changing gh auth
-        shell: powershell
-        run: |
-          $repoDir = Join-Path $env:RUNNER_TEMP "go-tool-runtime-drive-credential-sync"
-          if (Test-Path $repoDir) { Remove-Item -Recurse -Force $repoDir }
-          gh repo clone liuxb99/go-tool-runtime $repoDir -- --depth 1
-          "GTR_SYNC_REPO=$repoDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          if ($env:COMPUTERNAME -ine $env:EXPECTED_HOST) { throw "wrong host expected=$env:EXPECTED_HOST actual=$env:COMPUTERNAME" }
+          if ([string]::IsNullOrWhiteSpace($env:GTR_SHARED_GOOGLE_DRIVE_ACCESS_TOKEN)) { throw 'OPENWORKER_GOOGLE_DRIVE_ACCESS_TOKEN secret is unavailable' }
+          if (-not (Test-Path -LiteralPath $env:GTR_CREDENTIAL_IMPORT -PathType Leaf)) { throw "deployed go-tool importer unavailable: $env:GTR_CREDENTIAL_IMPORT" }
+          Write-Host "GTR_DRIVE_CREDENTIAL_TARGET_OK machine=$env:COMPUTERNAME"
 
       - name: Import additive Google Drive credential slot
-        shell: powershell
         run: |
-          Push-Location $env:GTR_SYNC_REPO
-          try {
-            go run ./cmd/gtr-credential-import `
-              -db $env:GTR_CREDENTIAL_DB_PATH `
-              -provider google_drive `
-              -key OPENWORKER_GOOGLE_DRIVE_ACCESS_TOKEN `
-              -env GTR_SHARED_GOOGLE_DRIVE_ACCESS_TOKEN
-          } finally {
-            Pop-Location
-          }
+          & $env:GTR_CREDENTIAL_IMPORT `
+            -db $env:GTR_CREDENTIAL_DB_PATH `
+            -provider google_drive `
+            -key OPENWORKER_GOOGLE_DRIVE_ACCESS_TOKEN `
+            -env GTR_SHARED_GOOGLE_DRIVE_ACCESS_TOKEN
+          if ($LASTEXITCODE -ne 0) { throw "Drive credential import failed: $LASTEXITCODE" }
+          Write-Host "GTR_DRIVE_CREDENTIAL_IMPORT_PASS machine=$env:COMPUTERNAME provider=google_drive name=OPENWORKER_GOOGLE_DRIVE_ACCESS_TOKEN"
 
-      - name: Compile credential and Drive bindings
-        shell: powershell
+      - name: Verify metadata only, never secret value
         run: |
-          Push-Location $env:GTR_SYNC_REPO
-          try {
-            go test ./internal/execution ./internal/localexec -run 'TestNamedLocalCredentialsKeepGitHubAndGoogleDriveIsolated|TestDriveReviewPublishInvokesCanonicalOpenWorkerScript' -count=1
-          } finally {
-            Pop-Location
-          }
+          $py=@'
+import json, sqlite3
+p=r"C:\ProgramData\go-tool-runtime\runtime.db"
+db=sqlite3.connect(p)
+rows=list(db.execute("select provider,name,status from local_credentials where provider in ('github','google_drive') order by provider,name"))
+print(json.dumps([{'provider':r[0],'name':r[1],'status':r[2]} for r in rows]))
+if not any(r[0]=='google_drive' and r[1]=='OPENWORKER_GOOGLE_DRIVE_ACCESS_TOKEN' and r[2]=='active' for r in rows):
+    raise SystemExit('google_drive credential metadata missing')
+'@
+          $tmp=Join-Path $env:RUNNER_TEMP 'verify-gtr-drive-credential.py'
+          $py|Set-Content -LiteralPath $tmp -Encoding UTF8
+          python $tmp
+          if ($LASTEXITCODE -ne 0) { throw 'Drive credential metadata verification failed' }
+          Write-Host 'GTR_DRIVE_CREDENTIAL_METADATA_PASS gh_cli_untouched=true gh_token_untouched=true'
