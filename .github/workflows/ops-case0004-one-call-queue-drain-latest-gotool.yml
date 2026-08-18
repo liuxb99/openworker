@@ -97,3 +97,5 @@ jobs:
         if: steps.route.outputs.run != 'true'
         shell: cmd
         run: echo CASE0004_QUEUE_DRAIN_SKIP machine=%COMPUTERNAME% runner=%RUNNER_NAME%
+
+# retrigger case0004 queue drain: 2026-08-18T11:28+08:00
