@@ -15,7 +15,7 @@ jobs:
     name: sync-${{ matrix.machine }}
     strategy:
       fail-fast: false
-      max-parallel: 1
+      max-parallel: 3
       matrix:
         include:
           - machine: O87
@@ -121,3 +121,4 @@ print(json.dumps(items))
 
 # Metadata evidence only; secret bytes are never persisted or printed.
 # Google Drive credential is additive; GH_TOKEN and gh CLI are not modified.
+# Each machine syncs independently; one offline/busy machine must not block another.
