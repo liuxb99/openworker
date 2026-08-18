@@ -10,7 +10,7 @@ permissions:
 
 concurrency:
   group: case0005-local-controller-kick-oda
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   kick-local-controller:
