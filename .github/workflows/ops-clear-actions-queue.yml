@@ -18,27 +18,25 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
-      PRESERVE_RUN_ID: '32002722623'
     steps:
-      - name: Cancel every other non-terminal workflow run except Case 0002
+      - name: Cancel every other non-terminal OpenWorker workflow run
         shell: bash
         run: |
           set -euo pipefail
           current="${GITHUB_RUN_ID}"
-          preserve="${PRESERVE_RUN_ID}"
           mapfile -t runs < <(gh api --paginate "repos/${GH_REPO}/actions/runs?per_page=100" --jq '.workflow_runs[] | select(.status != "completed") | .id' | sort -u)
-          echo "OPENWORKER_NONTERMINAL_BEFORE=${#runs[@]} preserve=${preserve}"
+          echo "OPENWORKER_NONTERMINAL_BEFORE=${#runs[@]} current=${current}"
           for id in "${runs[@]}"; do
-            if [[ "$id" == "$current" || "$id" == "$preserve" ]]; then
+            if [[ "$id" == "$current" ]]; then
               continue
             fi
-            echo "Cancelling run $id"
+            echo "Cancelling stale run $id"
             gh api --method POST "repos/${GH_REPO}/actions/runs/${id}/cancel" >/dev/null || true
           done
           sleep 3
-          mapfile -t remaining < <(gh api --paginate "repos/${GH_REPO}/actions/runs?per_page=100" --jq --arg cur "$current" --arg keep "$preserve" '.workflow_runs[] | select(.status != "completed" and (.id|tostring) != $cur and (.id|tostring) != $keep) | [.id,.name,.status] | @tsv')
+          mapfile -t remaining < <(gh api --paginate "repos/${GH_REPO}/actions/runs?per_page=100" --jq --arg cur "$current" '.workflow_runs[] | select(.status != "completed" and (.id|tostring) != $cur) | [.id,.name,.status] | @tsv')
           if (( ${#remaining[@]} > 0 )); then
             printf 'Remaining: %s\n' "${remaining[@]}"
             exit 1
           fi
-          echo "OPENWORKER_QUEUE_CLEAR_PASS preserved=${preserve}"
+          echo "OPENWORKER_QUEUE_CLEAR_PASS current=${current}"
