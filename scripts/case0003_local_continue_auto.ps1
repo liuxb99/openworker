@@ -18,7 +18,9 @@ if(-not $env:COMPUTERNAME.Equals($Machine,[StringComparison]::OrdinalIgnoreCase)
 $scriptRoot=Split-Path -Parent $MyInvocation.MyCommand.Path
 if([string]::IsNullOrWhiteSpace($OpenWorkerRoot)){$OpenWorkerRoot=(Split-Path -Parent $scriptRoot)}
 $controller=Join-Path $OpenWorkerRoot 'scripts\case0003_local_continue.ps1'
+$preflight=Join-Path $OpenWorkerRoot 'scripts\case0003_local_preflight.ps1'
 if(-not(Test-Path -LiteralPath $controller -PathType Leaf)){throw "canonical Case 0003 controller missing: $controller"}
+if(-not(Test-Path -LiteralPath $preflight -PathType Leaf)){throw "Case 0003 REAL preflight missing: $preflight"}
 $node=Invoke-RestMethod -Method Get -Uri "$OpenWorkerUrl/v1/node/status" -TimeoutSec 10
 if([string]$node.node_id -and -not ([string]$node.node_id).Equals($Machine,[StringComparison]::OrdinalIgnoreCase) -and -not ([string]$node.machine).Equals($Machine,[StringComparison]::OrdinalIgnoreCase)){throw "OpenWorker node identity mismatch expected=$Machine node_id=$($node.node_id) machine=$($node.machine)"}
 function Inventory-Root([string]$EnvName){
@@ -60,11 +62,13 @@ if([string]::IsNullOrWhiteSpace($OSJobId)){$OSJobId=[string]$binding.job_id}
 elseif($OSJobId -ne [string]$binding.job_id){throw "explicit OSJobId does not match JobBinding job_id"}
 if([string]::IsNullOrWhiteSpace($OSProjectId) -or [string]::IsNullOrWhiteSpace($OSJobId)){throw 'JobBinding lacks persisted Engineering OS identity'}
 $resolved=[ordered]@{
-  schema='openworker/case0003-root-resolution/v3';case_id='0003';machine=$Machine;source='explicit>openworker-inventory>environment';
+  schema='openworker/case0003-root-resolution/v4';case_id='0003';machine=$Machine;source='explicit>openworker-inventory>environment';
   openworker_root=$OpenWorkerRoot;go_tool_root=$GoToolRoot;terrain_root=$TerrainRoot;scenex_root=$SceneXRoot;engineering_os_root=$EngineeringOSRoot;drive_review_root=$DriveSyncRoot;
   engineering_os_project_id=$OSProjectId;engineering_os_job_id=$OSJobId;identity_source='openworker-job-binding'
 }
 $evidenceDir=Join-Path $WorkspaceRoot 'evidence';New-Item -ItemType Directory -Force -Path $evidenceDir|Out-Null
 $resolved|ConvertTo-Json -Depth 6|Set-Content -LiteralPath (Join-Path $evidenceDir 'case0003-root-resolution.json') -Encoding utf8
+& $preflight -OpenWorkerUrl $OpenWorkerUrl -WorkspaceRoot $WorkspaceRoot -Machine $Machine -EngineeringOSBaseUrl $EngineeringOSBaseUrl -CatalogPath $CatalogPath
+if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
 & $controller -OpenWorkerUrl $OpenWorkerUrl -WorkspaceRoot $WorkspaceRoot -Machine $Machine -OpenWorkerRoot $OpenWorkerRoot -DriveSyncRoot $DriveSyncRoot -GoToolRoot $GoToolRoot -TerrainRoot $TerrainRoot -SceneXRoot $SceneXRoot -EngineeringOSRoot $EngineeringOSRoot -OSProjectId $OSProjectId -OSJobId $OSJobId -EngineeringOSBaseUrl $EngineeringOSBaseUrl -CatalogPath $CatalogPath
 if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
