@@ -48,7 +48,7 @@ jobs:
           ADVERTISE: ${{ inputs.advertise }}
           PEERS: ${{ inputs.peers }}
         run: |
-          & "$env:GITHUB_WORKSPACE\scripts\install_openworker_node_service.ps1" -SourceExe "$env:GITHUB_WORKSPACE\go-runtime\openworker-node.exe" -Workers 4 -Capabilities 'case0002,comfyx,minimax-h3,video,storyboard,presentation' -Listen $env:LISTEN -Advertise $env:ADVERTISE -Peers $env:PEERS
+          & "$env:GITHUB_WORKSPACE\scripts\install_openworker_node_service.ps1" -SourceExe "$env:GITHUB_WORKSPACE\go-runtime\openworker-node.exe" -Workers 4 -Capabilities 'case0002,case0005,comfyx,minimax-h3,video,storyboard,presentation,local-supervisor' -Listen $env:LISTEN -Advertise $env:ADVERTISE -Peers $env:PEERS
       - name: Verify service node identity inventory and lease
         shell: powershell
         run: |
@@ -56,6 +56,6 @@ jobs:
           if($s.machine -ine 'DESKTOP-ODAQN0D'){throw "node machine=$($s.machine)"}
           if($s.build.commit -ne $env:GITHUB_SHA){throw "node commit=$($s.build.commit) expected=$env:GITHUB_SHA"}
           if(-not $s.lease_until){throw 'missing lease_until'}
-          if(-not ($s.inventory.capabilities -contains 'comfyx')){throw 'missing comfyx capability'}
+          foreach($cap in @('comfyx','case0005','local-supervisor')){if(-not ($s.inventory.capabilities -contains $cap)){throw "missing $cap capability"}}
           if(-not $s.advertise_endpoint){throw 'missing advertise endpoint'}
           $s|ConvertTo-Json -Depth 20
