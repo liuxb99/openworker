@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -51,6 +52,14 @@ def _bounded_path(workspace: Path, value: Any, *, field: str) -> Path:
     return resolved
 
 
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def validate_receipt(workspace_root: str | Path, assigned_host: str, step_id: str, receipt: dict[str, Any]) -> dict[str, Any]:
     cfg = _STAGE.get(step_id)
     if cfg is None:
@@ -86,18 +95,51 @@ def validate_receipt(workspace_root: str | Path, assigned_host: str, step_id: st
     if not cfg["require_media"] and media_count != 0:
         raise CaseWorklistError("text-only storyboard requires media_count == 0")
 
-    sha256 = _text(artifact.get("sha256"))
-    if len(sha256) != 64 or any(ch not in "0123456789abcdefABCDEF" for ch in sha256):
+    receipt_sha = _text(artifact.get("sha256")).lower()
+    if len(receipt_sha) != 64 or any(ch not in "0123456789abcdef" for ch in receipt_sha):
         raise CaseWorklistError("OpenMAIC artifact sha256 is invalid")
 
     workspace = Path(workspace_root).resolve()
     pptx = _bounded_path(workspace, artifact.get("path"), field="artifact.path")
     manifest = _bounded_path(workspace, receipt.get("manifest"), field="manifest")
+    if not pptx.is_file() or pptx.stat().st_size <= 0:
+        raise CaseWorklistError(f"OpenMAIC physical PPTX missing/empty: {pptx}")
+    if not manifest.is_file() or manifest.stat().st_size <= 0:
+        raise CaseWorklistError(f"OpenMAIC physical manifest missing/empty: {manifest}")
+
+    physical_sha = _sha256(pptx)
+    if physical_sha != receipt_sha:
+        raise CaseWorklistError(
+            f"OpenMAIC physical PPTX sha256 mismatch receipt={receipt_sha} physical={physical_sha}"
+        )
+
+    try:
+        manifest_json = json.loads(manifest.read_text(encoding="utf-8-sig"))
+    except Exception as exc:
+        raise CaseWorklistError(f"OpenMAIC manifest is not valid JSON: {manifest}") from exc
+    if not isinstance(manifest_json, dict) or _text(manifest_json.get("status")).lower() != "succeeded":
+        raise CaseWorklistError("OpenMAIC manifest status is not succeeded")
+    manifest_artifact = manifest_json.get("artifact")
+    if not isinstance(manifest_artifact, dict):
+        raise CaseWorklistError("OpenMAIC manifest artifact is missing")
+    manifest_sha = _text(manifest_artifact.get("sha256")).lower()
+    if manifest_sha != physical_sha:
+        raise CaseWorklistError(
+            f"OpenMAIC manifest sha256 mismatch manifest={manifest_sha} physical={physical_sha}"
+        )
+    try:
+        manifest_slides = int(manifest_artifact.get("slide_count", 0))
+    except (TypeError, ValueError) as exc:
+        raise CaseWorklistError("OpenMAIC manifest slide_count is invalid") from exc
+    if manifest_slides != slide_count or manifest_slides <= 0:
+        raise CaseWorklistError(
+            f"OpenMAIC slide_count mismatch receipt={slide_count} manifest={manifest_slides}"
+        )
 
     return {
         cfg["path"]: str(pptx),
         cfg["manifest"]: str(manifest),
-        cfg["sha256"]: sha256.lower(),
+        cfg["sha256"]: physical_sha,
         "slide_count": slide_count,
         "reopen_receipt": receipt,
         cfg["media"]: media_count,
