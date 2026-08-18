@@ -41,3 +41,5 @@ class OpenWorkerNodeClient:
         p={"limit":limit}
         if job_id: p["job_id"]=job_id
         return self._request("GET","/v1/cluster/control-events",params=p)
+    def cluster_endpoints(self)->dict[str,Any]: return self._request("GET","/v1/cluster/endpoints")
+    def cluster_connectivity(self,limit:int=200)->dict[str,Any]: return self._request("GET","/v1/cluster/connectivity",params={"limit":limit})
