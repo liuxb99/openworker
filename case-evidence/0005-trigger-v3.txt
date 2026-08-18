@@ -1,2 +1,2 @@
 Case 0005 Snow White ODA resident OpenWorker local-controller trigger.
-Use DESKTOP-ODAQN0D. GitHub Action is transport only; business execution must be resident OpenWorker local supervisor with up to 4 parallel agent slots. Workspace must land at D:\AI-Work\jobs\0005-SNOW-WHITE.
+Use DESKTOP-ODAQN0D. Transport only: sync stable resident runtime, POST /v1/cases/bootstrap, receive durable ACK, then ODA local supervisor owns all business execution with up to 4 parallel agent slots. Workspace: D:\AI-Work\jobs\0005-SNOW-WHITE.
