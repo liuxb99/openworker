@@ -2,6 +2,8 @@ name: Drain OpenWorker Queue Through Go Tool
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
 
 permissions:
   contents: read
@@ -13,6 +15,7 @@ concurrency:
 
 jobs:
   drain:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[drain-openworker-queue]')
     runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 5
     defaults:
