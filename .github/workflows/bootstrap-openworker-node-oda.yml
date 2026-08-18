@@ -43,7 +43,7 @@ jobs:
           go mod tidy
           $commit=$env:GITHUB_SHA
           $build=[DateTime]::UtcNow.ToString('o')
-          go build -ldflags "-X github.com/liuxb99/openworker/go-runtime/internal/buildinfo.Version=p2-node -X github.com/liuxb99/openworker/go-runtime/internal/buildinfo.Commit=$commit -X github.com/liuxb99/openworker/go-runtime/internal/buildinfo.BuildTime=$build" -o openworker-node.exe ./cmd/openworker-node
+          go build -ldflags "-X github.com/liuxb99/openworker/go-runtime/internal/buildinfo.Version=p2-node -X github.com/liuxb99/openworker/go-runtime/internal/buildinfo.Commit=$commit -X github.com/liuxb99/openworker/go-runtime/internal/buildinfo.TargetCommit=$commit -X github.com/liuxb99/openworker/go-runtime/internal/buildinfo.BuildTime=$build" -o openworker-node.exe ./cmd/openworker-node
       - name: Install or upgrade OpenWorkerNode service
         shell: powershell
         env:
@@ -52,12 +52,17 @@ jobs:
           PEERS: ${{ inputs.peers }}
         run: |
           & "$env:GITHUB_WORKSPACE\scripts\install_openworker_node_service.ps1" -SourceExe "$env:GITHUB_WORKSPACE\go-runtime\openworker-node.exe" -Workers 4 -Capabilities 'case0002,case0005,comfyx,minimax-h3,video,storyboard,presentation,local-supervisor' -Listen $env:LISTEN -Advertise $env:ADVERTISE -Peers $env:PEERS
-      - name: Verify service node identity inventory and lease
+      - name: Verify service node identity inventory lease and upgrade receipt
         shell: powershell
         run: |
           $s=Invoke-RestMethod 'http://127.0.0.1:8787/v1/node/status'
           if($s.machine -ine 'DESKTOP-ODAQN0D'){throw "node machine=$($s.machine)"}
           if($s.build.commit -ne $env:GITHUB_SHA){throw "node commit=$($s.build.commit) expected=$env:GITHUB_SHA"}
+          if($s.service.running_commit -ne $env:GITHUB_SHA){throw "running_commit=$($s.service.running_commit) expected=$env:GITHUB_SHA"}
+          if($s.service.target_commit -ne $env:GITHUB_SHA){throw "target_commit=$($s.service.target_commit) expected=$env:GITHUB_SHA"}
+          if($s.service.upgrade_status -ne 'VERIFIED' -or -not $s.service.upgrade_verified){throw "upgrade not verified: $($s.service | ConvertTo-Json -Compress)"}
+          if(-not $s.service.service_started_at){throw 'missing service_started_at'}
+          if($s.service.supervisor_api_version -ne 'v1'){throw "unexpected supervisor_api_version=$($s.service.supervisor_api_version)"}
           if(-not $s.lease_until){throw 'missing lease_until'}
           foreach($cap in @('comfyx','case0005','local-supervisor')){if(-not ($s.inventory.capabilities -contains $cap)){throw "missing $cap capability"}}
           if(-not $s.advertise_endpoint){throw 'missing advertise endpoint'}
@@ -124,6 +129,8 @@ jobs:
           if(-not $ack.job.accepted){throw 'local case bootstrap durable ACK not accepted'}
           if(-not (Test-Path -LiteralPath $workspace -PathType Container)){throw 'Case 0005 workspace still missing after durable ACK'}
           $receiptDir=Join-Path $workspace 'evidence'; New-Item -ItemType Directory -Force -Path $receiptDir | Out-Null
-          $receipt=@{schema='openworker/oda-upgrade-case0005-bootstrap/v1'; service_commit=$env:GITHUB_SHA; machine=$env:COMPUTERNAME; verified_at=[DateTimeOffset]::UtcNow.ToString('o'); ack=$ack}
+          $status=Invoke-RestMethod 'http://127.0.0.1:8787/v1/node/status'
+          if(-not $status.service.upgrade_verified){throw 'refusing case bootstrap receipt without verified service upgrade'}
+          $receipt=@{schema='openworker/oda-upgrade-case0005-bootstrap/v2'; service_commit=$status.service.running_commit; target_commit=$status.service.target_commit; upgrade_status=$status.service.upgrade_status; upgrade_verified=$status.service.upgrade_verified; service_started_at=$status.service.service_started_at; supervisor_api_version=$status.service.supervisor_api_version; machine=$env:COMPUTERNAME; verified_at=[DateTimeOffset]::UtcNow.ToString('o'); ack=$ack}
           $receipt | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $receiptDir 'oda-upgrade-case0005-bootstrap.json') -Encoding utf8
           $ack | ConvertTo-Json -Depth 20
