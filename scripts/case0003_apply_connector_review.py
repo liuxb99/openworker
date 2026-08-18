@@ -1,4 +1,10 @@
-"""Apply a ChatGPT review grounded by the connected Google Drive."""
+"""Apply a ChatGPT review grounded by the connected Google Drive.
+
+PASS accepts the exact immutable review revision, but does not mark the WorkLedger
+as delivered. Final delivery is a separate fail-closed step that binds the
+accepted revision to the current Engineering OS Delivery receipt and the exact
+Google Drive cloud publication identity.
+"""
 from __future__ import annotations
 import argparse, json, sys
 from pathlib import Path
@@ -36,11 +42,31 @@ def main(argv=None):
         if revision["work_id"]!=work["work_id"]: raise RuntimeError("revision does not belong to Case 0003 work")
         result=apply_review_finding(ReviewCycle(workspace),ledger,revision_id,receipt,allowed_parameter_keys=request.get("allowed_parameter_keys") or [],current_parameters=request.get("current_parameters") or {})
         verdict=str(result.get("verdict") or "").upper(); accepted_revision_id=""
-        if verdict=="PASS": accepted_revision_id=ledger.accept_revision(revision_id)["revision_id"]; status="ACCEPTED"
+        if verdict=="PASS":
+            accepted_revision_id=ledger.accept_revision(revision_id)["revision_id"]
+            status="ACCEPTED_PENDING_FINALIZE"
         elif verdict=="TUNE": status="TUNING_REQUIRED"
         else: status="TOOL_GAP_REWORK_REQUIRED" if result.get("finding_type")=="TOOL_GAP" else "REWORK_REQUIRED"
-        output={"schema_version":"openworker-case0003-connector-review-apply/v1","case_id":"0003","revision_id":revision_id,"verdict":str(receipt.get("verdict") or "").upper(),"finding_type":result.get("finding_type",receipt.get("verdict")),"status":status,"accepted_revision_id":accepted_revision_id,"next_revision_id":result.get("next_revision_id",""),"owning_repo":result.get("owning_repo",""),"gap_capability":result.get("gap_capability",""),"verification_plan":result.get("verification_plan",[]),"cloud_publication":cloud,"ledger":ledger.snapshot(work["work_id"])}
-        out=workspace/"acceptance"/"openworker-final"/f"connector-review-apply-{revision_id}.json"; out.parent.mkdir(parents=True,exist_ok=True); out.write_text(json.dumps(output,ensure_ascii=False,indent=2,default=str),encoding="utf-8"); print(json.dumps(output,ensure_ascii=False,sort_keys=True,default=str)); return 0 if verdict=="PASS" else 4
+        output={
+            "schema_version":"openworker-case0003-connector-review-apply/v2",
+            "case_id":"0003",
+            "revision_id":revision_id,
+            "verdict":str(receipt.get("verdict") or "").upper(),
+            "finding_type":result.get("finding_type",receipt.get("verdict")),
+            "status":status,
+            "accepted_revision_id":accepted_revision_id,
+            "delivered_revision_id":"",
+            "next_revision_id":result.get("next_revision_id",""),
+            "owning_repo":result.get("owning_repo",""),
+            "gap_capability":result.get("gap_capability",""),
+            "verification_plan":result.get("verification_plan",[]),
+            "bundle_manifest_sha256":receipt.get("bundle_manifest_sha256",""),
+            "cloud_publication":cloud,
+            "ledger":ledger.snapshot(work["work_id"]),
+        }
+        out=workspace/"acceptance"/"openworker-final"/f"connector-review-apply-{revision_id}.json"; out.parent.mkdir(parents=True,exist_ok=True); out.write_text(json.dumps(output,ensure_ascii=False,indent=2,default=str),encoding="utf-8")
+        latest=workspace/"acceptance"/"openworker-final"/"connector-review-apply.json"; latest.write_text(json.dumps(output,ensure_ascii=False,indent=2,default=str),encoding="utf-8")
+        print(json.dumps(output,ensure_ascii=False,sort_keys=True,default=str)); return 0 if verdict=="PASS" else 4
     finally: ledger.close()
 if __name__=="__main__":
     try: raise SystemExit(main())
