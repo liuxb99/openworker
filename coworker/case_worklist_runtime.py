@@ -10,7 +10,7 @@ import json
 import os
 from pathlib import Path
 import time
-from typing import Iterable, Iterator
+from typing import Iterable, Iterator, Mapping
 
 from .case_worklist import CaseWorklist, CaseWorklistError, CaseWorklistStore, StepStatus
 
@@ -136,6 +136,35 @@ class CaseWorklistRuntime:
             step.evidence.pop(_ACTIVE_ACTION_KEY, None)
             step.evidence.pop(_ACTIVE_EXECUTION_KEY, None)
             worklist.revision += 1
+            self.store.save(worklist)
+            return worklist
+
+    def accept_action_evidence(
+        self,
+        step_id: str,
+        action_id: str,
+        *,
+        execution_id: str,
+        evidence: Mapping[str, object],
+    ) -> CaseWorklist:
+        """Atomically persist validated evidence, complete the active action, and PASS.
+
+        Validation of tool-specific evidence must happen before this method. This
+        method owns the Worklist transaction so an ownership mismatch or missing
+        acceptance key cannot leave a partially accepted step on disk.
+        """
+        if not evidence:
+            raise CaseWorklistError("accepted action evidence cannot be empty")
+        with self.lock():
+            worklist = self.store.load()
+            step = worklist.step(step_id)
+            self._assert_active(step, action_id, execution_id)
+            for key, value in evidence.items():
+                worklist.record_evidence(step_id, key, value)
+            step.evidence.pop(_ACTIVE_ACTION_KEY, None)
+            step.evidence.pop(_ACTIVE_EXECUTION_KEY, None)
+            worklist.revision += 1
+            worklist.pass_step(step_id)
             self.store.save(worklist)
             return worklist
 
