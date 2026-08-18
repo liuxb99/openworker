@@ -4,7 +4,8 @@ param(
   [string]$InstallDir = 'C:\ProgramData\OpenWorker\bin',
   [string]$DataDir = 'C:\ProgramData\OpenWorker\node',
   [string]$Listen = '127.0.0.1:8787',
-  [int]$Workers = 4
+  [int]$Workers = 4,
+  [string]$Capabilities = ''
 )
 
 $ErrorActionPreference='Stop'
@@ -23,7 +24,9 @@ if($svc){
   }
 }
 Copy-Item -LiteralPath $SourceExe -Destination $target -Force
-$bin='"{0}" -service -listen {1} -data "{2}" -workers {3}' -f $target,$Listen,$DataDir,$Workers
+$capArg=''
+if(-not [string]::IsNullOrWhiteSpace($Capabilities)){$capArg=' -capabilities "{0}"' -f $Capabilities.Replace('"','')}
+$bin='"{0}" -service -listen {1} -data "{2}" -workers {3}{4}' -f $target,$Listen,$DataDir,$Workers,$capArg
 if(-not $svc){
   sc.exe create $ServiceName binPath= $bin start= auto DisplayName= 'OpenWorker Local Execution Node' | Out-Host
   if($LASTEXITCODE -ne 0){throw "sc create failed rc=$LASTEXITCODE"}
@@ -44,13 +47,14 @@ for($i=0;$i -lt 30;$i++){
 }
 if(-not $ok){throw "Service is running but health check failed: $health"}
 [ordered]@{
-  schema='openworker.windows-service-install.v1'
+  schema='openworker.windows-service-install.v2'
   service=$ServiceName
   status=(Get-Service -Name $ServiceName).Status.ToString()
   exe=$target
   data_dir=$DataDir
   listen=$Listen
   workers=$Workers
+  capabilities=$Capabilities
   machine=$env:COMPUTERNAME
   health=$h
 }|ConvertTo-Json -Depth 8
