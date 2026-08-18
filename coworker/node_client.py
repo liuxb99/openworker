@@ -43,3 +43,12 @@ class OpenWorkerNodeClient:
         return self._request("GET","/v1/cluster/control-events",params=p)
     def cluster_endpoints(self)->dict[str,Any]: return self._request("GET","/v1/cluster/endpoints")
     def cluster_connectivity(self,limit:int=200)->dict[str,Any]: return self._request("GET","/v1/cluster/connectivity",params={"limit":limit})
+    def supervisor_session(self,supervisor_id:str,session_id:str,model:str,current_goal:str="")->dict[str,Any]:
+        return self._request("POST","/v1/supervisor/session",json={"supervisor_id":supervisor_id,"session_id":session_id,"model":model,"current_goal":current_goal})
+    def supervisor_heartbeat(self,supervisor_id:str,session_id:str,current_goal:str="")->dict[str,Any]:
+        return self._request("POST","/v1/supervisor/heartbeat",json={"supervisor_id":supervisor_id,"session_id":session_id,"current_goal":current_goal})
+    def supervisor_snapshot(self,supervisor_id:str)->dict[str,Any]: return self._request("GET","/v1/supervisor/snapshot",params={"supervisor_id":supervisor_id})
+    def supervisor_jobs(self,supervisor_id:str)->dict[str,Any]: return self._request("GET","/v1/supervisor/jobs",params={"supervisor_id":supervisor_id})
+    def supervisor_recover(self,supervisor_id:str,session_id:str="")->dict[str,Any]: return self._request("POST","/v1/supervisor/recover",json={"supervisor_id":supervisor_id,"session_id":session_id})
+    def supervisor_decision(self,payload:dict[str,Any])->dict[str,Any]: return self._request("POST","/v1/supervisor/decision",json=payload)
+    def supervisor_decisions(self,supervisor_id:str,limit:int=100)->dict[str,Any]: return self._request("GET","/v1/supervisor/decisions",params={"supervisor_id":supervisor_id,"limit":limit})
