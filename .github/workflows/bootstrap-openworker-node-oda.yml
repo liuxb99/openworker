@@ -16,12 +16,15 @@ on:
         description: Comma-separated reachable OpenWorker node URLs
         required: false
         type: string
+  push:
+    branches: [main]
 
 permissions:
   contents: read
 
 jobs:
   install:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[bootstrap-oda-node]')
     runs-on: [self-hosted, Windows, X64, ODA]
     timeout-minutes: 15
     steps:
@@ -44,7 +47,7 @@ jobs:
       - name: Install or upgrade OpenWorkerNode service
         shell: powershell
         env:
-          LISTEN: ${{ inputs.listen }}
+          LISTEN: ${{ inputs.listen || '127.0.0.1:8787' }}
           ADVERTISE: ${{ inputs.advertise }}
           PEERS: ${{ inputs.peers }}
         run: |
