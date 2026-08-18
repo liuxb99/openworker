@@ -1,0 +1,48 @@
+name: OpenWorker Go Runtime P0
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'go-runtime/**'
+      - '.github/workflows/openworker-go-runtime-p0.yml'
+
+jobs:
+  verify-go-runtime:
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: go-runtime
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show machine and Action workspace
+        shell: powershell
+        run: |
+          Write-Host "COMPUTERNAME=$env:COMPUTERNAME"
+          Write-Host "GITHUB_WORKSPACE=$env:GITHUB_WORKSPACE"
+          Write-Host "PWD=$PWD"
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+          cache-dependency-path: go-runtime/go.sum
+
+      - name: Go mod tidy
+        shell: powershell
+        run: go mod tidy
+
+      - name: Build openworker-node
+        shell: powershell
+        run: go build ./cmd/openworker-node
+
+      - name: Run P0 tests
+        shell: powershell
+        run: go test ./... -count=1 -v
+
+      - name: Verify four-worker concurrency test explicitly
+        shell: powershell
+        run: go test ./internal/runtime -run TestFourWorkersRunAndFifthQueues -count=1 -v
