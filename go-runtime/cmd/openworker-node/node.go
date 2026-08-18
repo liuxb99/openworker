@@ -1,23 +1,11 @@
 package main
 
-import (
- "context"
- "errors"
- "fmt"
- "log"
- "net/http"
- "os"
- "path/filepath"
- "strings"
- "time"
-
- "github.com/liuxb99/openworker/go-runtime/internal/api"
- "github.com/liuxb99/openworker/go-runtime/internal/cluster"
- owruntime "github.com/liuxb99/openworker/go-runtime/internal/runtime"
- "github.com/liuxb99/openworker/go-runtime/internal/store"
+import(
+ "context";"errors";"fmt";"log";"net";"net/http";"os";"path/filepath";"strings";"time"
+ "github.com/liuxb99/openworker/go-runtime/internal/api";"github.com/liuxb99/openworker/go-runtime/internal/cluster";owruntime "github.com/liuxb99/openworker/go-runtime/internal/runtime";"github.com/liuxb99/openworker/go-runtime/internal/store"
 )
-
-type nodeConfig struct { Listen string; DataDir string; Workers int; Capabilities string; Peers string }
+type nodeConfig struct{Listen string;DataDir string;Workers int;Capabilities string;Peers string}
 func normalizeConfig(cfg nodeConfig)(nodeConfig,error){if cfg.Listen==""{cfg.Listen="127.0.0.1:8787"};if cfg.Workers<=0{cfg.Workers=4};if cfg.DataDir==""{if v:=os.Getenv("OPENWORKER_NODE_DATA");v!=""{cfg.DataDir=v}else{cfg.DataDir=filepath.Join(os.TempDir(),"openworker-node")}};if cfg.Capabilities==""{cfg.Capabilities=os.Getenv("OPENWORKER_NODE_CAPABILITIES")};if cfg.Peers==""{cfg.Peers=os.Getenv("OPENWORKER_CLUSTER_PEERS")};if err:=os.MkdirAll(cfg.DataDir,0755);err!=nil{return cfg,err};return cfg,nil}
 func splitPeers(v string)[]string{out:=[]string{};for _,x:=range strings.Split(v,","){if x=strings.TrimSpace(x);x!=""{out=append(out,x)}};return out}
-func runNode(ctx context.Context,cfg nodeConfig)error{cfg,err:=normalizeConfig(cfg);if err!=nil{return err};if cfg.Capabilities!=""{_=os.Setenv("OPENWORKER_NODE_CAPABILITIES",cfg.Capabilities)};machine,err:=os.Hostname();if err!=nil{return err};st,err:=store.Open(filepath.Join(cfg.DataDir,"openworker-node.sqlite3"));if err!=nil{return err};defer st.Close();rt:=owruntime.New(st,cfg.Workers,filepath.Join(cfg.DataDir,"logs"),machine);if err:=rt.Start();err!=nil{return err};defer rt.Stop();cc:=cluster.NewController(splitPeers(cfg.Peers));cc.Start(ctx);defer cc.Stop();srv:=&http.Server{Addr:cfg.Listen,Handler:api.New(st,rt,machine,cc).Handler(),ReadHeaderTimeout:5*time.Second};errCh:=make(chan error,1);go func(){log.Printf("openworker-node machine=%s listen=%s workers=%d data=%s capabilities=%s peers=%s",machine,cfg.Listen,cfg.Workers,cfg.DataDir,cfg.Capabilities,cfg.Peers);if e:=srv.ListenAndServe();e!=nil&&!errors.Is(e,http.ErrServerClosed){errCh<-e;return};errCh<-nil}();select{case<-ctx.Done():shutdownCtx,cancel:=context.WithTimeout(context.Background(),10*time.Second);defer cancel();if err:=srv.Shutdown(shutdownCtx);err!=nil{return fmt.Errorf("http shutdown: %w",err)};return nil;case err:=<-errCh:return err}}
+func localEndpoint(listen string)string{host,port,err:=net.SplitHostPort(listen);if err!=nil{return "http://127.0.0.1:8787"};if host==""||host=="0.0.0.0"||host=="::"{host="127.0.0.1"};return "http://"+net.JoinHostPort(host,port)}
+func runNode(ctx context.Context,cfg nodeConfig)error{cfg,err:=normalizeConfig(cfg);if err!=nil{return err};if cfg.Capabilities!=""{_=os.Setenv("OPENWORKER_NODE_CAPABILITIES",cfg.Capabilities)};machine,err:=os.Hostname();if err!=nil{return err};st,err:=store.Open(filepath.Join(cfg.DataDir,"openworker-node.sqlite3"));if err!=nil{return err};defer st.Close();rt:=owruntime.New(st,cfg.Workers,filepath.Join(cfg.DataDir,"logs"),machine);if err:=rt.Start();err!=nil{return err};defer rt.Stop();peers:=append([]string{localEndpoint(cfg.Listen)},splitPeers(cfg.Peers)...);cc:=cluster.NewController(peers);cc.Start(ctx);defer cc.Stop();srv:=&http.Server{Addr:cfg.Listen,Handler:api.New(st,rt,machine,cc).Handler(),ReadHeaderTimeout:5*time.Second};errCh:=make(chan error,1);go func(){log.Printf("openworker-node machine=%s listen=%s workers=%d data=%s capabilities=%s peers=%s",machine,cfg.Listen,cfg.Workers,cfg.DataDir,cfg.Capabilities,cfg.Peers);if e:=srv.ListenAndServe();e!=nil&&!errors.Is(e,http.ErrServerClosed){errCh<-e;return};errCh<-nil}();select{case<-ctx.Done():shutdownCtx,cancel:=context.WithTimeout(context.Background(),10*time.Second);defer cancel();if err:=srv.Shutdown(shutdownCtx);err!=nil{return fmt.Errorf("http shutdown: %w",err)};return nil;case err:=<-errCh:return err}}
