@@ -2,7 +2,8 @@
 
 The durable business queue is go-tool :8848. A missing/failed OpenWorker
 coordinator must never cause the business children to be submitted again.
-This mixin repairs only the lightweight coordinator process.
+A BLOCKED fanout may be resumed only after every manifest child is proven to
+already exist in :8848 with matching host/capability identity.
 """
 from __future__ import annotations
 
@@ -13,6 +14,41 @@ from .case_worklist import StepStatus
 
 
 class Case0005CoordinatorRecoveryMixin:
+    def _prove_all_queue_children(self, manifest: Mapping[str, Any]) -> dict[str, Any] | None:
+        jobs = manifest.get("jobs")
+        if not isinstance(jobs, list) or not jobs:
+            return None
+        expected_host = str(manifest.get("assigned_host", "")).strip()
+        expected_capability = str(manifest.get("action_id", "")).strip()
+        proven: list[dict[str, Any]] = []
+        for raw in jobs:
+            if not isinstance(raw, Mapping):
+                return None
+            work_id = str(raw.get("queue_work_id", "")).strip()
+            if not work_id:
+                return None
+            try:
+                item = self._queue_get(work_id)
+            except Exception:
+                return None
+            if str(item.get("work_id", "")).strip() != work_id:
+                return None
+            if str(item.get("assigned_host", "")).strip().lower() != expected_host.lower():
+                return None
+            if str(item.get("capability_id", "")).strip() != expected_capability:
+                return None
+            status = str(item.get("status", "")).strip().lower()
+            if status not in {"pending", "claimed", "completed", "failed"}:
+                return None
+            proven.append({"work_id": work_id, "status": status, "attempts": item.get("attempts", 0)})
+        return {
+            "queue_authority": "go-tool-runtime:8848",
+            "all_manifest_children_durable": True,
+            "child_count": len(proven),
+            "children": proven,
+            "business_children_resubmitted": False,
+        }
+
     def _resume_queue_owned_coordinators(self) -> list[dict[str, Any]]:
         worklist = self.runtime.load()
         fanout_root = self.workspace / ".openworker" / "fanout"
@@ -29,18 +65,47 @@ class Case0005CoordinatorRecoveryMixin:
                 continue
             step_id = str(manifest.get("step_id", "")).strip()
             group_id = str(manifest.get("group_execution_id", "")).strip()
-            if not step_id or not group_id:
+            action = str(manifest.get("action_id", "")).strip()
+            if not step_id or not group_id or not action:
                 continue
             try:
                 step = worklist.step(step_id)
             except Exception:
                 continue
+
+            if step.status == StepStatus.BLOCKED:
+                proof = self._prove_all_queue_children(manifest)
+                if proof is None:
+                    self._append_ledger(
+                        "queue_fanout_blocked_not_resumable",
+                        step_id=step_id,
+                        group_execution_id=group_id,
+                        blocker=step.blocker,
+                        reason="not every manifest child is durably present in :8848 with matching identity",
+                    )
+                    continue
+                self.runtime.resume_blocked_action(
+                    step_id,
+                    action,
+                    execution_id=group_id,
+                    recovery_evidence=proof,
+                )
+                entry = {
+                    "step_id": step_id,
+                    "group_execution_id": group_id,
+                    "action": "resumed_blocked_from_complete_queue_proof",
+                    "proof": proof,
+                }
+                recovered.append(entry)
+                self._append_ledger("queue_fanout_resumed", **entry, execution_route="local_supervisor")
+                worklist = self.runtime.load()
+                step = worklist.step(step_id)
+
             if step.status != StepStatus.RUNNING:
                 continue
             active = str(step.evidence.get("__openworker_active_execution", "") or "").strip()
             if active != group_id:
                 continue
-            action = str(manifest.get("action_id", "")).strip()
             kind = "video" if action == "comfyx.production.video.real" else "image"
             timeout = 14400 if kind == "video" else 5400
             coordinator_id = f"{group_id}--queue-coordinator"
