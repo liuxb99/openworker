@@ -21,10 +21,10 @@ Case 0004 已有 REAL overview：
 local artifact -> Google Drive -> receipt -> ChatGPT connector review
 ```
 
-目前存在兩條不一致路線：
+原本存在兩條不一致路線：
 
 1. `ReviewCycle.handoff_to_drive_sync()`：只 copy 到 Google Drive Desktop 的同步資料夾，依賴 Desktop client 是否安裝、是否登入、是否同步完成。
-2. `case0004_publish_overview_drive.ps1`：直接打 Drive API，但要求呼叫方事先提供短效 `OPENWORKER_GOOGLE_DRIVE_ACCESS_TOKEN`，案例腳本自己承擔 transport 與認證。
+2. 舊版 `case0004_publish_overview_drive.ps1`：直接打 Drive API，但要求呼叫方事先提供短效 `OPENWORKER_GOOGLE_DRIVE_ACCESS_TOKEN`，案例腳本自己承擔 transport 與認證。
 
 這會造成每個案例重複造 transport、token 過期、receipt schema 不一致、無法由 go-tool 統一查 capability。
 
@@ -63,7 +63,7 @@ ChatGPT Google Drive connector
 
 ## 3. CLI V1
 
-第一批必須完成：
+已實作：
 
 ```text
 openworker-drive auth-check
@@ -73,13 +73,7 @@ openworker-drive download <file-id> --output PATH
 openworker-drive review-publish <file-or-directory> --work-code CODE [--folder-id ID] [--receipt PATH]
 ```
 
-之後可再將相同 parser 掛入：
-
-```text
-openworker drive ...
-```
-
-V1 先以獨立 console script 保持最小改動與可測試性。
+V1 先以獨立 console script 保持最小改動與可測試性；後續可再把相同 parser 掛入 `openworker drive ...`。
 
 ## 4. OAuth / Credential contract
 
@@ -114,7 +108,7 @@ CLI 可用 `--folder-id` 覆蓋，或使用：
 
 ## 6. Canonical receipt
 
-單檔 upload 成功必須產生：
+單檔 upload 成功產生：
 
 ```json
 {
@@ -153,11 +147,12 @@ CLI 可用 `--folder-id` 覆蓋，或使用：
 
 ### 目錄
 
-V1 不依賴 Google Drive directory recursive API。先 deterministic 打包成 ZIP：
+V1 deterministic 打包成 ZIP：
 
 ```text
 source directory
--> deterministic inventory
+-> sorted deterministic inventory
+-> fixed ZIP timestamps/permissions
 -> ZIP
 -> SHA256
 -> upload
@@ -168,7 +163,7 @@ source directory
 
 ## 8. go-tool capabilities
 
-go-tool 應新增/更新：
+已新增：
 
 ```text
 drive.auth.check
@@ -192,15 +187,13 @@ Negative knowledge：
 
 `ReviewCycle.build_bundle()`、review governance、WorkLedger 不重寫。
 
-要改的是 transport boundary：
-
-舊：
+舊 transport：
 
 ```text
 ReviewCycle bundle -> handoff_to_drive_sync() -> local Desktop sync folder
 ```
 
-新 canonical：
+新 canonical transport：
 
 ```text
 ReviewCycle bundle -> drive.review.publish -> Drive API -> receipt
@@ -210,7 +203,19 @@ ReviewCycle bundle -> drive.review.publish -> Drive API -> receipt
 
 ## 10. Case 0004 驗證案例
 
-補完 CLI 後第一個 REAL 驗證：
+Case 0004 wrapper 已改成：
+
+```text
+固定 O87
+-> 驗證 overview 存在/非空
+-> 驗證 authority SHA256
+-> python -m coworker.google_drive_cli upload
+-> 驗證 canonical receipt
+```
+
+不再自行組 multipart，也不再自行要求短效 access token。
+
+REAL 驗證命令等價於：
 
 ```text
 openworker-drive upload \
@@ -227,26 +232,53 @@ openworker-drive upload \
 4. receipt 有 Drive file id + source SHA256
 5. 才進入 `0004-045 cad.build_story_index`
 
-## 11. V1 實作批次
+## 11. 本輪實作紀錄
 
-本批：
+### OpenWorker
 
-- 新增 `coworker/google_drive_transport.py`
-- 新增 `coworker/google_drive_cli.py`
-- 新增 `openworker-drive` console entrypoint
-- OAuth refresh / authorized_user credential file
-- upload / list / download / review-publish
-- atomic receipt
-- 單元測試：credential resolution、receipt secret hygiene、upload size validation、directory ZIP
+- P0 設計文檔：commit `eba124e801d063626be6123971551077298038ae`
+- `coworker/google_drive_transport.py`：commit `d9559d46e17116588441ca27da86e09ba0b5389f`
+- `coworker/google_drive_cli.py`：commit `f04d311d235c53ef7af7a2ee5c1e65c51ab8a4b5`
+- `openworker-drive` console entrypoint：commit `7cf7af74db710c6badfd8acb7d0a044c524a4031`
+- transport contract tests：commit `3ae1d1ec95d0fa5203dd1fba3694e6f4e62da64f`
+- Case 0004 wrapper 切換 canonical CLI：commit `e05ddc6dbe5ae9a9046a8fa6dc3b17b7bdd9010e`
 
-下一批：
+### go-tool-runtime
 
-- go-tool capability 登記
-- OpenWorker durable action wrapper
-- Case 0004 REAL upload
-- 讓 `ReviewCycle` canonical transport 切到 Drive API
+- Drive capabilities：commit `77ca2bfe9a2d76a788d55e6ae2d753dcdffa0ddb`
 
-## 12. 完成定義
+## 12. 已補與尚未驗證
+
+### 已補代碼缺口
+
+```text
+CLI
++ OAuth refresh
++ authorized_user credential file
++ upload/list/download
++ deterministic review-publish
++ atomic receipt
++ secret hygiene
++ go-tool discoverability
++ Case0004 wrapper canonicalization
+```
+
+### 尚未宣告完成
+
+目前這個對話工具面無法直接執行 O87 localhost OpenWorker，也沒有 O87 的 OAuth credential runtime，因此以下仍需 REAL runtime 驗證：
+
+```text
+O87 auth-check
+-> REAL upload
+-> Drive list
+-> ChatGPT connector visibility
+-> receipt 驗證
+-> Case0004 overview multimodal review
+```
+
+在 REAL 驗證前，P0 狀態為 **IMPLEMENTED — WAITING FOR REAL O87 VERIFICATION**，不能標 CLOSED。
+
+## 13. 完成定義
 
 P0 缺口只有在以下都成立才算 CLOSED：
 
