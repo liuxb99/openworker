@@ -20,7 +20,11 @@
     "required_execution_route": "local_supervisor",
     "route_query_endpoint": "http://127.0.0.1:8848/api/execution/route",
     "verification_endpoint": "http://127.0.0.1:8848/api/execution/local-supervisor/verification",
+    "status_endpoint": "http://127.0.0.1:8848/api/execution/local-supervisor/status",
     "required_verification_status": "REAL_VERIFIED",
+    "required_supervisor_status": "OPERATIONAL",
+    "required_fresh_claim_slots": 4,
+    "required_fresh_executor_slots": 4,
     "max_parallel_actions": 4,
     "fanout_queue_owner": "go-tool-runtime:8848",
     "fanout_submit_all_children_before_coordinator": true,
@@ -37,6 +41,7 @@
     "success_requires_local_route_evidence": true,
     "success_requires_append_only_supervisor_ledger": true,
     "success_requires_real_four_slot_verification": true,
+    "success_requires_current_operational_four_plus_four_heartbeats": true,
     "success_requires_queue_owned_fanout": true
   }
 }
