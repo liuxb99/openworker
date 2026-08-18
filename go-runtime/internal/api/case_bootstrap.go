@@ -136,7 +136,7 @@ func (s *Server) caseBootstrap(w http.ResponseWriter, r *http.Request) {
         writeErr(w, http.StatusConflict, err)
         return
     }
-    _ = s.store.RecordEvent(jobID, "case_bootstrap_accepted", "workspace materialized before durable ACK")
+    s.store.RecordEvent(jobID, "case_bootstrap_accepted", "workspace materialized before durable ACK")
     writeJSON(w, http.StatusAccepted, map[string]any{
         "case_id": req.CaseID,
         "machine": s.machine,
