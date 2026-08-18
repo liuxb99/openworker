@@ -19,10 +19,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Parse allowlisted command
-        id: parse
+      - name: Execute allowlisted OpenWorker control command
         shell: bash
         env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
           BODY: ${{ github.event.pull_request.body }}
         run: |
           set -euo pipefail
@@ -31,48 +33,62 @@ jobs:
             drain|reconcile|upgrade) ;;
             *) echo "unsupported or missing command: $command" >&2; exit 2 ;;
           esac
-          echo "command=$command" >> "$GITHUB_OUTPUT"
 
-      - name: Dispatch allowlisted OpenWorker workflow
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          COMMAND: ${{ steps.parse.outputs.command }}
-        run: |
-          set -euo pipefail
-          case "$COMMAND" in
-            drain) workflow='bootstrap-ul7-runner-label.yml' ;;
-            reconcile) workflow='bootstrap-three-node-labels-v2.yml' ;;
-            upgrade) workflow='upgrade-openworker-nodes-v2.yml' ;;
-          esac
-          api="https://api.github.com/repos/${REPO}/actions/workflows/${workflow}/dispatches"
-          code=$(curl -sS -o /tmp/dispatch-response -w '%{http_code}' \
-            -X POST \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H 'Accept: application/vnd.github+json' \
-            -H 'X-GitHub-Api-Version: 2022-11-28' \
-            "$api" \
-            -d '{"ref":"main"}')
-          if [ "$code" != '204' ]; then
-            cat /tmp/dispatch-response || true
-            echo "workflow dispatch failed command=${COMMAND} workflow=${workflow} http=${code}" >&2
-            exit 1
+          api="https://api.github.com/repos/${REPO}"
+          auth=(-H "Authorization: Bearer ${GH_TOKEN}" -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28')
+          result=''
+
+          if [ "$command" = 'drain' ]; then
+            runs=$(curl -fsSL "${auth[@]}" "${api}/actions/runs?per_page=100")
+            ids=$(printf '%s' "$runs" | jq -r --arg current "$GITHUB_RUN_ID" '.workflow_runs[] | select((.id|tostring) != $current and (.status == "queued" or .status == "in_progress")) | .id')
+            count=0
+            while read -r id; do
+              [ -z "$id" ] && continue
+              code=$(curl -sS -o /tmp/cancel-response -w '%{http_code}' -X POST "${auth[@]}" "${api}/actions/runs/${id}/cancel")
+              if [ "$code" != '202' ] && [ "$code" != '409' ]; then
+                cat /tmp/cancel-response || true
+                exit 1
+              fi
+              count=$((count+1))
+            done <<< "$ids"
+            result="cancelled active runs: ${count}"
+          else
+            runners=$(curl -fsSL "${auth[@]}" "${api}/actions/runners?per_page=100")
+            targets='[{"node":"ul7","prefix":"DESKTOP-UL7V2VV","label":"UL7"},{"node":"o87","prefix":"DESKTOP-O87PJNR","label":"O87"},{"node":"oda","prefix":"DESKTOP-ODAQN0D","label":"ODA"}]'
+            registry='[]'
+            while IFS=$'\t' read -r node prefix label; do
+              matches=$(printf '%s' "$runners" | jq --arg p "$prefix" '[.runners[] | select(.name | startswith($p))]')
+              if [ "$(printf '%s' "$matches" | jq 'length')" = '0' ]; then
+                row=$(jq -nc --arg n "$node" --arg p "$prefix" --arg l "$label" '{node:$n,machine_prefix:$p,registered:false,status:"missing",busy:false,required_label:$l,labels:[]}')
+                registry=$(jq -nc --argjson a "$registry" --argjson r "$row" '$a + [$r]')
+                continue
+              fi
+              while IFS= read -r runner; do
+                id=$(printf '%s' "$runner" | jq -r '.id')
+                name=$(printf '%s' "$runner" | jq -r '.name')
+                status=$(printf '%s' "$runner" | jq -r '.status')
+                busy=$(printf '%s' "$runner" | jq -r '.busy')
+                labels=$(printf '%s' "$runner" | jq '[.labels[].name]')
+                if ! printf '%s' "$labels" | jq -e --arg l "$label" 'index($l) != null' >/dev/null; then
+                  labels=$(printf '%s' "$labels" | jq --arg l "$label" '. + [$l] | unique')
+                  curl -fsSL -X PUT "${auth[@]}" -H 'Content-Type: application/json' "${api}/actions/runners/${id}/labels" -d "$(jq -nc --argjson l "$labels" '{labels:$l}')" >/dev/null
+                fi
+                row=$(jq -nc --arg n "$node" --arg p "$prefix" --arg l "$label" --arg name "$name" --arg s "$status" --argjson b "$busy" --argjson ls "$labels" '{node:$n,machine_prefix:$p,registered:true,runner:$name,status:$s,busy:$b,required_label:$l,labels:$ls}')
+                registry=$(jq -nc --argjson a "$registry" --argjson r "$row" '$a + [$r]')
+              done < <(printf '%s' "$matches" | jq -c '.[]')
+            done < <(printf '%s' "$targets" | jq -r '.[] | [.node,.prefix,.label] | @tsv')
+            result=$(printf '%s' "$registry" | jq -c '.')
+
+            if [ "$command" = 'upgrade' ]; then
+              code=$(curl -sS -o /tmp/dispatch-response -w '%{http_code}' -X POST "${auth[@]}" "${api}/actions/workflows/upgrade-openworker-nodes-v2.yml/dispatches" -d '{"ref":"main"}')
+              if [ "$code" != '204' ]; then
+                cat /tmp/dispatch-response || true
+                echo "upgrade workflow dispatch failed http=${code}" >&2
+                exit 1
+              fi
+            fi
           fi
-          echo "OPENWORKER_CONTROL_DISPATCH_PASS command=${COMMAND} workflow=${workflow}"
 
-      - name: Comment control acknowledgement
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          PR: ${{ github.event.pull_request.number }}
-          COMMAND: ${{ steps.parse.outputs.command }}
-        run: |
-          set -euo pipefail
-          curl -fsSL -X POST \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H 'Accept: application/vnd.github+json' \
-            -H 'X-GitHub-Api-Version: 2022-11-28' \
-            "https://api.github.com/repos/${REPO}/issues/${PR}/comments" \
-            -d "$(jq -nc --arg c "$COMMAND" --arg r "$GITHUB_RUN_ID" '{body:("OpenWorker control accepted: `"+$c+"`. Dispatch source run: `"+$r+"`.")}')" >/dev/null
+          body=$(jq -nc --arg c "$command" --arg r "$GITHUB_RUN_ID" --arg result "$result" '{body:("OpenWorker control accepted: `"+$c+"`. Source run: `"+$r+"`.\n\nResult:\n```json\n"+$result+"\n```")}')
+          curl -fsSL -X POST "${auth[@]}" -H 'Content-Type: application/json' "${api}/issues/${PR}/comments" -d "$body" >/dev/null
+          echo "OPENWORKER_CONTROL_PASS command=${command}"
