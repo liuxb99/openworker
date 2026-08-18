@@ -1,0 +1,146 @@
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from coworker.case_worklist import CaseWorklistError
+from coworker.case_worklist_runtime import CaseWorklistRuntime
+
+_ACTION = "presentation.openmaic"
+_STAGE = {
+    "0002-025": {
+        "path": "storyboard_pptx",
+        "manifest": "storyboard_manifest",
+        "sha256": "storyboard_pptx_sha256",
+        "media": "image_count",
+        "require_media": False,
+    },
+    "0002-055": {
+        "path": "illustrated_storyboard_pptx",
+        "manifest": "illustrated_storyboard_manifest",
+        "sha256": "illustrated_storyboard_sha256",
+        "media": "bound_image_count",
+        "require_media": True,
+    },
+}
+
+
+def _text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _bounded_path(workspace: Path, value: Any, *, field: str) -> Path:
+    raw = _text(value)
+    if not raw:
+        raise CaseWorklistError(f"OpenMAIC receipt missing {field}")
+    candidate = Path(raw)
+    if not candidate.is_absolute():
+        candidate = workspace / candidate
+    resolved = candidate.resolve()
+    try:
+        resolved.relative_to(workspace)
+    except ValueError as exc:
+        raise CaseWorklistError(f"OpenMAIC {field} escapes workspace: {resolved}") from exc
+    return resolved
+
+
+def validate_receipt(workspace_root: str | Path, assigned_host: str, step_id: str, receipt: dict[str, Any]) -> dict[str, Any]:
+    cfg = _STAGE.get(step_id)
+    if cfg is None:
+        raise CaseWorklistError(f"OpenMAIC receipt is not valid for step {step_id!r}")
+    if _text(receipt.get("tool")) != _ACTION:
+        raise CaseWorklistError("OpenMAIC receipt tool mismatch")
+    if _text(receipt.get("status")).lower() != "succeeded":
+        raise CaseWorklistError("OpenMAIC receipt is not succeeded")
+
+    runner = receipt.get("runner")
+    if not isinstance(runner, dict):
+        raise CaseWorklistError("OpenMAIC receipt runner is missing")
+    actual_host = _text(runner.get("computer_name"))
+    if not actual_host or actual_host.casefold() != _text(assigned_host).casefold():
+        raise CaseWorklistError(
+            f"OpenMAIC host mismatch expected={assigned_host!r} actual={actual_host!r}"
+        )
+
+    artifact = receipt.get("artifact")
+    if not isinstance(artifact, dict):
+        raise CaseWorklistError("OpenMAIC receipt artifact is missing")
+    try:
+        slide_count = int(artifact.get("slide_count", 0))
+        media_count = int(artifact.get("media_count", -1))
+    except (TypeError, ValueError) as exc:
+        raise CaseWorklistError("OpenMAIC artifact counts are invalid") from exc
+    if slide_count <= 0:
+        raise CaseWorklistError("OpenMAIC slide_count must be positive")
+    if media_count < 0:
+        raise CaseWorklistError("OpenMAIC media_count is missing")
+    if cfg["require_media"] and media_count <= 0:
+        raise CaseWorklistError("illustrated storyboard requires media_count > 0")
+    if not cfg["require_media"] and media_count != 0:
+        raise CaseWorklistError("text-only storyboard requires media_count == 0")
+
+    sha256 = _text(artifact.get("sha256"))
+    if len(sha256) != 64 or any(ch not in "0123456789abcdefABCDEF" for ch in sha256):
+        raise CaseWorklistError("OpenMAIC artifact sha256 is invalid")
+
+    workspace = Path(workspace_root).resolve()
+    pptx = _bounded_path(workspace, artifact.get("path"), field="artifact.path")
+    manifest = _bounded_path(workspace, receipt.get("manifest"), field="manifest")
+
+    return {
+        cfg["path"]: str(pptx),
+        cfg["manifest"]: str(manifest),
+        cfg["sha256"]: sha256.lower(),
+        "slide_count": slide_count,
+        "reopen_receipt": receipt,
+        cfg["media"]: media_count,
+    }
+
+
+def apply_receipt(workspace_root: str | Path, step_id: str, execution_id: str, receipt: dict[str, Any]):
+    runtime = CaseWorklistRuntime(workspace_root)
+    current = runtime.load()
+    if current.case_id != "0002":
+        raise CaseWorklistError(f"case mismatch: {current.case_id!r}")
+    evidence = validate_receipt(current.workspace_root, current.assigned_host, step_id, receipt)
+    for key, value in evidence.items():
+        runtime.record(step_id, key, value)
+    runtime.complete_action(step_id, _ACTION, execution_id=execution_id)
+    return runtime.pass_step(step_id)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--workspace-root", required=True)
+    parser.add_argument("--step-id", required=True, choices=sorted(_STAGE))
+    parser.add_argument("--execution-id", required=True)
+    parser.add_argument("--receipt", required=True)
+    args = parser.parse_args()
+
+    receipt_path = Path(args.receipt).resolve()
+    raw = json.loads(receipt_path.read_text(encoding="utf-8-sig"))
+    if not isinstance(raw, dict):
+        raise CaseWorklistError("OpenMAIC receipt root must be an object")
+    worklist = apply_receipt(args.workspace_root, args.step_id, args.execution_id, raw)
+    data = worklist.as_dict()
+    print(json.dumps(data, ensure_ascii=False, indent=2))
+    print(
+        f"CASE0002_OPENMAIC_RECEIPT_APPLIED step={args.step_id} "
+        f"next={data['canonical_next_step_id']} receipt={receipt_path}"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except Exception as exc:
+        print(f"CASE0002_OPENMAIC_RECEIPT_FAIL: {exc}")
+        raise SystemExit(2)
