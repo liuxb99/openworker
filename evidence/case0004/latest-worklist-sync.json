@@ -1,0 +1,13 @@
+{
+    "schema_version":  "case0004.worklist-sync.v1",
+    "case_id":  "0004",
+    "run_id":  "32106206688",
+    "run_attempt":  "1",
+    "machine":  "DESKTOP-O87PJNR",
+    "runner":  "DESKTOP-O87PJNR-R003",
+    "workspace_root":  "D:\\AI-Work\\jobs\\0004-DWG-TO-3D",
+    "worklist_sha256":  "1c8946f7a23c8febcc85cf89908c2f0894c706b442698b6b2909fb798e21e96c",
+    "canonical_next_step_id":  "0004-045",
+    "source_commit":  "cd9a61e8a75f9757913664b957e813ad33bc2abd",
+    "result":  "PASS"
+}
