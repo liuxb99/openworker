@@ -3,8 +3,7 @@ param(
     [string]$OpenWorkerRoot = '',
     [string]$GoToolRoot = '',
     [string]$PythonExe = '',
-    [switch]$SkipCodeSync,
-    [switch]$SkipParallelVerification
+    [switch]$SkipCodeSync
 )
 
 $ErrorActionPreference = 'Stop'
@@ -56,13 +55,15 @@ if (-not $SkipCodeSync) {
     }
 }
 
+# Canonical activation always installs the binaries built from the currently
+# selected local checkout and reruns REAL verification. There is deliberately no
+# skip-verification switch: an older OPERATIONAL runtime must not be allowed to
+# masquerade as the current capability set.
 $installRoot = "$env:ProgramData\go-tool-runtime\work-agent"
 $realReceipt = Join-Path $installRoot 'true-local-supervisor-real-verification.json'
-if (-not $SkipParallelVerification) {
-    $installAndVerify = Join-Path $GoToolRoot 'scripts\windows\install-and-verify-true-local-supervisor.ps1'
-    & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $installAndVerify -MaxParallelActions 4 -InstallRoot $installRoot -OpenWorkerRoot $OpenWorkerRoot
-    if ($LASTEXITCODE -ne 0) { throw "true local supervisor install/REAL verification failed: $LASTEXITCODE" }
-}
+$installAndVerify = Join-Path $GoToolRoot 'scripts\windows\install-and-verify-true-local-supervisor.ps1'
+& powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $installAndVerify -MaxParallelActions 4 -InstallRoot $installRoot -OpenWorkerRoot $OpenWorkerRoot
+if ($LASTEXITCODE -ne 0) { throw "true local supervisor install/REAL verification failed: $LASTEXITCODE" }
 
 # Historical REAL verification alone is insufficient. Current runtime must expose
 # four fresh claim slots and four fresh executor slots now.
@@ -114,7 +115,7 @@ if (-not $routeProven) { throw 'Case 0005 did not materialize LOCAL_SUPERVISOR r
 $controlDir = Join-Path $Workspace '.openworker'; New-Item -ItemType Directory -Force -Path $controlDir | Out-Null
 $receiptPath = Join-Path $controlDir 'true-local-supervisor-activation.json'
 $receipt = [ordered]@{
-    schema_version = 'openworker-case0005-true-local-activation/v2'
+    schema_version = 'openworker-case0005-true-local-activation/v3'
     status = 'OPERATIONAL'
     case_id = '0005'
     machine = $actualHost
@@ -128,6 +129,7 @@ $receipt = [ordered]@{
     fresh_executor_slot_count = [int]$status.fresh_executor_slot_count
     github_action_used_for_business_execution = $false
     code_sync_transport = $(if ($SkipCodeSync) { 'skipped' } else { 'local-git-pull-ff-only' })
+    binaries_reinstalled_from_current_checkout = $true
     real_verification_receipt = $realReceipt
     supervisor_status = $status
     bootstrap_ack = $bootstrapAck
