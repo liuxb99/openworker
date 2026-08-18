@@ -2,7 +2,7 @@
 
 更新時間：2026-08-18 Asia/Taipei
 
-狀態：`IMPLEMENTING / GEO ACCEPTED / IMAGERY v3+v2 STRICT REAL QC REQUIRED / TERRAIN+CONSUMER+BLENDER+SCENEX LOCALIZED / OS+DRIVE REVIEW LOOP LOCALIZED / UL7 REAL REQUIRED`
+狀態：`IMPLEMENTING / GEO ACCEPTED / IMAGERY+TERRAIN+CONSUMER+RENDER STRICT CHAIN IMPLEMENTED / OS SOURCE-BINDING IMPLEMENTED / DRIVE REVIEW LOOP LOCALIZED / UL7 REAL REQUIRED`
 
 ## 1. Canonical authority
 
@@ -14,160 +14,136 @@
 - owning repos：真正 imagery / terrain / Blender / SceneX / OS logic authority。
 - GitHub Actions：CI / fallback / bootstrap / historical evidence；不是 canonical business execution plane。
 
-Canonical flow：
+Canonical current-chain：
 
 ```text
-OpenWorker local controller
-→ go-tool localexec
-→ physical workspace artifacts
-→ strict QC
-→ OS Registry / Review / Delivery
+GEO
+→ Imagery fingerprint
+→ Terrain fingerprint
+→ Consumer fingerprint
+→ Blender + SceneX render fingerprint
+→ OS artifact-ingest/v2 source_binding
+→ OS Review / Approval
+→ OS Delivery
 → immutable Drive review ZIP
-→ ChatGPT connector PASS/TUNE/FAIL/TOOL_GAP
-→ WorkLedger accept / deliver
+→ ChatGPT connector review
+→ WorkLedger final accept / deliver
 ```
 
 ## 2. Acceptance boundary
 
-目前 whole-case 歷史上只有 GEO 可稱 ACCEPTED：
+目前 whole-case 只有 GEO 可稱 ACCEPTED。Street View、Orthophoto、Terrain、Consumer、Blender、SceneX、OS Registry、OS Delivery 皆仍需 UL7 fresh REAL execution / physical QC。
 
-`D:\AI-Work\jobs\0003-YUJING-BRIDGE\geo\geolocation.json`
-
-Street View / Orthophoto 的 code、localexec、semantic visibility、SHA、GEO binding、workspace-boundary、stage WorkLedger history contract 已補；**但尚未由 UL7 跑出最新版 v3/v2 fresh imagery，因此仍不得稱 REAL ACCEPTED。**
-
-Whole Case 更不得稱 ACCEPTED/DELIVERED，必須等 OS Delivery + Google Drive/ChatGPT connector review PASS + reviewed-delivery finalizer。
+程式 contract 已經 fail-closed，但 IMPLEMENTED 不等於 REAL VERIFIED。
 
 ## 3. Canonical auto entrypoint
 
 `scripts/case0003_local_continue_auto.ps1`
 
-目前 root-resolution schema：`openworker/case0003-root-resolution/v6`。
+目前 root-resolution schema：`openworker/case0003-root-resolution/v11`。
 
-順序：
+controller 前順序：
 
 ```text
-machine-root registry / node inventory
-→ JobBinding OS identity
-→ REAL preflight
-→ quarantine unsafe imagery manifests
+machine-root / JobBinding / REAL preflight
+→ imagery unsafe/stale quarantine
+→ terrain stale quarantine
+→ consumer stale quarantine
+→ Blender/SceneX stale quarantine
+→ OS artifact source-binding guard
 → v10 physical-gate controller
-→ strict imagery WorkLedger recorder（僅真 PASS 時）
+→ stage WorkLedger recorders
 ```
 
-### Preflight
-
-`case0003_local_preflight.ps1` 在任何 business submit 前驗：UL7 identity、required tools/roots、workspace、JobBinding、DTM catalog、Engineering OS health。
-
-### Unsafe imagery quarantine
-
-`scripts/case0003_quarantine_unsafe_imagery.ps1`
-
-v3/v2 manifest 若指向 canonical workspace 外 PNG/JPG/evidence，manifest 不直接刪除，而是移到：
-
-`.openworker\quarantine\imagery\`
-
-保存 rejected manifest SHA/reason 後，controller 看到 canonical manifest 缺失，重新取得該 imagery stage。
+任何 quarantine 都保留舊 evidence，不直接刪除。
 
 ## 4. Imagery strict contract
 
-### Street View
+Street View：`streetview-browser-screenshots/v3`；綁 current GEO、UL7/localexec、4 headings、Google headless renderer provenance、semantic visibility、1920×1080、physical SHA、workspace containment。
 
-Canonical manifest：`streetview\browser\streetview-browser-screenshots.json`
+Orthophoto：`orthophoto-workspace/v2`；綁 current GEO / producer plan GEO、NLSC PHOTO2 z19 bounded tiles、semantic visibility、physical JPEG SHA、workspace containment。
 
-Schema：`streetview-browser-screenshots/v3`。
+兩邊 strict PASS 後，`case0003_record_imagery_acceptance.py` 建立 WorkLedger `progress/verifying` history；不得移動 whole-case accepted/delivered pointer。
 
-Required：
+## 5. Terrain strict contract
 
-- `transport=localexec`、host=UL7；
-- manifest GEO = current accepted GEO；
-- headings = 0/90/180/270 exactly once；
-- producer `google / headless-render-webgl / angle-swiftshader-webgl`；
-- 1920×1080、bytes>0；
-- producer semantic visibility pass；
-- each physical PNG SHA = producer receipt SHA；
-- output path = manifest path；
-- all artifact paths remain inside canonical workspace。
+Terrain producer：`terrain-aoi-workspace/v2`。
 
-舊黑圖 acceptance 已撤銷。
+綁：
+- current GEO lat/lng + GEO SHA；
+- DTM catalog path/size/SHA；
+- AOI build request SHA；
+- 10 個 terrain artifacts path/size/SHA；
+- host/workspace identity、usable DTM tiles。
 
-### Orthophoto
+`case0003_quarantine_stale_terrain.ps1` 在 GEO/catalog/request/artifact 任一漂移時隔離舊 `terrain\`。
 
-Canonical manifest：`orthophoto\nlsc-photo2\orthophoto-photo2-workspace.json`
+`case0003_record_terrain_acceptance.py` 只寫 stage `progress/verifying` history。
 
-Schema：`orthophoto-workspace/v2`。
+## 6. Consumer strict contract
 
-Required：
+Producer：`consumer-workspace/v2`。
 
-- `transport=localexec`、host=UL7；
-- manifest GEO + producer plan GEO = current accepted GEO；
-- producer `orthophoto-nlsc-photo2/v1`；
-- provider=`nlsc`、layer=`PHOTO2`、zoom=19、tile count 1..25；
-- `visibility.visible=true`；useful ratio >=0.20；stddev >=0.02；luma range >=0.10；
-- physical JPEG SHA = producer output SHA；dimensions/bytes>0；
-- JPG/evidence/manifest paths remain inside canonical workspace。
+綁：
+- current GEO SHA；
+- imagery acceptance fingerprint；
+- terrain acceptance fingerprint + terrain workspace SHA；
+- terrain mesh SHA；
+- 7 個 consumer output SHA。
 
-舊只有 `orthophoto-photo2-evidence.json` 的成果不再足以 PASS。
+`case0003_quarantine_stale_consumer.ps1` 在 upstream fingerprint 或 physical SHA 漂移時隔離舊 `consumer\`。
 
-### Local parallel submit
+## 7. Blender + SceneX strict render chain
 
-`scripts/case0003_local_imagery_parallel.ps1`
+Blender：`blender-workspace/v2`，綁 current `consumer_fingerprint`、consumer workspace/orchestration SHA，以及 `.blend/render/request/evidence/handoff` physical SHA，產生 `blender_fingerprint`。
 
-Street View / Orthophoto 分 locks / agent slots 並行；一邊 strict PASS 時只補另一邊；`github_business_transport=false`。
+SceneX：`scenex-workspace-browse/v2`，綁 current `terrain_fingerprint`、terrain manifest SHA、GEO SHA，以及 Region Pack / screenshot / evidence SHA，產生 `scenex_fingerprint`。
 
-## 5. Imagery stage WorkLedger history
+`case0003_quarantine_stale_render_outputs.ps1` 會隔離任何 stale Blender/SceneX outputs。
 
-`scripts/case0003_record_imagery_acceptance.py`
+`case0003_record_render_acceptance.py` 只有兩邊 current-chain一致時才建立 `acceptance\render\render-acceptance.json` 與 WorkLedger `progress/verifying` history。
 
-只有兩個 imagery strict gate 都通過才執行。它建立或復用 `progress` revision，將 current GEO、四張 Street View、PHOTO2 JPG、workspace manifests/evidence 與 physical SHA 寫入 WorkLedger，required checks：
+## 8. AI-Engineering-OS source binding
 
-- `Imagery Accepted GEO`
-- `Street View Physical+Semantic QC`
-- `Orthophoto Physical+Semantic QC`
+Case 0003 OS ingest現在使用：
 
-revision 保持 `verifying`；同 fingerprint idempotent。它不得移動 whole-case `accepted_revision_id` 或 `delivered_revision_id`。
+`artifact-ingest/v2`
 
-## 6. Terrain → Consumer/Blender + SceneX
-
-AOI：`terrain.aoi.build` / `case0003_local_terrain_aoi.ps1`，需 10 個 terrain physical artifacts、`terrain-context/v1`、`usable_tiles>0`、SHA evidence。
-
-Terrain gate 後：
+新增 `source_binding`：
 
 ```text
-Terrain
-├→ SceneX REAL browse
-└→ strict imagery PASS → Consumer → Blender REAL
+render_fingerprint
+blender_fingerprint
+scenex_fingerprint
 ```
 
-Consumer：`terrain.consumer.orchestrate`。  
-Blender：`terrain.blender.execute`。  
-SceneX：`scenex.terrain.real_browse`。
+AI-Engineering-OS command保留 v1 read compatibility，但 v2必須有 non-empty source binding；v2 receipt為 `engineering-os-artifact-ingest-receipt/v2` 並原樣回傳 binding。
 
-Blender 必須 `.blend` + render + evidence/handoff SHA consistency；SceneX 必須 active chunks>0、terrain geometry>0、1280×720 screenshot + region/evidence/screenshot SHA consistency。
+go-tool localexec也會驗 v2 receipt沒有丟失 source binding。
 
-## 7. AI-Engineering-OS
+OpenWorker `case0003_guard_os_artifact_binding.ps1` 在 controller 前：
+- 比對 OS receipt source binding與 current render acceptance；
+- stale時把 OS ingest evidence移入 `.openworker\quarantine\os-artifacts\`；
+- current v2 receipt保留 raw v2檔，另產 controller-compatible latest view，帶 `semantic_contract_version=v2`。
 
-Blender + SceneX pass → `engineering_os.artifacts.ingest`。ArtifactStager 安全 stage 外部 workspace artifacts 入 OS Job WorkingDir並重算 SHA，不放寬 JobPathValidator。
+OS Delivery submit v2除了 approval=true，還必須證明 current OS ingest compatibility view確實由 v2 source binding支撐，且三個 fingerprints仍等於 current render acceptance；否則不發布。
 
-current artifacts 必須 Review/Approval，才可 `engineering_os.delivery.publish`。publish 後仍驗 delivery manifest、checksum manifest、website、revision identity。
+## 9. Drive / ChatGPT final review
 
-OS project/job identity由 persisted JobBinding 提供；explicit override mismatch fail-closed。
+OS Delivery pass後：fresh mechanical verification → immutable deterministic ZIP → Drive sync。
 
-## 8. Drive / ChatGPT final review
+ChatGPT connector 必須實際查看 Blender render、SceneX screenshot、evidence、delivery website，回傳 PASS/TUNE/FAIL/TOOL_GAP receipt，綁 current revision、bundle manifest SHA、ZIP SHA與 Drive folder/file identity。
 
-OS Delivery pass 後：fresh mechanical verification → immutable review folder + deterministic ZIP → Drive sync。
+PASS 只先進 `ACCEPTED_PENDING_FINALIZE`；finalizer再驗 current OS delivery bytes仍等於 reviewed bytes，全部一致才移動 WorkLedger delivered pointer。
 
-ChatGPT connector 必須實際查看 Blender render、SceneX screenshot、evidence、delivery website。回傳 `connector-review-receipt.json`，綁 current revision、bundle manifest SHA、review ZIP SHA與 Drive folder/file IDs。
+## 10. Next REAL action
 
-PASS 只先進 `ACCEPTED_PENDING_FINALIZE`；finalizer 再綁 current OS delivery identity與 current physical bytes，全部一致才寫 WorkLedger delivered pointer。
-
-## 9. Next REAL action
-
-在 UL7 使用最新版 OpenWorker / go-tool / owning repos 執行：
+UL7 使用最新版 OpenWorker / go-tool / Terrain / SceneX / AI-Engineering-OS：
 
 ```powershell
 .\scripts\case0003_local_continue_auto.ps1
 ```
 
-預期最新舊 evidence 會因 v3/v2、current GEO、workspace-boundary gate 被淘汰，Street View / Orthophoto 由 local durable jobs重新取得。fresh imagery strict PASS 後才會寫 imagery progress history並繼續 AOI / Consumer / Blender / SceneX。
+預期 stale imagery / terrain / consumer / render / OS registry evidence會依 current-chain contract被隔離，fresh local durable jobs重新建立成果。
 
-此 ChatGPT 環境目前沒有直接到 UL7 `127.0.0.1:8787` 的執行通道，因此不能假稱本輪已提交或已得到 REAL artifact；程式/手冊 hardening 不等於 UL7 REAL acceptance。
+此 ChatGPT 執行環境目前沒有直接到 UL7 `127.0.0.1:8787` 的執行通道，所以本輪不能假稱已提交 UL7 job或已產生 fresh REAL artifacts。
