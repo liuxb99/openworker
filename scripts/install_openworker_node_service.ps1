@@ -1,4 +1,4 @@
-# case0005-bootstrap-transport-marker: 2026-08-18T23:01+08:00
+# case0005-bootstrap-transport-marker: 2026-08-18T23:08+08:00
 param(
   [Parameter(Mandatory=$true)][string]$SourceExe,
   [string]$ServiceName='OpenWorkerNode',
@@ -61,10 +61,6 @@ if($isAdmin){
   exit 0
 }
 
-# Non-admin fallback for self-hosted runners: keep the canonical binary/data under
-# ProgramData, replace any prior OpenWorker node process, then launch a detached
-# console-mode node. Clearing RUNNER_TRACKING_ID prevents Actions cleanup from
-# treating the resident node as an orphan child of the job.
 Get-Process -Name 'openworker-node' -ErrorAction SilentlyContinue | ForEach-Object {
   try { Stop-Process -Id $_.Id -Force -ErrorAction Stop } catch {}
 }
