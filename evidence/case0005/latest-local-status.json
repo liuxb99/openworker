@@ -3,7 +3,7 @@
     "case_id":  "0005",
     "machine":  "DESKTOP-ODAQN0D",
     "workspace_root":  "D:\\AI-Work\\jobs\\0005-SNOW-WHITE",
-    "observed_at":  "2026-08-18T15:11:25.2235565+00:00",
+    "observed_at":  "2026-08-18T15:12:32.4858577+00:00",
     "authority":  "openworker-local-durable-ledger",
     "worklist":  null,
     "controller":  null,
@@ -120,7 +120,7 @@
                                           "finished_at":  "2026-08-18T15:08:48.9631861Z",
                                           "heartbeat_at":  "2026-08-18T15:08:48.9631861Z"
                                       },
-                              "observed_at":  "2026-08-18T15:11:25.214575Z"
+                              "observed_at":  "2026-08-18T15:12:32.4773214Z"
                           },
     "case_jobs":  [
                       {
