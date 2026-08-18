@@ -1,0 +1,43 @@
+name: Bootstrap OpenWorker Node Service O87
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    runs-on: [self-hosted, Windows, X64, O87]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify fixed O87 computer
+        shell: powershell
+        run: |
+          if($env:COMPUTERNAME -ine 'DESKTOP-O87PJNR'){throw "wrong host $env:COMPUTERNAME"}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+          cache-dependency-path: go-runtime/go.sum
+      - name: Build native Windows service binary
+        shell: powershell
+        working-directory: go-runtime
+        run: |
+          go mod tidy
+          $commit=$env:GITHUB_SHA
+          $build=[DateTime]::UtcNow.ToString('o')
+          go build -ldflags "-X github.com/liuxb99/openworker/go-runtime/internal/buildinfo.Version=p1-service -X github.com/liuxb99/openworker/go-runtime/internal/buildinfo.Commit=$commit -X github.com/liuxb99/openworker/go-runtime/internal/buildinfo.BuildTime=$build" -o openworker-node.exe ./cmd/openworker-node
+      - name: Install or upgrade OpenWorkerNode service
+        shell: powershell
+        run: |
+          & "$env:GITHUB_WORKSPACE\scripts\install_openworker_node_service.ps1" -SourceExe "$env:GITHUB_WORKSPACE\go-runtime\openworker-node.exe" -Workers 4
+      - name: Verify service and node identity
+        shell: powershell
+        run: |
+          $svc=Get-Service OpenWorkerNode
+          if($svc.Status -ne 'Running'){throw "service status=$($svc.Status)"}
+          $s=Invoke-RestMethod 'http://127.0.0.1:8787/v1/node/status'
+          if($s.machine -ine 'DESKTOP-O87PJNR'){throw "node machine=$($s.machine)"}
+          if($s.build.commit -ne $env:GITHUB_SHA){throw "node commit=$($s.build.commit) expected=$env:GITHUB_SHA"}
+          $s|ConvertTo-Json -Depth 10
