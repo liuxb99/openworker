@@ -12,7 +12,7 @@ from pathlib import Path
 import time
 from typing import Iterable, Iterator, Mapping
 
-from .case_worklist import CaseWorklist, CaseWorklistError, CaseWorklistStore, StepStatus
+from .case_worklist import CaseStep, CaseWorklist, CaseWorklistError, CaseWorklistStore, StepStatus
 
 
 _LOCK_NAME = "case-worklist.lock"
@@ -73,12 +73,111 @@ class CaseWorklistRuntime:
 
     def ensure(self, manifest: CaseWorklist | None = None) -> CaseWorklist:
         with self.lock():
-            if self.store.path.is_file():
-                return self.store.load()
+            if not self.store.path.is_file():
+                if manifest is None:
+                    raise CaseWorklistError("manifest is required when creating a worklist")
+                self.store.save(manifest)
+                return manifest
+            current = self.store.load()
             if manifest is None:
-                raise CaseWorklistError("manifest is required when creating a worklist")
-            self.store.save(manifest)
-            return manifest
+                return current
+            reconciled, changed = self._reconcile_manifest(current, manifest)
+            if changed:
+                reconciled.revision = max(current.revision, manifest.revision) + 1
+                reconciled.refresh()
+                self.store.save(reconciled)
+            return reconciled
+
+    @staticmethod
+    def _reconcile_manifest(current: CaseWorklist, manifest: CaseWorklist) -> tuple[CaseWorklist, bool]:
+        if current.case_id != manifest.case_id:
+            raise CaseWorklistError(
+                f"manifest reconcile case_id mismatch current={current.case_id!r} manifest={manifest.case_id!r}"
+            )
+        current_by_id = {step.step_id: step for step in current.steps}
+        manifest_ids = {step.step_id for step in manifest.steps}
+        merged_steps: list[CaseStep] = []
+        changed = (
+            current.assigned_host != manifest.assigned_host
+            or current.schema_version != manifest.schema_version
+            or current.parallel_policy != manifest.parallel_policy
+        )
+
+        for declared in manifest.steps:
+            existing = current_by_id.get(declared.step_id)
+            if existing is None:
+                merged_steps.append(CaseStep(**declared.__dict__))
+                changed = True
+                continue
+            active_action = str(existing.evidence.get(_ACTIVE_ACTION_KEY, "") or "").strip()
+            if existing.status == StepStatus.RUNNING and active_action and active_action not in declared.allowed_actions:
+                raise CaseWorklistError(
+                    f"manifest reconcile cannot replace active action {active_action!r} on RUNNING step {existing.step_id!r}"
+                )
+            declarative_changed = any((
+                existing.title != declared.title,
+                existing.kind != declared.kind,
+                existing.dependencies != declared.dependencies,
+                existing.allowed_actions != declared.allowed_actions,
+                existing.acceptance != declared.acceptance,
+                existing.repair_parent_step != declared.repair_parent_step,
+                existing.allow_skip != declared.allow_skip,
+            ))
+            if declarative_changed:
+                changed = True
+            merged = CaseStep(
+                step_id=declared.step_id,
+                title=declared.title,
+                kind=declared.kind,
+                dependencies=list(declared.dependencies),
+                allowed_actions=list(declared.allowed_actions),
+                acceptance=list(declared.acceptance),
+                status=existing.status,
+                evidence=dict(existing.evidence),
+                blocker=existing.blocker,
+                repair_parent_step=declared.repair_parent_step,
+                allow_skip=declared.allow_skip,
+            )
+            if merged.status == StepStatus.PASSED:
+                missing = [key for key in merged.acceptance if key not in merged.evidence]
+                if missing:
+                    merged.status = StepStatus.BLOCKED
+                    merged.blocker = "manifest reconcile requires new acceptance evidence: " + ", ".join(missing)
+                    changed = True
+            merged_steps.append(merged)
+
+        # Preserve dynamic repair/history nodes that are not part of the static
+        # manifest. Stale non-repair nodes must never re-enter the executable
+        # frontier: terminal history is kept, non-terminal stale nodes are
+        # fail-closed as SKIPPED with an explicit reason.
+        extras = [step for step in current.steps if step.step_id not in manifest_ids]
+        for extra in extras:
+            if extra.kind == "repair":
+                merged_steps.append(extra)
+                continue
+            if extra.status == StepStatus.RUNNING:
+                raise CaseWorklistError(
+                    f"manifest reconcile found stale RUNNING non-repair step {extra.step_id!r}; stop it before upgrading manifest"
+                )
+            preserved = CaseStep(**extra.__dict__)
+            if preserved.status not in {StepStatus.PASSED, StepStatus.FAILED, StepStatus.SKIPPED}:
+                preserved.status = StepStatus.SKIPPED
+                preserved.evidence = dict(preserved.evidence)
+                preserved.evidence["skip_reason"] = "removed from latest static manifest during reconcile"
+                preserved.blocker = ""
+                changed = True
+            merged_steps.append(preserved)
+
+        reconciled = CaseWorklist(
+            case_id=current.case_id,
+            workspace_root=current.workspace_root,
+            assigned_host=manifest.assigned_host,
+            steps=merged_steps,
+            schema_version=manifest.schema_version,
+            revision=current.revision,
+            parallel_policy=dict(manifest.parallel_policy),
+        )
+        return reconciled, changed
 
     def add_repair(self, *, parent_step_id: str, step_id: str, title: str, allowed_actions: Iterable[str], acceptance: Iterable[str] = ()) -> CaseWorklist:
         with self.lock():
