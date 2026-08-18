@@ -37,6 +37,15 @@ func TestFourWorkersRunAndFifthQueues(t *testing.T){
 	waitStatus(t,st,map[model.Status]int{model.StatusSucceeded:5},10*time.Second)
 }
 
+func TestSharedResourceLockSerializesJobs(t *testing.T){
+	root:=t.TempDir();st,err:=store.Open(filepath.Join(root,"node.sqlite3"));if err!=nil{t.Fatal(err)};defer st.Close()
+	rt:=owruntime.New(st,2,filepath.Join(root,"logs"),"TESTHOST");if err:=rt.Start();err!=nil{t.Fatal(err)};defer rt.Stop()
+	cwd:=t.TempDir();lock:=[]string{"workspace:"+cwd}
+	for i:=1;i<=2;i++{_,err:=st.Submit(model.SubmitRequest{JobID:fmt.Sprintf("LOCK-%d",i),DispatchID:fmt.Sprintf("LOCK-D-%d",i),Machine:"TESTHOST",Command:slowCommand(),CWD:cwd,TimeoutSec:10,Locks:lock},"TESTHOST");if err!=nil{t.Fatal(err)}}
+	waitStatus(t,st,map[model.Status]int{model.StatusRunning:1,model.StatusQueued:1},5*time.Second)
+	waitStatus(t,st,map[model.Status]int{model.StatusSucceeded:2},10*time.Second)
+}
+
 func TestCancelQueuedJob(t *testing.T){
 	root:=t.TempDir();st,err:=store.Open(filepath.Join(root,"node.sqlite3"));if err!=nil{t.Fatal(err)};defer st.Close()
 	rt:=owruntime.New(st,1,filepath.Join(root,"logs"),"TESTHOST");if err:=rt.Start();err!=nil{t.Fatal(err)};defer rt.Stop()
