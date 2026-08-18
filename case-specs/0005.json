@@ -16,17 +16,22 @@
   },
   "execution_policy": {
     "normal_mode": "local_supervisor",
-    "controller_module": "coworker.case0005_local_supervisor",
+    "controller_module": "coworker.case0005_verified_local_controller",
     "required_execution_route": "local_supervisor",
+    "route_query_endpoint": "http://127.0.0.1:8848/api/execution/route",
+    "verification_endpoint": "http://127.0.0.1:8848/api/execution/local-supervisor/verification",
+    "required_verification_status": "REAL_VERIFIED",
     "max_parallel_actions": 4,
     "github_actions": "code_update_or_repair_only",
     "github_actions_business_execution_allowed": false,
+    "github_actions_fallback_allowed": false,
     "tool_authority": "go-tool-runtime",
     "local_queue_authority": "go-tool-runtime:8848",
     "process_execution_authority": "OpenWorker:8787",
     "video_planner_authority": "ComfyX durable knowledge graph",
     "fixed_machine_authority": "COMPUTERNAME",
     "success_requires_local_route_evidence": true,
-    "success_requires_append_only_supervisor_ledger": true
+    "success_requires_append_only_supervisor_ledger": true,
+    "success_requires_real_four_slot_verification": true
   }
 }
