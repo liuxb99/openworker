@@ -9,7 +9,7 @@ on:
 
 permissions:
   actions: write
-  contents: read
+  contents: write
 
 jobs:
   clear:
@@ -20,11 +20,13 @@ jobs:
       GH_REPO: ${{ github.repository }}
     steps:
       - name: Cancel every other non-terminal OpenWorker workflow run
+        id: clear
         shell: bash
         run: |
           set -euo pipefail
           current="${GITHUB_RUN_ID}"
           mapfile -t runs < <(gh api --paginate "repos/${GH_REPO}/actions/runs?per_page=100" --jq '.workflow_runs[] | select(.status != "completed") | .id' | sort -u)
+          echo "before=${#runs[@]}" >> "$GITHUB_OUTPUT"
           echo "OPENWORKER_NONTERMINAL_BEFORE=${#runs[@]} current=${current}"
           for id in "${runs[@]}"; do
             if [[ "$id" == "$current" ]]; then
@@ -35,8 +37,41 @@ jobs:
           done
           sleep 3
           mapfile -t remaining < <(gh api --paginate "repos/${GH_REPO}/actions/runs?per_page=100" --jq --arg cur "$current" '.workflow_runs[] | select(.status != "completed" and (.id|tostring) != $cur) | [.id,.name,.status] | @tsv')
+          echo "remaining=${#remaining[@]}" >> "$GITHUB_OUTPUT"
           if (( ${#remaining[@]} > 0 )); then
             printf 'Remaining: %s\n' "${remaining[@]}"
             exit 1
           fi
           echo "OPENWORKER_QUEUE_CLEAR_PASS current=${current}"
+
+      - name: Publish queue-clear evidence
+        if: always()
+        env:
+          CLEAR_OUTCOME: ${{ steps.clear.outcome }}
+          NONTERMINAL_BEFORE: ${{ steps.clear.outputs.before }}
+          REMAINING_AFTER: ${{ steps.clear.outputs.remaining }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence/ops
+          python - <<'PY'
+          import json, os
+          payload = {
+              "schema_version": "openworker-queue-clear-evidence/v1",
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "source_sha": os.environ["GITHUB_SHA"],
+              "outcome": os.environ.get("CLEAR_OUTCOME", ""),
+              "nonterminal_before": os.environ.get("NONTERMINAL_BEFORE", ""),
+              "remaining_after": os.environ.get("REMAINING_AFTER", ""),
+          }
+          with open("evidence/ops/latest-queue-clear.json", "w", encoding="utf-8") as f:
+              json.dump(payload, f, ensure_ascii=False, indent=2)
+              f.write("\n")
+          PY
+          git config user.name "openworker-ops-bot"
+          git config user.email "121744662+liuxb99@users.noreply.github.com"
+          git add evidence/ops/latest-queue-clear.json
+          git diff --cached --quiet && exit 0
+          git commit -m "evidence(ops): publish latest queue clear"
+          git push origin HEAD:main
