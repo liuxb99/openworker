@@ -8,8 +8,8 @@ param(
   [string]$TerrainRoot='',
   [string]$SceneXRoot='',
   [string]$EngineeringOSRoot='',
-  [string]$OSProjectId=$env:ENGINEERING_OS_PROJECT_ID,
-  [string]$OSJobId=$env:ENGINEERING_OS_JOB_ID,
+  [string]$OSProjectId='',
+  [string]$OSJobId='',
   [string]$EngineeringOSBaseUrl='http://127.0.0.1:8080',
   [string]$CatalogPath='D:\TaiwanDTM\catalog\dtm_catalog.sqlite'
 )
@@ -46,9 +46,23 @@ $SceneXRoot=Resolve-Root $SceneXRoot 'SCENEX_ROOT'
 $EngineeringOSRoot=Resolve-Root $EngineeringOSRoot 'ENGINEERING_OS_ROOT'
 $DriveSyncRoot=Resolve-Root $DriveSyncRoot 'OPENWORKER_REVIEW_DRIVE_ROOT'
 if(-not(Test-Path -LiteralPath $OpenWorkerRoot -PathType Container)){throw "OPENWORKER_ROOT unavailable: $OpenWorkerRoot"}
+$bindingPath=Join-Path $WorkspaceRoot '.openworker\job-binding.json'
+if(-not(Test-Path -LiteralPath $bindingPath -PathType Leaf)){throw "Case 0003 JobBinding missing: $bindingPath"}
+$binding=Get-Content -LiteralPath $bindingPath -Raw|ConvertFrom-Json
+if([string]$binding.schema_version -ne 'openworker.job-binding.v1'){throw "unsupported JobBinding schema: $($binding.schema_version)"}
+if(-not ([string]$binding.assigned_host).Equals($Machine,[StringComparison]::OrdinalIgnoreCase)){throw "JobBinding host mismatch expected=$Machine actual=$($binding.assigned_host)"}
+$boundWorkspace=(Resolve-Path -LiteralPath ([string]$binding.workspace_root)).Path
+$currentWorkspace=(Resolve-Path -LiteralPath $WorkspaceRoot).Path
+if(-not $boundWorkspace.Equals($currentWorkspace,[StringComparison]::OrdinalIgnoreCase)){throw "JobBinding workspace mismatch expected=$currentWorkspace actual=$boundWorkspace"}
+if([string]::IsNullOrWhiteSpace($OSProjectId)){$OSProjectId=[string]$binding.project_id}
+elseif($OSProjectId -ne [string]$binding.project_id){throw "explicit OSProjectId does not match JobBinding project_id"}
+if([string]::IsNullOrWhiteSpace($OSJobId)){$OSJobId=[string]$binding.job_id}
+elseif($OSJobId -ne [string]$binding.job_id){throw "explicit OSJobId does not match JobBinding job_id"}
+if([string]::IsNullOrWhiteSpace($OSProjectId) -or [string]::IsNullOrWhiteSpace($OSJobId)){throw 'JobBinding lacks persisted Engineering OS identity'}
 $resolved=[ordered]@{
-  schema='openworker/case0003-root-resolution/v2';case_id='0003';machine=$Machine;source='explicit>openworker-inventory>environment';
-  openworker_root=$OpenWorkerRoot;go_tool_root=$GoToolRoot;terrain_root=$TerrainRoot;scenex_root=$SceneXRoot;engineering_os_root=$EngineeringOSRoot;drive_review_root=$DriveSyncRoot
+  schema='openworker/case0003-root-resolution/v3';case_id='0003';machine=$Machine;source='explicit>openworker-inventory>environment';
+  openworker_root=$OpenWorkerRoot;go_tool_root=$GoToolRoot;terrain_root=$TerrainRoot;scenex_root=$SceneXRoot;engineering_os_root=$EngineeringOSRoot;drive_review_root=$DriveSyncRoot;
+  engineering_os_project_id=$OSProjectId;engineering_os_job_id=$OSJobId;identity_source='openworker-job-binding'
 }
 $evidenceDir=Join-Path $WorkspaceRoot 'evidence';New-Item -ItemType Directory -Force -Path $evidenceDir|Out-Null
 $resolved|ConvertTo-Json -Depth 6|Set-Content -LiteralPath (Join-Path $evidenceDir 'case0003-root-resolution.json') -Encoding utf8
