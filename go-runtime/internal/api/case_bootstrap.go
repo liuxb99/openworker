@@ -10,20 +10,11 @@ import (
     "strings"
     "time"
 
+    "github.com/liuxb99/openworker/go-runtime/internal/cluster"
     "github.com/liuxb99/openworker/go-runtime/internal/model"
 )
 
-type caseBootstrapRequest struct {
-    CaseID           string            `json:"case_id"`
-    Machine          string            `json:"machine"`
-    WorkspaceRoot    string            `json:"workspace_root"`
-    OpenWorkerRoot   string            `json:"openworker_root"`
-    ControllerModule string            `json:"controller_module"`
-    ManifestPath     string            `json:"manifest_path"`
-    SpecPath         string            `json:"spec_path"`
-    PythonExe        string            `json:"python_exe,omitempty"`
-    Env              map[string]string `json:"env,omitempty"`
-}
+type caseBootstrapRequest = cluster.CaseBootstrapRequest
 
 func (s *Server) caseBootstrap(w http.ResponseWriter, r *http.Request) {
     var req caseBootstrapRequest
@@ -49,10 +40,6 @@ func (s *Server) caseBootstrap(w http.ResponseWriter, r *http.Request) {
     if req.Machine == "" {
         req.Machine = s.machine
     }
-    if !strings.EqualFold(req.Machine, s.machine) {
-        writeErr(w, http.StatusConflict, fmt.Errorf("case bootstrap machine mismatch expected=%s actual=%s", req.Machine, s.machine))
-        return
-    }
     if !strings.HasPrefix(req.ControllerModule, "coworker.case") || strings.ContainsAny(req.ControllerModule, " \t\r\n\"'") {
         writeErr(w, http.StatusBadRequest, errors.New("controller_module must be a bounded coworker.case* Python module"))
         return
@@ -62,6 +49,30 @@ func (s *Server) caseBootstrap(w http.ResponseWriter, r *http.Request) {
     }
     if strings.ContainsAny(req.PythonExe, "\r\n\"") {
         writeErr(w, http.StatusBadRequest, errors.New("python_exe contains unsupported characters"))
+        return
+    }
+
+    // A caller may submit a case to any cluster-enabled OpenWorker endpoint.
+    // The selected machine remains the local durable scheduling authority.
+    if !strings.EqualFold(req.Machine, s.machine) {
+        if !s.needCluster(w) {
+            return
+        }
+        res, err := s.cluster.CaseBootstrap(req)
+        if err != nil {
+            _ = s.store.RecordClusterControl("", "case_bootstrap_failed", req.Machine, err.Error())
+            writeErr(w, http.StatusConflict, err)
+            return
+        }
+        _ = s.store.RecordClusterControl("", "case_bootstrap", res.Selected.NodeID, "forwarded to "+res.Selected.Endpoint)
+        writeJSON(w, http.StatusAccepted, map[string]any{
+            "case_id": req.CaseID,
+            "requested_machine": req.Machine,
+            "selected": res.Selected,
+            "remote": res.Response,
+            "authority": "openworker-cluster-to-local-supervisor",
+            "github_action_used": false,
+        })
         return
     }
 
