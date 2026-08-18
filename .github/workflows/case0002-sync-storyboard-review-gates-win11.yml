@@ -44,7 +44,7 @@ jobs:
           python scripts\case_worklist_sync_manifest.py --workspace-root $env:CASE0002_WORKSPACE --manifest case-worklists\0002.json
           if($LASTEXITCODE -ne 0){throw 'CASE0002 manifest sync failed'}
 
-      - name: Assert text-only PPTX gate precedes IMAGE
+      - name: Assert storyboard review gates precede IMAGE and VIDEO
         run: |
           $ErrorActionPreference='Stop'
           $path=Join-Path $env:CASE0002_WORKSPACE '.openworker\case-worklist.json'
@@ -53,7 +53,11 @@ jobs:
           $s027=@($w.steps|Where-Object {$_.step_id -eq '0002-027'})|Select-Object -First 1
           $s030=@($w.steps|Where-Object {$_.step_id -eq '0002-030'})|Select-Object -First 1
           $s055=@($w.steps|Where-Object {$_.step_id -eq '0002-055'})|Select-Object -First 1
-          if($null -eq $s025 -or $null -eq $s027 -or $null -eq $s030 -or $null -eq $s055){throw 'CASE0002 storyboard review gates missing'}
-          if(-not(@($s030.dependencies) -contains '0002-027')){throw 'IMAGE step is not gated by user storyboard approval'}
+          $s057=@($w.steps|Where-Object {$_.step_id -eq '0002-057'})|Select-Object -First 1
+          $s060=@($w.steps|Where-Object {$_.step_id -eq '0002-060'})|Select-Object -First 1
+          if($null -eq $s025 -or $null -eq $s027 -or $null -eq $s030 -or $null -eq $s055 -or $null -eq $s057 -or $null -eq $s060){throw 'CASE0002 storyboard review gates missing'}
+          if(-not(@($s030.dependencies) -contains '0002-027')){throw 'IMAGE step is not gated by text-only storyboard approval'}
           if(-not(@($s055.dependencies) -contains '0002-050')){throw 'illustrated PPTX is not gated by completed image binding'}
+          if(-not(@($s057.dependencies) -contains '0002-055')){throw 'illustrated storyboard approval is not gated by illustrated PPTX'}
+          if(-not(@($s060.dependencies) -contains '0002-057')){throw 'VIDEO step is not gated by illustrated storyboard approval'}
           Write-Host "CASE0002_STORYBOARD_GATES_OK next=$($w.canonical_next_step_id)"
