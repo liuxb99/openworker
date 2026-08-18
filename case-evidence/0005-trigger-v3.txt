@@ -1,2 +1,2 @@
 Case 0005 Snow White ODA local supervisor parallel v3 trigger.
-Created after the workflow file already exists on main, so this push is an unambiguous transport trigger.
+Restarted 2026-08-18 Asia/Taipei after OpenWorker three-node VERIFIED upgrade; fixed host DESKTOP-ODAQN0D; require real workspace landing at D:\AI-Work\jobs\0005-SNOW-WHITE.
