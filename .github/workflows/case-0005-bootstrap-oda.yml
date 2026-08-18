@@ -41,20 +41,25 @@ jobs:
           $lockDir='C:\ProgramData\OpenWorker'
           New-Item -ItemType Directory -Force -Path $lockDir | Out-Null
           $lockPath=Join-Path $lockDir 'case0005-bootstrap.claim'
+          if(Test-Path -LiteralPath $lockPath -PathType Leaf){
+            try{
+              $age=((Get-Date) - (Get-Item -LiteralPath $lockPath).LastWriteTime).TotalMinutes
+              if($age -gt 30){
+                Write-Host "CASE0005_BOOTSTRAP_STALE_LOCK_REMOVE age_minutes=$([math]::Round($age,1))"
+                Remove-Item -LiteralPath $lockPath -Force
+              }
+            }catch{}
+          }
           $claimed=$false
           try {
             $fs=[IO.File]::Open($lockPath,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
             try {
-              $bytes=[Text.Encoding]::UTF8.GetBytes($env:GITHUB_RUN_ID)
+              $owner="$env:GITHUB_RUN_ID|${{ matrix.slot }}|$env:RUNNER_NAME|$([DateTimeOffset]::UtcNow.ToString('o'))"
+              $bytes=[Text.Encoding]::UTF8.GetBytes($owner)
               $fs.Write($bytes,0,$bytes.Length)
             } finally { $fs.Dispose() }
             $claimed=$true
-          } catch {
-            try {
-              $owner=(Get-Content -Raw -LiteralPath $lockPath -ErrorAction Stop).Trim()
-              if($owner -eq $env:GITHUB_RUN_ID){$claimed=$true}
-            } catch {}
-          }
+          } catch {}
           if(-not $claimed){
             Write-Host "CASE0005_BOOTSTRAP_DUPLICATE_SKIP machine=$machine slot=${{ matrix.slot }}"
             "claimed=false" >> $env:GITHUB_OUTPUT
@@ -72,7 +77,7 @@ jobs:
         run: |
           $ErrorActionPreference='Stop'
           $payload=[ordered]@{
-            schema='openworker/case0005-bootstrap-workflow-accepted/v2'
+            schema='openworker/case0005-bootstrap-workflow-accepted/v3'
             case_id='0005'
             machine=$env:COMPUTERNAME
             runner_name=$env:RUNNER_NAME
@@ -81,6 +86,7 @@ jobs:
             slot='${{ matrix.slot }}'
             phase='WORKFLOW_ACCEPTED'
             routing_authority='COMPUTERNAME'
+            claim_authority='atomic-create-new-file-single-owner'
             accepted_at=[DateTimeOffset]::UtcNow.ToString('o')
             github_action_used_for_business_execution=$false
             authority='openworker-local-supervisor'
@@ -148,7 +154,7 @@ jobs:
           try { $nodeStatus=Invoke-RestMethod 'http://127.0.0.1:8787/v1/node/status' -TimeoutSec 5 } catch {}
           try { $controlEvents=Invoke-RestMethod 'http://127.0.0.1:8787/v1/cluster/control-events?limit=100' -TimeoutSec 5 } catch {}
           $result=[ordered]@{
-            schema='openworker/case0005-bootstrap-outcome/v4'
+            schema='openworker/case0005-bootstrap-outcome/v5'
             case_id='0005'
             machine=$env:COMPUTERNAME
             workspace_root=$workspace
@@ -162,6 +168,7 @@ jobs:
             runner_name=$env:RUNNER_NAME
             slot='${{ matrix.slot }}'
             routing_authority='COMPUTERNAME'
+            claim_authority='atomic-create-new-file-single-owner'
             github_action_used_for_business_execution=$false
             authority='openworker-local-supervisor'
             script_outcome=$scriptOutcome
@@ -183,7 +190,7 @@ jobs:
           $ErrorActionPreference='Stop'
           $src=Join-Path $env:RUNNER_TEMP 'case0005-bootstrap-result.json'
           if(-not(Test-Path -LiteralPath $src -PathType Leaf)){
-            $fallback=[ordered]@{schema='openworker/case0005-bootstrap-outcome/v4';case_id='0005';machine=$env:COMPUTERNAME;succeeded=$false;stage='workflow_before_result';reason='bootstrap result file was not produced';observed_at=[DateTimeOffset]::UtcNow.ToString('o');run_id=$env:GITHUB_RUN_ID;runner_name=$env:RUNNER_NAME;slot='${{ matrix.slot }}';routing_authority='COMPUTERNAME';github_action_used_for_business_execution=$false;authority='openworker-local-supervisor';next_action='inspect workflow setup/checkout before retrying bootstrap'}
+            $fallback=[ordered]@{schema='openworker/case0005-bootstrap-outcome/v5';case_id='0005';machine=$env:COMPUTERNAME;succeeded=$false;stage='workflow_before_result';reason='bootstrap result file was not produced';observed_at=[DateTimeOffset]::UtcNow.ToString('o');run_id=$env:GITHUB_RUN_ID;runner_name=$env:RUNNER_NAME;slot='${{ matrix.slot }}';routing_authority='COMPUTERNAME';claim_authority='atomic-create-new-file-single-owner';github_action_used_for_business_execution=$false;authority='openworker-local-supervisor';next_action='inspect workflow setup/checkout before retrying bootstrap'}
             $fallback|ConvertTo-Json -Depth 10|Set-Content -LiteralPath $src -Encoding utf8
           }
           $json=Get-Content -Raw -LiteralPath $src
@@ -209,7 +216,7 @@ jobs:
           }
           Put-Receipt 'evidence/case0005/latest-bootstrap-result.json' $json 'case0005: publish authoritative bootstrap outcome'
           if([bool]$obj.succeeded){
-            $ack=[ordered]@{schema='openworker/case0005-bootstrap-ack/v3';case_id='0005';machine='DESKTOP-ODAQN0D';workspace_root=[string]$obj.workspace_root;accepted=[bool]$obj.local_receipt.ack.job.accepted;work_id=[string]$obj.local_receipt.ack.job.id;authority=[string]$obj.authority;routing_authority='COMPUTERNAME';github_action_used_for_business_execution=$false;run_id=$env:GITHUB_RUN_ID;observed_at=[DateTimeOffset]::UtcNow.ToString('o')}
+            $ack=[ordered]@{schema='openworker/case0005-bootstrap-ack/v4';case_id='0005';machine='DESKTOP-ODAQN0D';workspace_root=[string]$obj.workspace_root;accepted=[bool]$obj.local_receipt.ack.job.accepted;work_id=[string]$obj.local_receipt.ack.job.id;authority=[string]$obj.authority;routing_authority='COMPUTERNAME';claim_authority='atomic-create-new-file-single-owner';github_action_used_for_business_execution=$false;run_id=$env:GITHUB_RUN_ID;observed_at=[DateTimeOffset]::UtcNow.ToString('o')}
             Put-Receipt 'evidence/case0005/latest-bootstrap-ack.json' ($ack|ConvertTo-Json -Depth 10 -Compress) 'case0005: record ODA local bootstrap ack'
           }
 
@@ -219,8 +226,5 @@ jobs:
         run: |
           $lockPath='C:\ProgramData\OpenWorker\case0005-bootstrap.claim'
           if(Test-Path -LiteralPath $lockPath){
-            try{
-              $owner=(Get-Content -Raw -LiteralPath $lockPath -ErrorAction Stop).Trim()
-              if($owner -eq $env:GITHUB_RUN_ID){Remove-Item -LiteralPath $lockPath -Force}
-            }catch{}
+            Remove-Item -LiteralPath $lockPath -Force -ErrorAction SilentlyContinue
           }
