@@ -75,6 +75,22 @@ if ([int]$status.fresh_executor_slot_count -lt 4) { throw "need 4 fresh executor
 if ([string]$status.route_label -ne 'LOCAL_SUPERVISOR') { throw "unexpected route_label=$($status.route_label)" }
 if ([bool]$status.github_action_used_for_business_execution) { throw 'status reports GitHub business execution' }
 if (-not (Test-Path -LiteralPath $realReceipt -PathType Leaf)) { throw "REAL verification receipt missing: $realReceipt" }
+if (-not [bool]$status.capability_authority_known -or -not [bool]$status.capability_authority_matches_machine) { throw "local capability authority is unavailable or belongs to another machine" }
+
+$requiredCapabilities = @(
+    'comfyx-studio.director.preproduction',
+    'comfyx-studio.storyboard.plan',
+    'presentation.openmaic',
+    'image.comfyx.storyboard-real',
+    'comfyx-studio.storyboard.real-bind',
+    'comfyx.production.video.real',
+    'comfyx-studio.finalize',
+    'openworker.case.publish-artifacts',
+    'drive.review.publish'
+)
+$registered = @($status.registered_capabilities | ForEach-Object { [string]$_ })
+$missingCapabilities = @($requiredCapabilities | Where-Object { $registered -notcontains $_ })
+if ($missingCapabilities.Count -gt 0) { throw ("Case 0005 local capability coverage incomplete: " + ($missingCapabilities -join ', ')) }
 
 New-Item -ItemType Directory -Force -Path $Workspace | Out-Null
 $specPath = Join-Path $OpenWorkerRoot 'case-specs\0005.json'
@@ -115,7 +131,7 @@ if (-not $routeProven) { throw 'Case 0005 did not materialize LOCAL_SUPERVISOR r
 $controlDir = Join-Path $Workspace '.openworker'; New-Item -ItemType Directory -Force -Path $controlDir | Out-Null
 $receiptPath = Join-Path $controlDir 'true-local-supervisor-activation.json'
 $receipt = [ordered]@{
-    schema_version = 'openworker-case0005-true-local-activation/v3'
+    schema_version = 'openworker-case0005-true-local-activation/v4'
     status = 'OPERATIONAL'
     case_id = '0005'
     machine = $actualHost
@@ -127,6 +143,9 @@ $receipt = [ordered]@{
     max_parallel_actions = 4
     fresh_claim_slot_count = [int]$status.fresh_claim_slot_count
     fresh_executor_slot_count = [int]$status.fresh_executor_slot_count
+    registered_capabilities = $registered
+    required_case_capabilities = $requiredCapabilities
+    capability_coverage_complete = $true
     github_action_used_for_business_execution = $false
     code_sync_transport = $(if ($SkipCodeSync) { 'skipped' } else { 'local-git-pull-ff-only' })
     binaries_reinstalled_from_current_checkout = $true
