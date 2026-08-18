@@ -16,9 +16,10 @@ import (
 )
 
 type nodeConfig struct {
-	Listen  string
-	DataDir string
-	Workers int
+	Listen       string
+	DataDir      string
+	Workers      int
+	Capabilities string
 }
 
 func normalizeConfig(cfg nodeConfig) (nodeConfig, error) {
@@ -27,6 +28,7 @@ func normalizeConfig(cfg nodeConfig) (nodeConfig, error) {
 	if cfg.DataDir == "" {
 		if v := os.Getenv("OPENWORKER_NODE_DATA"); v != "" { cfg.DataDir = v } else { cfg.DataDir = filepath.Join(os.TempDir(), "openworker-node") }
 	}
+	if cfg.Capabilities == "" { cfg.Capabilities = os.Getenv("OPENWORKER_NODE_CAPABILITIES") }
 	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil { return cfg, err }
 	return cfg, nil
 }
@@ -34,6 +36,7 @@ func normalizeConfig(cfg nodeConfig) (nodeConfig, error) {
 func runNode(ctx context.Context, cfg nodeConfig) error {
 	cfg, err := normalizeConfig(cfg)
 	if err != nil { return err }
+	if cfg.Capabilities != "" { _ = os.Setenv("OPENWORKER_NODE_CAPABILITIES", cfg.Capabilities) }
 	machine, err := os.Hostname()
 	if err != nil { return err }
 	st, err := store.Open(filepath.Join(cfg.DataDir, "openworker-node.sqlite3"))
@@ -46,7 +49,7 @@ func runNode(ctx context.Context, cfg nodeConfig) error {
 	srv := &http.Server{Addr: cfg.Listen, Handler: api.New(st, rt, machine).Handler(), ReadHeaderTimeout: 5 * time.Second}
 	errCh := make(chan error, 1)
 	go func() {
-		log.Printf("openworker-node machine=%s listen=%s workers=%d data=%s", machine, cfg.Listen, cfg.Workers, cfg.DataDir)
+		log.Printf("openworker-node machine=%s listen=%s workers=%d data=%s capabilities=%s", machine, cfg.Listen, cfg.Workers, cfg.DataDir, cfg.Capabilities)
 		if e := srv.ListenAndServe(); e != nil && !errors.Is(e, http.ErrServerClosed) { errCh <- e; return }
 		errCh <- nil
 	}()
