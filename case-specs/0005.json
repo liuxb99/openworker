@@ -14,6 +14,16 @@
     "output_relpath": "presentation/storyboard-illustrated.pptx",
     "minimum_media_count": 1
   },
+  "approval_artifact_return": {
+    "transport": "google-drive-api",
+    "capability": "openworker.case.publish-artifacts",
+    "text_storyboard_publish_step": "0005-026",
+    "illustrated_storyboard_publish_step": "0005-056",
+    "github_actions_allowed": false,
+    "immutable_manifest_required": true,
+    "sha256_required": true,
+    "drive_receipt_required": true
+  },
   "execution_policy": {
     "normal_mode": "local_supervisor",
     "controller_module": "coworker.case0005_verified_local_controller",
@@ -30,6 +40,8 @@
     "fanout_submit_all_children_before_coordinator": true,
     "openworker_business_child_jobs_allowed": false,
     "openworker_fanout_role": "single-coordinator-only",
+    "approval_artifact_transport": "google-drive-api",
+    "approval_artifact_github_allowed": false,
     "github_actions": "code_update_or_repair_only",
     "github_actions_business_execution_allowed": false,
     "github_actions_fallback_allowed": false,
@@ -42,6 +54,7 @@
     "success_requires_append_only_supervisor_ledger": true,
     "success_requires_real_four_slot_verification": true,
     "success_requires_current_operational_four_plus_four_heartbeats": true,
-    "success_requires_queue_owned_fanout": true
+    "success_requires_queue_owned_fanout": true,
+    "success_requires_local_artifact_return": true
   }
 }
