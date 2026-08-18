@@ -69,15 +69,17 @@ try {
 } finally { Pop-Location }
 
 # One bootstrap transport only. Business execution after this point is local durable jobs.
+# Case 0005 uses a dedicated subclass so its visual role fan-out does not leak
+# into generic CaseWorklist orchestration used by other cases.
 Push-Location $repo
 try {
-  $json = python -m coworker.case_controller --node-url $OpenWorkerUrl bootstrap --workspace $WorkspaceRoot --manifest $manifest --spec $spec
-  if($LASTEXITCODE -ne 0){ throw "Case controller bootstrap failed rc=$LASTEXITCODE" }
+  $json = python -m coworker.case0005_controller --node-url $OpenWorkerUrl bootstrap --workspace $WorkspaceRoot --manifest $manifest --spec $spec
+  if($LASTEXITCODE -ne 0){ throw "Case 0005 controller bootstrap failed rc=$LASTEXITCODE" }
 } finally { Pop-Location }
 
 $controller = $json | ConvertFrom-Json
 $receipt=[ordered]@{
-  schema='openworker/case0005-local-first-bootstrap/v2';
+  schema='openworker/case0005-local-first-bootstrap/v3';
   case_id='0005'; machine=$Machine; workspace_root=$WorkspaceRoot;
   transport_run_id=$env:GITHUB_RUN_ID; submitted_at=[DateTimeOffset]::UtcNow.ToString('o');
   node=$node;
