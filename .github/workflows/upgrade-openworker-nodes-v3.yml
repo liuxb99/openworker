@@ -2,6 +2,10 @@ name: Upgrade OpenWorker Nodes V3
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/upgrade-openworker-nodes-v3.yml'
 
 permissions:
   contents: write
@@ -69,8 +73,9 @@ jobs:
               $headers=@{Authorization="Bearer $env:GH_TOKEN";Accept='application/vnd.github+json';'X-GitHub-Api-Version'='2022-11-28'}
               $path="case-evidence/node-upgrade/$env:GITHUB_SHA/$env:NODE-$($phase.ToLowerInvariant()).json"
               $uri="https://api.github.com/repos/$env:GITHUB_REPOSITORY/contents/$path"
+              $readUri='{0}?ref={1}' -f $uri,[uri]::EscapeDataString($env:GITHUB_REF_NAME)
               $sha=$null
-              try { $existing=Invoke-RestMethod -Uri "$uri?ref=$env:GITHUB_REF_NAME" -Headers $headers; $sha=$existing.sha } catch { if($_.Exception.Response.StatusCode.value__ -ne 404){ throw } }
+              try { $existing=Invoke-RestMethod -Uri $readUri -Headers $headers; $sha=$existing.sha } catch { if($_.Exception.Response.StatusCode.value__ -ne 404){ throw } }
               $json=$payload | ConvertTo-Json -Depth 20 -Compress
               $b64=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($json))
               $body=@{message="receipt: $env:NODE $phase $env:GITHUB_SHA";content=$b64;branch=$env:GITHUB_REF_NAME}
