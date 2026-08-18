@@ -15,6 +15,8 @@ class OpenWorkerNodeClient:
     def submit(self,payload:dict[str,Any])->dict[str,Any]: return self._request("POST","/v1/jobs",json=payload)
     def jobs(self,limit:int=100)->dict[str,Any]: return self._request("GET","/v1/jobs",params={"limit":limit})
     def job_status(self,job_id:str)->dict[str,Any]: return self._request("GET",f"/v1/jobs/{job_id}")
+    def job_progress(self,job_id:str)->dict[str,Any]: return self._request("GET",f"/v1/jobs/{job_id}/progress")
+    def update_job_progress(self,job_id:str,payload:dict[str,Any])->dict[str,Any]: return self._request("POST",f"/v1/jobs/{job_id}/progress",json=payload)
     def cancel(self,job_id:str)->dict[str,Any]: return self._request("POST",f"/v1/jobs/{job_id}/cancel")
     def retry(self,job_id:str)->dict[str,Any]: return self._request("POST",f"/v1/jobs/{job_id}/retry")
     def drain(self,mode:str="queued")->dict[str,Any]:
@@ -49,6 +51,7 @@ class OpenWorkerNodeClient:
         return self._request("POST","/v1/supervisor/heartbeat",json={"supervisor_id":supervisor_id,"session_id":session_id,"current_goal":current_goal})
     def supervisor_snapshot(self,supervisor_id:str)->dict[str,Any]: return self._request("GET","/v1/supervisor/snapshot",params={"supervisor_id":supervisor_id})
     def supervisor_jobs(self,supervisor_id:str)->dict[str,Any]: return self._request("GET","/v1/supervisor/jobs",params={"supervisor_id":supervisor_id})
+    def supervisor_attention(self,supervisor_id:str)->dict[str,Any]: return self._request("GET","/v1/supervisor/attention",params={"supervisor_id":supervisor_id})
     def supervisor_recover(self,supervisor_id:str,session_id:str="")->dict[str,Any]: return self._request("POST","/v1/supervisor/recover",json={"supervisor_id":supervisor_id,"session_id":session_id})
     def supervisor_decision(self,payload:dict[str,Any])->dict[str,Any]: return self._request("POST","/v1/supervisor/decision",json=payload)
     def supervisor_decisions(self,supervisor_id:str,limit:int=100)->dict[str,Any]: return self._request("GET","/v1/supervisor/decisions",params={"supervisor_id":supervisor_id,"limit":limit})
