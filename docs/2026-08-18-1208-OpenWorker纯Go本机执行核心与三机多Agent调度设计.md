@@ -1,7 +1,7 @@
 # OpenWorker 纯 Go 本机执行核心与三机多 Agent 调度设计
 
 日期：2026-08-18
-状态：DESIGN LOCKED — READY FOR IMPLEMENTATION
+状态：P0 BATCH-1 IMPLEMENTED — WAITING FOR SELF-HOSTED ACTION VERIFICATION
 
 ## 1. 结论
 
@@ -34,18 +34,7 @@ ChatGPT / Knowledge Graph / go-tool
 
 现有 OpenWorker 主体是 Python，已有 FastAPI、Agent、Worklist、工程流程、审计等大量能力，继续保留最合适。
 
-但本机执行核心有不同要求：
-
-1. 常驻 Windows service；
-2. 高频 heartbeat；
-3. 多子进程并发；
-4. process tree kill；
-5. timeout / cancel 必须可靠；
-6. queue 与资源锁不能被某个 Python agent 卡住；
-7. 三台电脑之间需要轻量、长期稳定、低资源占用的节点服务；
-8. 后续可直接做成单 exe 部署。
-
-因此 Go 层不是替代 OpenWorker，而是成为 OpenWorker 的**执行内核**。
+但本机执行核心有不同要求：常驻 Windows service、高频 heartbeat、多子进程并发、process tree kill、可靠 timeout/cancel、独立 durable queue 与三机节点服务。因此 Go 层不是替代 OpenWorker，而是成为 OpenWorker 的**执行内核**。
 
 ## 3. 目标架构
 
@@ -56,8 +45,7 @@ GitHub Action
    v
 +----------------------------------+
 | openworker-node.exe              |
-|                                  |
-| HTTP/RPC API                     |
+| HTTP API                         |
 | Durable Job Store                |
 | Local Scheduler                  |
 | Worker Pool                      |
@@ -68,29 +56,19 @@ GitHub Action
 +----------------------------------+
       |       |       |       |
     A01     A02     A03     A04
-      |       |       |       |
-   process process process process
 ```
 
-默认 V1：
-
-```text
-max_workers = 4
-```
-
-后续按机器能力动态调整。
+V1 默认 `max_workers=4`。
 
 ## 4. 保留原 Action 工作目录语义
 
-Go Core 不另外发明一套完全不同的执行根。
-
-原 canonical checkout 例如：
+Go Core 不另外发明一套完全不同的执行根。原 canonical checkout 例如：
 
 ```text
 D:\actions-runner\_work\openworker\openworker
 ```
 
-多 Agent 采用同一 `_work` 根下的独立 worktree：
+多 Agent 后续采用同一 `_work` 根下独立 worktree：
 
 ```text
 D:\actions-runner\_work\openworker\_agents\A01\openworker
@@ -99,355 +77,86 @@ D:\actions-runner\_work\openworker\_agents\A03\openworker
 D:\actions-runner\_work\openworker\_agents\A04\openworker
 ```
 
-业务 workspace 仍保持原路径，例如：
+业务 workspace 仍保持既有路径，例如 `D:\AI-Work\jobs\0003-YUJING-BRIDGE`。程式码 checkout 与业务 workspace 分离。
+
+## 5. GitHub Action 新职责
 
 ```text
-D:\AI-Work\jobs\0003-YUJING-BRIDGE
+queued -> runner accepted -> verify COMPUTERNAME -> submit to Go Core -> durable ACK -> completed
 ```
 
-因此现有 scripts、PowerShell、Python、Go tools 仍可沿用 Action 路径习惯。
+`Action completed` 只代表派工成功，不代表真实任务成功。
 
-## 5. GitHub Action 的新职责
+## 6. 三层状态
 
-GitHub Action 以后只做：
+Dispatch：`queued/running/dispatched/completed/failed`。
 
-```text
-queued
--> runner accepted
--> verify COMPUTERNAME
--> submit to openworker-node.exe
--> receive durable ACK
--> publish dispatch receipt
--> completed
-```
+Worker：`accepted/queued_local/starting/running/blocked/stale`。
 
-`Action completed` 只代表**派工成功**，不代表真实任务成功。
-
-## 6. 三层状态模型
-
-### 6.1 Dispatch status
-
-```text
-queued
-running
-dispatched
-completed
-failed
-```
-
-### 6.2 Worker status
-
-```text
-accepted
-queued_local
-starting
-running
-blocked
-stale
-```
-
-### 6.3 Task status
-
-```text
-running
-producing_artifact
-qc
-succeeded
-failed
-timed_out
-cancelled
-retrying
-```
-
-OpenWorker 查询时必须把三层状态同时返回。
+Task：`running/producing_artifact/qc/succeeded/failed/timed_out/cancelled/retrying`。
 
 ## 7. 统一 Job ID
 
-Action、Go Core、Python Control Plane、WorkLedger、artifact、QC receipt 共用同一 `job_id`。
-
-例如：
-
-```text
-OWJ-20260818-001
-```
-
-另有一次派工的 `dispatch_id`：
-
-```text
-OWD-20260818-001
-```
-
-重复 `dispatch_id` 必须 idempotent，不得重复执行。
+Action、Go Core、Python Control Plane、WorkLedger、artifact、QC receipt 共用 `job_id`；一次派工另有 `dispatch_id`。重复 `dispatch_id` 必须 idempotent。
 
 ## 8. Go Core durable store
 
-V1 使用纯 Go SQLite driver，避免依赖外部数据库服务。
+V1 使用 SQLite + 纯 Go driver，不依赖外部数据库服务。
 
-建议目录：
+当前目录：
 
 ```text
 go-runtime/
   cmd/openworker-node/
-  internal/jobstore/
-  internal/scheduler/
-  internal/worker/
-  internal/process/
-  internal/locks/
-  internal/cluster/
+  internal/model/
+  internal/store/
+  internal/runtime/
   internal/api/
-  internal/receipts/
 ```
 
-SQLite 至少包含：
-
-```text
-jobs
-job_events
-worker_slots
-resource_locks
-node_state
-cluster_nodes
-```
-
-### jobs 关键字段
-
-```text
-job_id
-dispatch_id
-machine
-status
-priority
-command
-args_json
-cwd
-workspace_root
-created_at
-accepted_at
-started_at
-finished_at
-heartbeat_at
-pid
-exit_code
-stdout_path
-stderr_path
-timeout_sec
-resource_spec_json
-lock_spec_json
-retry_count
-```
+后续继续拆出 locks/cluster/receipts/worktree。
 
 ## 9. Process Supervisor
 
-Go Core 必须真正拥有子进程生命周期。
-
-至少做到：
-
-- 启动进程；
-- 捕获 stdout/stderr；
-- 保存 PID；
-- heartbeat；
-- timeout；
-- cancel；
-- Windows process tree kill；
-- exit code；
-- crash/stale detection；
-- receipt。
-
-单一 process hang 只能占一个 slot，不得堵住整个 Host。
+负责启动真实子进程、stdout/stderr、PID、heartbeat、timeout、cancel、Windows process tree kill、exit code 与 stale recovery。单一 process hang 只能占一个 slot。
 
 ## 10. Worker Pool
 
-V1：4 个通用 worker slots。
-
-```text
-A01
-A02
-A03
-A04
-```
-
-四个互不冲突任务必须可真正同时运行。
-
-第五个任务进入 `queued_local`，直到 slot 空出。
-
-后续可扩展：
-
-```text
-general-agent x N
-blender x N
-comfyx x N
-gpu-worker x N
-```
+V1 为 4 个通用 worker slots。四个互不冲突任务必须可同时运行，第五个保持 `queued_local`。
 
 ## 11. Resource Lock
 
-并行必须受控。
-
-V1 至少支持：
-
-- `workspace:<path>` exclusive lock；
-- `tool:<name>` lock；
-- `gpu:0`；
-- `gpu:1`；
-- 自定义字符串 lock。
-
-同一个业务 workspace 的写任务不得同时修改同一份成果。
-
-Git code 修改任务使用独立 Git worktree，避免多个 agent 同时 checkout/reset 同一 working tree。
+P1 补齐 workspace/tool/GPU/custom string locks。Git code 修改任务采用独立 Git worktree，禁止多个 agent 同时 checkout/reset 同一 working tree。
 
 ## 12. Queue / Cancel / Drain
 
-Go Core 必须原生提供：
+目标能力：`submit/status/list/cancel/drain/retry/recover`。
 
-```text
-submit
-status
-list
-cancel
-drain
-retry
-recover
-```
-
-Drain 两种模式：
-
-```text
-drain queued
-```
-
-只清未执行任务。
-
-```text
-drain all
-```
-
-清 queued，并 cancel running。
-
-重复 drain 必须安全，且 receipt 必须列出实际处理的 job IDs。
+P0 Batch-1 已实现：`submit/status/list/cancel/drain queued`。`drain all`、retry policy 与更完整 recover receipt 放到后续批次。
 
 ## 13. Heartbeat 与 stale recovery
 
-每个 node 与 running job 都有 heartbeat。
+running job 周期 heartbeat。Host restart 时旧 `starting/running` 不可假装成功，当前 Batch-1 会 fail-closed 标记 stale；后续再细化 PID 存活检查与 retry policy。
 
-Host restart 后：
+## 14. COMPUTERNAME 是最终机器权威
 
-- `queued_local`：保留，重新排程；
-- `running` 且 PID 已不存在：标记 `stale`；
-- stale 是否 retry 由 policy 决定；
-- 禁止把 lost process 标为 succeeded。
-
-## 14. COMPUTERNAME 是机器最终权威
-
-固定机器任务示例：
-
-```text
-machine=UL7
-computer_name=DESKTOP-UL7V2VV
-```
-
-真正执行前 Go Core 必须读取本机 COMPUTERNAME。
-
-不符：fail-closed。
-
-runner label 只是 GitHub 初步路由，不是最终机器权威。
+固定机器任务在 Go Core durable accept 前检查实际 hostname；不符 fail-closed。runner label 只做 GitHub 初步路由。
 
 ## 15. 三机 Cluster Registry
 
-每台运行自己的：
-
-```text
-openworker-node.exe
-```
-
-例如：
-
-```text
-UL7 -> DESKTOP-UL7V2VV
-ODA -> configured ODA host
-O87 -> DESKTOP-O87PJNR
-```
-
-节点持续发布：
-
-```text
-node_id
-computer_name
-last_heartbeat
-lease_until
-max_workers
-busy_workers
-queued_jobs
-capabilities
-resources
-```
-
-lease 过期即视为 unavailable。
+P2：UL7 / ODA / O87 各运行 `openworker-node.exe`，发布 node_id、computer_name、heartbeat、lease、worker slots、queue depth、capabilities 与资源状态。
 
 ## 16. 三机状态查询
 
-必须支持：
-
-```text
-openworker.cluster.status
-openworker.cluster.jobs
-openworker.node.status
-openworker.job.status
-```
-
-返回至少包含：
-
-```text
-UL7 ONLINE 4/8 busy
-ODA ONLINE 2/6 busy
-O87 OFFLINE last_seen=...
-```
-
-以及每个 job：
-
-```text
-job_id
-node
-agent_slot
-pid
-status
-heartbeat_age
-workspace
-tool
-```
+目标接口：`openworker.cluster.status`、`openworker.cluster.jobs`、`openworker.node.status`、`openworker.job.status`。
 
 ## 17. Scheduler 路由
 
-### 固定机器
+`machine=<fixed>` 只允许指定节点，离线时 fail-closed；只有 `machine=any` 才允许按 capability、free slots、queue depth、locks、GPU 可用性自动选择节点。
 
-```text
-machine=UL7
-```
+## 18. Python 与 Go 接口
 
-只允许 UL7。
-
-UL7 offline / unavailable 时直接 blocked/fail-closed，不可擅自换机。
-
-### 任意机器
-
-```text
-machine=any
-```
-
-才允许依据：
-
-- capability；
-- free slots；
-- queue depth；
-- resource locks；
-- GPU availability；
-
-选择机器。
-
-## 18. Python 与 Go 的接口
-
-Python Control Plane 不直接管理 Windows PID。
-
-Python 通过 Go Core API 操作：
+Python 不直接管理 Windows PID，通过 Go Core HTTP API：
 
 ```text
 POST /v1/jobs
@@ -455,99 +164,93 @@ GET  /v1/jobs/{job_id}
 GET  /v1/jobs
 POST /v1/jobs/{job_id}/cancel
 POST /v1/queue/drain
-POST /v1/jobs/{job_id}/retry
 GET  /v1/node/status
-GET  /v1/cluster/status
-GET  /v1/cluster/jobs
 ```
 
-Go Core 返回 durable receipt；Python 再映射进 WorkLedger / Case Worklist / knowledge layer。
+后续增加 retry/cluster API。
 
 ## 19. go-tool 边界
 
-go-tool 只暴露能力给大模型：
+go-tool 只暴露能力，不实现 scheduler。后续暴露 `openworker.job.submit/status/cancel`、`openworker.queue.drain`、`openworker.cluster.status/jobs`。已知失败路径同步为负面工具知识。
 
-```text
-openworker.job.submit
-openworker.job.status
-openworker.job.cancel
-openworker.queue.drain
-openworker.cluster.status
-openworker.cluster.jobs
-```
+## 20. P0 Batch-1 实作进度
 
-已知失败的派工方法、错误工具组合、不可重试条件，可写入 go-tool 的负面工具知识，避免模型重复失败。
+### 已完成代码
 
-## 20. 第一批 P0 实作
+提交：`9a528a3afa64d278d0d2dbc9268aa53e84dd06dc`
 
-先实现单机 Go Core，不同时展开三机调度：
+已加入：
 
-1. 新建 `go-runtime` Go module；
-2. `openworker-node.exe`；
-3. SQLite durable job store；
-4. max_workers=4；
-5. submit/status/list/cancel/drain；
-6. command/cwd/env 执行；
-7. stdout/stderr 持久化；
-8. timeout；
-9. process tree cancel；
-10. heartbeat；
-11. stale recovery；
-12. dispatch idempotency；
-13. COMPUTERNAME authority；
-14. HTTP API；
-15. receipts。
+- `go-runtime/go.mod`
+- `cmd/openworker-node/main.go`
+- `internal/model/job.go`
+- `internal/store/store.go`
+- `internal/runtime/manager.go`
+- `internal/api/server.go`
+- store/runtime tests
 
-## 21. 第二批 P1
+已实现：
 
-1. Git worktree slot manager；
-2. workspace/tool/GPU locks；
-3. Python Control Plane adapter；
-4. GitHub Action submit bridge；
-5. 一条真实 case workflow 从长执行改成 submit -> ACK -> exit；
-6. go-tool capability metadata。
+- SQLite durable job store；
+- WAL + busy timeout；
+- job_id / dispatch_id idempotency；
+- machine fail-closed；
+- priority queue claim；
+- 4 worker pool；
+- shell command + cwd + env；
+- stdout/stderr 持久化；
+- PID；
+- heartbeat；
+- timeout；
+- cancel；
+- Windows `taskkill /T /F` process-tree kill；
+- queued drain；
+- stale startup recovery；
+- `/healthz`；
+- `/v1/node/status`；
+- `/v1/jobs` submit/list；
+- `/v1/jobs/{jobID}` status；
+- `/v1/jobs/{jobID}/cancel`；
+- `/v1/queue/drain?mode=queued`。
 
-## 22. 第三批 P2
+### 验证 workflow
 
-1. 三机 registry；
-2. heartbeat / lease；
-3. cluster status/jobs；
-4. node-to-node query；
-5. `machine=any` scheduler；
-6. capability-aware routing；
-7. cluster failover policy。
+提交：`990337c163c11324e5b9f73c40052ed6261738c2`
+
+新增 `.github/workflows/openworker-go-runtime-p0.yml`，在原 self-hosted Windows Action workspace 执行：
+
+1. 显示 COMPUTERNAME / GITHUB_WORKSPACE / PWD；
+2. Go 1.23；
+3. `go mod tidy`；
+4. `go build ./cmd/openworker-node`；
+5. `go test ./... -count=1 -v`；
+6. 单独执行 `TestFourWorkersRunAndFifthQueues`。
+
+当前状态：**代码已提交，真实 self-hosted Action 验证尚未取得 completed receipt，因此不得宣称 P0 已通过。**
+
+## 21. P1
+
+- Git worktree slot manager；
+- workspace/tool/GPU locks；
+- Python Control Plane adapter；
+- GitHub Action submit bridge；
+- 一条真实 case workflow 改成 submit -> ACK -> exit；
+- go-tool capability metadata。
+
+## 22. P2
+
+- 三机 registry；
+- heartbeat / lease；
+- cluster status/jobs；
+- node-to-node query；
+- `machine=any` scheduler；
+- capability-aware routing；
+- cluster failover policy。
 
 ## 23. P0 验收铁律
 
-P0 不接受“API 返回 200”作为完成。
-
-必须真实验证：
-
-1. 四个 shell job 实际时间重叠；
-2. 第五个 job 在 slots 满时维持 queued；
-3. 一个 hang job 不影响其他三个继续完成；
-4. timeout 能回收 slot；
-5. cancel 能终止 process tree；
-6. drain 一次清完 queued；
-7. 重复 drain 安全；
-8. 重复 dispatch_id 不产生第二份执行；
-9. Host restart 后 queued job 能恢复；
-10. lost running process 被标记 stale；
-11. cwd 可保持在 Action `_work` 相容目录；
-12. COMPUTERNAME 不符时 fail-closed。
+必须真实验证：四任务并行、第五任务排队、hang 不阻塞其他 workers、timeout 回收 slot、cancel 终止 process tree、drain 一次清完 queued、重复 drain 安全、重复 dispatch 不重复执行、restart 恢复 queued、lost running 标 stale、cwd 保持 Action `_work` 相容、COMPUTERNAME 不符 fail-closed。
 
 ## 24. 最终目标
 
-OpenWorker 从：
-
-```text
-GitHub Actions 驱动的本机执行
-```
-
-升级为：
-
-```text
-OpenWorker 自己拥有的三节点、多 Agent、可恢复、可观察、本机执行系统
-```
-
-GitHub Actions 继续存在，但只作为版本控制生态中的派工入口和 CI/证据通道，不再成为本机长任务调度的核心。
+OpenWorker 从“GitHub Actions 驱动的本机执行”升级成“OpenWorker 自己拥有的三节点、多 Agent、可恢复、可观察、本机执行系统”。GitHub Actions 继续作为派工入口、CI 与证据通道，不再成为本机长任务调度核心。
