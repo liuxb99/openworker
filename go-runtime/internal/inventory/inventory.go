@@ -3,22 +3,45 @@ package inventory
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 )
 
 type Tool struct { Name string `json:"name"`; Available bool `json:"available"`; Path string `json:"path,omitempty"` }
+type Root struct { Name string `json:"name"`; Env string `json:"env"`; Path string `json:"path,omitempty"`; Available bool `json:"available"` }
 type GPU struct { Index string `json:"index"`; Name string `json:"name"`; MemoryMiB string `json:"memory_mib,omitempty"` }
-type Snapshot struct { Capabilities []string `json:"capabilities"`; Tools []Tool `json:"tools"`; GPUs []GPU `json:"gpus"`; CollectedAt time.Time `json:"collected_at"` }
+type Snapshot struct { Capabilities []string `json:"capabilities"`; Tools []Tool `json:"tools"`; Roots []Root `json:"roots"`; GPUs []GPU `json:"gpus"`; CollectedAt time.Time `json:"collected_at"` }
 
 var defaultTools=[]string{"git","go","python","powershell","blender","nvidia-smi"}
+var authorityRoots=[]struct{Name,Env string}{
+	{"openworker","OPENWORKER_ROOT"},
+	{"go-tool-runtime","GO_TOOL_ROOT"},
+	{"terrain-to-dxf","TERRAIN_ROOT"},
+	{"scenex","SCENEX_ROOT"},
+	{"engineering-os","ENGINEERING_OS_ROOT"},
+}
 
 func Collect() Snapshot {
 	caps:=splitCSV(os.Getenv("OPENWORKER_NODE_CAPABILITIES"))
 	tools:=make([]Tool,0,len(defaultTools))
 	for _,name:=range defaultTools{p,err:=exec.LookPath(name);tools=append(tools,Tool{Name:name,Available:err==nil,Path:p})}
-	return Snapshot{Capabilities:caps,Tools:tools,GPUs:collectGPUs(),CollectedAt:time.Now().UTC()}
+	return Snapshot{Capabilities:caps,Tools:tools,Roots:collectRoots(),GPUs:collectGPUs(),CollectedAt:time.Now().UTC()}
+}
+
+func collectRoots() []Root {
+	out:=make([]Root,0,len(authorityRoots))
+	for _,item:=range authorityRoots{
+		r:=Root{Name:item.Name,Env:item.Env}
+		value:=strings.TrimSpace(os.Getenv(item.Env))
+		if value!=""{
+			if abs,err:=filepath.Abs(value);err==nil{r.Path=filepath.Clean(abs)}else{r.Path=filepath.Clean(value)}
+			if info,err:=os.Stat(r.Path);err==nil&&info.IsDir(){r.Available=true}
+		}
+		out=append(out,r)
+	}
+	return out
 }
 
 func splitCSV(v string) []string { out:=[]string{};seen:=map[string]bool{};for _,x:=range strings.Split(v,","){x=strings.TrimSpace(x);if x!=""&&!seen[x]{seen[x]=true;out=append(out,x)}};sort.Strings(out);return out }
