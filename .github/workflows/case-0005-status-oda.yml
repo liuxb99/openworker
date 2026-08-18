@@ -19,7 +19,7 @@ jobs:
   status:
     strategy:
       fail-fast: false
-      max-parallel: 6
+      max-parallel: 24
       matrix:
         slot: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24]
     runs-on: [self-hosted, Windows, X64]
@@ -39,7 +39,7 @@ jobs:
           if(Test-Path -LiteralPath $lock -PathType Leaf){
             try{
               $age=[DateTimeOffset]::UtcNow-(Get-Item -LiteralPath $lock).LastWriteTimeUtc
-              if($age.TotalMinutes -ge 5){
+              if($age.TotalMinutes -ge 1){
                 Remove-Item -LiteralPath $lock -Force -ErrorAction SilentlyContinue
                 Write-Host "CASE0005_STATUS_STALE_LOCK_CLEARED age_minutes=$([Math]::Round($age.TotalMinutes,2))"
               }
