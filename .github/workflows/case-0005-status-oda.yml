@@ -36,6 +36,15 @@ jobs:
             exit 0
           }
           $lock='C:\ProgramData\OpenWorker\case0005-status-readonly.lock'
+          if(Test-Path -LiteralPath $lock -PathType Leaf){
+            try{
+              $age=[DateTimeOffset]::UtcNow-(Get-Item -LiteralPath $lock).LastWriteTimeUtc
+              if($age.TotalMinutes -ge 5){
+                Remove-Item -LiteralPath $lock -Force -ErrorAction SilentlyContinue
+                Write-Host "CASE0005_STATUS_STALE_LOCK_CLEARED age_minutes=$([Math]::Round($age.TotalMinutes,2))"
+              }
+            }catch{}
+          }
           $claimed=$false
           try{$fs=[IO.File]::Open($lock,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None);$fs.Dispose();$claimed=$true}catch{}
           if(-not $claimed){"claimed=false" >> $env:GITHUB_OUTPUT;exit 0}
