@@ -74,11 +74,14 @@ class CaseWorklist:
     steps: list[CaseStep]
     schema_version: str = "openworker-case-worklist/v1"
     revision: int = 1
+    parallel_policy: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.case_id = self.case_id.strip()
         self.workspace_root = str(Path(self.workspace_root).expanduser().resolve())
         self.assigned_host = self.assigned_host.strip()
+        if not isinstance(self.parallel_policy, dict):
+            raise CaseWorklistError("parallel_policy must be an object")
         if not self.case_id:
             raise CaseWorklistError("case_id is required")
         if not self.assigned_host:
@@ -375,6 +378,11 @@ class CaseWorklist:
             except ValueError as exc:
                 raise CaseWorklistError(f"invalid step status {data.get('status')!r}") from exc
             steps.append(CaseStep(**data))
+        parallel_policy = payload.get("parallel_policy", {})
+        if parallel_policy is None:
+            parallel_policy = {}
+        if not isinstance(parallel_policy, Mapping):
+            raise CaseWorklistError("parallel_policy must be an object")
         return cls(
             case_id=str(payload.get("case_id", "")),
             workspace_root=str(payload.get("workspace_root", "")),
@@ -382,6 +390,7 @@ class CaseWorklist:
             steps=steps,
             schema_version=str(payload.get("schema_version", "openworker-case-worklist/v1")),
             revision=int(payload.get("revision", 1)),
+            parallel_policy=dict(parallel_policy),
         )
 
 
