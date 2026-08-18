@@ -3,15 +3,25 @@
   "case_id": "0004",
   "workspace_root": "D:\\AI-Work\\jobs\\0004-DWG-TO-3D",
   "assigned_host": "DESKTOP-O87PJNR",
-  "revision": 4,
+  "revision": 5,
+  "parallel_policy": {
+    "authority": "openworker-local-supervisor",
+    "max_local_slots": 4,
+    "transport_non_blocking": true,
+    "github_business_scheduler": false,
+    "fanout_join": [
+      {"after":"0004-045","dynamic_fanout":"0004-047 uses one durable local job per persisted Story Index viewport when resource locks permit","join_step":"0004-049"},
+      {"after":"0004-049","dynamic_fanout":"per-story query/review work may run independently for confirmed story_ids while cad.set_story_region remains governed by 0004-050","join_step":"0004-055"}
+    ]
+  },
   "steps": [
     {"step_id":"0004-010","title":"Locate exact primary DWG on fixed O87 host","kind":"work","dependencies":[],"allowed_actions":["openworker.source.locate"],"acceptance":["run_id","source_path","sha256"],"status":"PENDING","evidence":{},"blocker":"","repair_parent_step":"","allow_skip":false},
     {"step_id":"0004-020","title":"Canonical source ingress plus OS Project Job and JobBinding","kind":"work","dependencies":["0004-010"],"allowed_actions":["openworker.source.ingress"],"acceptance":["run_id","project_id","job_id","canonical_path","sha256","job_binding_path"],"status":"PENDING","evidence":{},"blocker":"","repair_parent_step":"","allow_skip":false},
     {"step_id":"0004-030","title":"Open primary DWG with latest DWG_todo authority","kind":"work","dependencies":["0004-020"],"allowed_actions":["cad.open_dwg"],"acceptance":["run_id","job_id","receipt","source_sha256"],"status":"PENDING","evidence":{},"blocker":"","repair_parent_step":"","allow_skip":false},
     {"step_id":"0004-040","title":"Model extents and raw overview render","kind":"work","dependencies":["0004-030"],"allowed_actions":["cad.get_model_extents","cad.render_png","cad.list_candidate_regions"],"acceptance":["extent_receipt","overview_png","overview_sha256"],"status":"PENDING","evidence":{},"blocker":"","repair_parent_step":"","allow_skip":false},
     {"step_id":"0004-045","title":"Build persistent multi-story Story Index from LLM viewport localization","kind":"work","dependencies":["0004-040"],"allowed_actions":["cad.build_story_index"],"acceptance":["source_sha256","overview_png","story_index_manifest","story_count","story_index_png","story_index_sha256"],"status":"PENDING","evidence":{},"blocker":"","repair_parent_step":"","allow_skip":false},
-    {"step_id":"0004-047","title":"Render one zoomed PNG for every identified Story Index viewport","kind":"work","dependencies":["0004-045"],"allowed_actions":["cad.render_story_viewports"],"acceptance":["source_sha256","render_manifest","rendered_story_count","story_pngs","story_png_sha256s"],"status":"PENDING","evidence":{},"blocker":"","repair_parent_step":"","allow_skip":false},
-    {"step_id":"0004-049","title":"Multimodal verify Story Index and every per-floor zoom PNG","kind":"work","dependencies":["0004-047"],"allowed_actions":["openworker.review.publish","openworker.review.apply"],"acceptance":["review_bundle","llm_review_receipt","story_index_decision","per_story_decisions","confirmed_story_ids"],"status":"PENDING","evidence":{},"blocker":"","repair_parent_step":"","allow_skip":false},
+    {"step_id":"0004-047","title":"Fan out one durable local render job per identified Story Index viewport and join all required PNGs","kind":"fanout","dependencies":["0004-045"],"allowed_actions":["cad.render_story_viewports"],"acceptance":["source_sha256","render_manifest","story_job_ids","rendered_story_count","story_pngs","story_png_sha256s","all_required_stories_terminal_succeeded"],"status":"PENDING","evidence":{},"blocker":"","repair_parent_step":"","allow_skip":false},
+    {"step_id":"0004-049","title":"Multimodal verify Story Index and every per-floor zoom PNG","kind":"join","dependencies":["0004-047"],"allowed_actions":["openworker.review.publish","openworker.review.apply"],"acceptance":["review_bundle","llm_review_receipt","story_index_decision","per_story_decisions","confirmed_story_ids"],"status":"PENDING","evidence":{},"blocker":"","repair_parent_step":"","allow_skip":false},
     {"step_id":"0004-050","title":"Confirm real Story Regions from visually accepted Story Index viewports","kind":"work","dependencies":["0004-049"],"allowed_actions":["cad.query_bounds","cad.query_entities","cad.set_story_region"],"acceptance":["story_regions","region_evidence","confirmed_story_ids"],"status":"PENDING","evidence":{},"blocker":"","repair_parent_step":"","allow_skip":false},
     {"step_id":"0004-055","title":"List and visually confirm Story column candidates","kind":"work","dependencies":["0004-050"],"allowed_actions":["cad.list_story_column_candidates"],"acceptance":["source_sha256","story_region","candidate_count","confirmed_column_handles","review_decision"],"status":"PENDING","evidence":{},"blocker":"","repair_parent_step":"","allow_skip":false},
     {"step_id":"0004-060","title":"Structural recognition and Story Design","kind":"work","dependencies":["0004-055"],"allowed_actions":["cad.design_story_structure"],"acceptance":["design_json","design_png","design_sha256","review_decision"],"status":"PENDING","evidence":{},"blocker":"","repair_parent_step":"","allow_skip":false},
