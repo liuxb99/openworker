@@ -75,3 +75,5 @@ jobs:
           git diff --cached --quiet && exit 0
           git commit -m "evidence(ops): publish latest queue clear"
           git push origin HEAD:main
+
+# queue-clear trigger: 2026-08-18 case0004
