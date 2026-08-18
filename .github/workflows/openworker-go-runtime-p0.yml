@@ -8,6 +8,7 @@ on:
       - 'coworker/node_client.py'
       - 'tests/test_node_client.py'
       - 'scripts/submit_openworker_node.ps1'
+      - 'scripts/install_openworker_node_service.ps1'
       - '.github/workflows/openworker-go-runtime-p0.yml'
 
 jobs:
@@ -32,7 +33,7 @@ jobs:
       - name: Verify Python control-plane adapter
         shell: powershell
         run: python -m pytest tests/test_node_client.py -q
-      - name: Verify Action ACK, retry and drain-all
+      - name: Verify ACK retry drain-all and durable events
         shell: powershell
         run: |
           $data=Join-Path $env:RUNNER_TEMP "openworker-node-p1-$env:GITHUB_RUN_ID"
@@ -44,7 +45,11 @@ jobs:
             & "$env:GITHUB_WORKSPACE\scripts\submit_openworker_node.ps1" -JobId $jid -DispatchId $did -ExpectedComputerName $env:COMPUTERNAME -Command 'exit 7' -Cwd $env:GITHUB_WORKSPACE -NodeUrl 'http://127.0.0.1:18787' -ReceiptPath (Join-Path $data 'dispatch-receipt.json')
             for($i=0;$i -lt 30;$i++){$j=Invoke-RestMethod "http://127.0.0.1:18787/v1/jobs/$jid";if($j.status -eq 'failed'){break};Start-Sleep -Milliseconds 300}
             if($j.status -ne 'failed'){throw "expected failed, got $($j.status)"}
+            $events=Invoke-RestMethod "http://127.0.0.1:18787/v1/jobs/$jid/events?limit=100"
+            if(-not($events.events.event_type -contains 'failed')){throw 'missing durable failed event'}
             $r=Invoke-RestMethod -Method Post "http://127.0.0.1:18787/v1/jobs/$jid/retry";if($r.status -ne 'queued_local'){throw 'retry did not requeue'}
             $d=Invoke-RestMethod -Method Post 'http://127.0.0.1:18787/v1/queue/drain?mode=all';if(-not $d.ok){throw 'drain all failed'}
+            $events=Invoke-RestMethod "http://127.0.0.1:18787/v1/jobs/$jid/events?limit=100"
+            if(-not($events.events.event_type -contains 'drained')){throw 'missing durable drained event'}
             Get-Content (Join-Path $data 'dispatch-receipt.json') -Raw
           } finally { if($node -and -not $node.HasExited){Stop-Process -Id $node.Id -Force} }
