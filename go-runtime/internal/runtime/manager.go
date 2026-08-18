@@ -10,7 +10,7 @@ func(m *Manager)recoverStartup()error{jobs,err:=m.store.ActiveJobs();if err!=nil
 func(m *Manager)Start()error{if err:=os.MkdirAll(m.logsDir,0755);err!=nil{return err};if err:=m.recoverStartup();err!=nil{return err};for i:=0;i<m.maxWorkers;i++{m.wg.Add(1);go m.worker(i+1)};return nil}
 func(m *Manager)Stop(){close(m.stop);m.mu.Lock();for _,c:=range m.cancel{c()};m.mu.Unlock();m.wg.Wait()}
 func(m *Manager)worker(slot int){defer m.wg.Done();t:=time.NewTicker(300*time.Millisecond);defer t.Stop();for{select{case<-m.stop:return;case<-t.C:j,e:=m.store.ClaimNext();if e!=nil||j==nil{continue};if !m.locks.TryAcquire(j.JobID,j.Locks){_=m.store.Requeue(j.JobID,"resource lock busy");continue};m.run(slot,*j)}}}
-func commandForShell(ctx context.Context,c string)*exec.Cmd{if gort.GOOS=="windows"{shellCommand:=c;if strings.HasPrefix(strings.TrimSpace(c),"\""){shellCommand="\""+c+"\""};return exec.CommandContext(ctx,"cmd.exe","/D","/S","/C",shellCommand)};return exec.CommandContext(ctx,"/bin/sh","-c",c)}
+func commandForShell(ctx context.Context,c string)*exec.Cmd{if gort.GOOS=="windows"{return exec.CommandContext(ctx,"cmd.exe","/D","/C",c)};return exec.CommandContext(ctx,"/bin/sh","-c",c)}
 
 func statusSucceeded(status model.Status) bool { return status == model.StatusSucceeded }
 func nextActionFor(status model.Status,detail string) string {
