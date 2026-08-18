@@ -3,7 +3,7 @@ param(
   [string]$WorkspaceRoot='D:\AI-Work\jobs\0003-YUJING-BRIDGE',
   [string]$Machine='DESKTOP-UL7V2VV',
   [string]$OpenWorkerRoot='',
-  [string]$DriveSyncRoot=$env:OPENWORKER_REVIEW_DRIVE_ROOT,
+  [string]$DriveSyncRoot='',
   [string]$GoToolRoot='',
   [string]$TerrainRoot='',
   [string]$SceneXRoot='',
@@ -44,10 +44,11 @@ $GoToolRoot=Resolve-Root $GoToolRoot 'GO_TOOL_ROOT'
 $TerrainRoot=Resolve-Root $TerrainRoot 'TERRAIN_ROOT'
 $SceneXRoot=Resolve-Root $SceneXRoot 'SCENEX_ROOT'
 $EngineeringOSRoot=Resolve-Root $EngineeringOSRoot 'ENGINEERING_OS_ROOT'
+$DriveSyncRoot=Resolve-Root $DriveSyncRoot 'OPENWORKER_REVIEW_DRIVE_ROOT'
 if(-not(Test-Path -LiteralPath $OpenWorkerRoot -PathType Container)){throw "OPENWORKER_ROOT unavailable: $OpenWorkerRoot"}
 $resolved=[ordered]@{
-  schema='openworker/case0003-root-resolution/v1';case_id='0003';machine=$Machine;source='explicit>openworker-inventory>environment';
-  openworker_root=$OpenWorkerRoot;go_tool_root=$GoToolRoot;terrain_root=$TerrainRoot;scenex_root=$SceneXRoot;engineering_os_root=$EngineeringOSRoot
+  schema='openworker/case0003-root-resolution/v2';case_id='0003';machine=$Machine;source='explicit>openworker-inventory>environment';
+  openworker_root=$OpenWorkerRoot;go_tool_root=$GoToolRoot;terrain_root=$TerrainRoot;scenex_root=$SceneXRoot;engineering_os_root=$EngineeringOSRoot;drive_review_root=$DriveSyncRoot
 }
 $evidenceDir=Join-Path $WorkspaceRoot 'evidence';New-Item -ItemType Directory -Force -Path $evidenceDir|Out-Null
 $resolved|ConvertTo-Json -Depth 6|Set-Content -LiteralPath (Join-Path $evidenceDir 'case0003-root-resolution.json') -Encoding utf8
