@@ -1,0 +1,27 @@
+{
+    "schema":  "openworker/case0005-bootstrap-script-outcome/v2",
+    "case_id":  "0005",
+    "machine":  "DESKTOP-ODAQN0D",
+    "workspace_root":  "D:\\AI-Work\\jobs\\0005-SNOW-WHITE",
+    "resident_root":  "D:\\AI-Work\\runtime\\openworker",
+    "succeeded":  false,
+    "stage":  "resolve_tool_roots",
+    "reason":  "local checkout not found for go-tool-runtime",
+    "raw_openworker_response":  null,
+    "ack":  null,
+    "checks":  {
+                   "expected_machine":  "DESKTOP-ODAQN0D",
+                   "actual_machine":  "DESKTOP-ODAQN0D",
+                   "source_root":  "C:\\github-runners\\openworker\\_work\\openworker\\openworker",
+                   "node_online":  true,
+                   "node_machine":  "DESKTOP-ODAQN0D",
+                   "node_max_workers":  4,
+                   "node_running_commit":  "2c49928d1add1462e8cf45d88ec3e489e71a4751",
+                   "resident_root_exists":  true,
+                   "manifest_exists":  true,
+                   "spec_exists":  true
+               },
+    "started_at":  "2026-08-18T14:59:18.3045565+00:00",
+    "observed_at":  "2026-08-18T14:59:19.2801656+00:00",
+    "next_action":  "repair the reported stage/reason, then retry bootstrap only"
+}
