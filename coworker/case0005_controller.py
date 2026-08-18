@@ -8,6 +8,7 @@ authority and knowledge-graph owner.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import subprocess
 import sys
@@ -42,6 +43,34 @@ class Case0005Controller(LocalCaseController):
 
     def _acceptance_evidence(self, step: CaseStep, local_result: Mapping[str, Any]) -> dict[str, Any]:
         action = str(local_result.get("capability_id", ""))
+        if action == "comfyx-studio.storyboard.plan" and step.step_id == "0005-020":
+            evidence = local_result.get("evidence")
+            if not isinstance(evidence, Mapping):
+                raise CaseWorklistError("0005-020 storyboard plan missing evidence")
+            actual = str(evidence.get("director_plan_sha256", "")).strip().lower()
+            parent = self.runtime.load().step("0005-010")
+            expected = str(parent.evidence.get("director_plan_sha256", "")).strip().lower()
+            if not expected:
+                raise CaseWorklistError("0005-020 requires durable 0005-010 director_plan_sha256 evidence")
+            if actual != expected:
+                raise CaseWorklistError(
+                    f"0005-020 Director provenance mismatch expected={expected} actual={actual}"
+                )
+            return super()._acceptance_evidence(step, local_result)
+        if action == "presentation.openmaic" and step.step_id == "0005-025":
+            evidence = local_result.get("evidence")
+            if not isinstance(evidence, Mapping):
+                raise CaseWorklistError("0005-025 OpenMAIC missing evidence")
+            request_path = self.workspace / "presentation" / "storyboard-request.json"
+            if not request_path.is_file():
+                raise CaseWorklistError("0005-025 canonical storyboard request is missing")
+            expected_request_sha = self._sha256_file(request_path)
+            actual_request_sha = str(evidence.get("request_sha256", "")).strip().lower()
+            if actual_request_sha != expected_request_sha:
+                raise CaseWorklistError(
+                    f"0005-025 request provenance mismatch expected={expected_request_sha} actual={actual_request_sha}"
+                )
+            return super()._acceptance_evidence(step, local_result)
         if action == "image.comfyx.storyboard-real" and step.step_id in {"0005-030", "0005-040"}:
             if str(local_result.get("status", "")).lower() != "completed":
                 raise CaseWorklistError("ComfyX storyboard IMAGE batch did not report completed")
@@ -97,6 +126,14 @@ class Case0005Controller(LocalCaseController):
                 raise CaseWorklistError("0005-050 shot sha256 count mismatch")
             return self._require_keys(mapped, step.acceptance)
         return super()._acceptance_evidence(step, local_result)
+
+    @staticmethod
+    def _sha256_file(path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
 
     def _job_payload(
         self,
