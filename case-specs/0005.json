@@ -22,6 +22,10 @@
     "verification_endpoint": "http://127.0.0.1:8848/api/execution/local-supervisor/verification",
     "required_verification_status": "REAL_VERIFIED",
     "max_parallel_actions": 4,
+    "fanout_queue_owner": "go-tool-runtime:8848",
+    "fanout_submit_all_children_before_coordinator": true,
+    "openworker_business_child_jobs_allowed": false,
+    "openworker_fanout_role": "single-coordinator-only",
     "github_actions": "code_update_or_repair_only",
     "github_actions_business_execution_allowed": false,
     "github_actions_fallback_allowed": false,
@@ -32,6 +36,7 @@
     "fixed_machine_authority": "COMPUTERNAME",
     "success_requires_local_route_evidence": true,
     "success_requires_append_only_supervisor_ledger": true,
-    "success_requires_real_four_slot_verification": true
+    "success_requires_real_four_slot_verification": true,
+    "success_requires_queue_owned_fanout": true
   }
 }
