@@ -2,6 +2,20 @@ name: Bootstrap OpenWorker Node Service ODA
 
 on:
   workflow_dispatch:
+    inputs:
+      listen:
+        description: Local bind address
+        required: false
+        default: '127.0.0.1:8787'
+        type: string
+      advertise:
+        description: Reachable URL other nodes should use
+        required: false
+        type: string
+      peers:
+        description: Comma-separated reachable OpenWorker node URLs
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -14,8 +28,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Verify fixed ODA computer
         shell: powershell
-        run: |
-          if($env:COMPUTERNAME -ine 'DESKTOP-ODAQN0D'){throw "wrong host $env:COMPUTERNAME"}
+        run: if($env:COMPUTERNAME -ine 'DESKTOP-ODAQN0D'){throw "wrong host $env:COMPUTERNAME"}
       - uses: actions/setup-go@v5
         with:
           go-version: '1.23.x'
@@ -30,8 +43,12 @@ jobs:
           go build -ldflags "-X github.com/liuxb99/openworker/go-runtime/internal/buildinfo.Version=p2-node -X github.com/liuxb99/openworker/go-runtime/internal/buildinfo.Commit=$commit -X github.com/liuxb99/openworker/go-runtime/internal/buildinfo.BuildTime=$build" -o openworker-node.exe ./cmd/openworker-node
       - name: Install or upgrade OpenWorkerNode service
         shell: powershell
+        env:
+          LISTEN: ${{ inputs.listen }}
+          ADVERTISE: ${{ inputs.advertise }}
+          PEERS: ${{ inputs.peers }}
         run: |
-          & "$env:GITHUB_WORKSPACE\scripts\install_openworker_node_service.ps1" -SourceExe "$env:GITHUB_WORKSPACE\go-runtime\openworker-node.exe" -Workers 4 -Capabilities 'case0002,comfyx,minimax-h3,video,storyboard,presentation'
+          & "$env:GITHUB_WORKSPACE\scripts\install_openworker_node_service.ps1" -SourceExe "$env:GITHUB_WORKSPACE\go-runtime\openworker-node.exe" -Workers 4 -Capabilities 'case0002,comfyx,minimax-h3,video,storyboard,presentation' -Listen $env:LISTEN -Advertise $env:ADVERTISE -Peers $env:PEERS
       - name: Verify service node identity inventory and lease
         shell: powershell
         run: |
@@ -40,4 +57,5 @@ jobs:
           if($s.build.commit -ne $env:GITHUB_SHA){throw "node commit=$($s.build.commit) expected=$env:GITHUB_SHA"}
           if(-not $s.lease_until){throw 'missing lease_until'}
           if(-not ($s.inventory.capabilities -contains 'comfyx')){throw 'missing comfyx capability'}
+          if(-not $s.advertise_endpoint){throw 'missing advertise endpoint'}
           $s|ConvertTo-Json -Depth 20
