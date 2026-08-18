@@ -7,7 +7,6 @@ import os
 import platform
 from pathlib import Path
 
-from coworker.review_cycle import DEFAULT_DRIVE_FOLDER_ID
 from coworker.review_drive_ledger import publish_review_bundle_to_ledger
 from coworker.work_ledger import WorkLedger
 
@@ -21,7 +20,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--ledger")
     parser.add_argument(
         "--drive-folder-id",
-        default=os.environ.get("OPENWORKER_REVIEW_DRIVE_FOLDER_ID", DEFAULT_DRIVE_FOLDER_ID),
+        default=os.environ.get("OPENWORKER_REVIEW_DRIVE_FOLDER_ID", ""),
     )
     parser.add_argument("--machine-id", default=platform.node())
     parser.add_argument("--case-id", default="")
