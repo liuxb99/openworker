@@ -14,7 +14,7 @@ function Save-Outcome([bool]$Succeeded,[string]$Reason,$RawResponse=$null,$Ack=$
   $dir=Split-Path $outcomePath
   New-Item -ItemType Directory -Force -Path $dir | Out-Null
   $o=[ordered]@{
-    schema='openworker/case0005-bootstrap-script-outcome/v4'
+    schema='openworker/case0005-bootstrap-script-outcome/v5'
     case_id='0005'
     machine=$env:COMPUTERNAME
     workspace_root=$WorkspaceRoot
@@ -105,6 +105,22 @@ try {
     }
     return Resolve-RepoRoot 'go-tool-runtime' @('go.mod','cmd\gtr-local-exec\main.go')
   }
+  function Resolve-PythonExe(){
+    $cmd=Get-Command python.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if($cmd -and (Test-Path -LiteralPath $cmd.Source -PathType Leaf)){return (Resolve-Path $cmd.Source).Path}
+    foreach($p in @(
+      'C:\Python313\python.exe','C:\Python312\python.exe','C:\Python311\python.exe','C:\Python310\python.exe',
+      'C:\Program Files\Python313\python.exe','C:\Program Files\Python312\python.exe','C:\Program Files\Python311\python.exe','C:\Program Files\Python310\python.exe'
+    )){if(Test-Path -LiteralPath $p -PathType Leaf){return (Resolve-Path $p).Path}}
+    try{
+      $paths=& py.exe -0p 2>$null
+      foreach($line in @($paths)){
+        $candidate=($line -replace '^\s*-V:[^\s]+\s+','').Trim()
+        if(Test-Path -LiteralPath $candidate -PathType Leaf){return (Resolve-Path $candidate).Path}
+      }
+    }catch{}
+    throw 'authoritative python.exe path not found on ODA'
+  }
 
   $stage='resolve_tool_roots'
   $envMap=@{
@@ -118,6 +134,11 @@ try {
   $checks.tool_roots=$envMap
   $checks.go_tool_authority_kind=if($envMap.GTR_LOCAL_EXEC_EXE){'deployed-runtime-exe'}else{'source-checkout'}
   if($checks.go_tool_authority_kind -eq 'deployed-runtime-exe' -and -not(Test-Path -LiteralPath $envMap.GTR_LOCAL_EXEC_EXE -PathType Leaf)){throw 'deployed GTR_LOCAL_EXEC_EXE authority missing'}
+
+  $stage='resolve_python'
+  $pythonExe=Resolve-PythonExe
+  $checks.python_exe=$pythonExe
+  if(-not(Test-Path -LiteralPath $pythonExe -PathType Leaf)){throw "resolved python.exe missing: $pythonExe"}
 
   $stage='resolve_comfyui_output'
   foreach($p in @('D:\Comfy-Desktop\ComfyUI-Installs\ComfyUI\ComfyUI\output','D:\ComfyUI\output')){
@@ -135,6 +156,7 @@ try {
     controller_module='coworker.case0005_controller'
     manifest_path='case-worklists/0005.json'
     spec_path='case-specs/0005.json'
+    python_exe=$pythonExe
     env=$envMap
   }|ConvertTo-Json -Depth 10
 
@@ -160,9 +182,9 @@ try {
   $evidence=Join-Path $WorkspaceRoot 'evidence'
   New-Item -ItemType Directory -Force -Path $evidence | Out-Null
   $receipt=[ordered]@{
-    schema='openworker/case0005-resident-bootstrap/v4';case_id='0005';machine=$Machine;workspace_root=$WorkspaceRoot;
+    schema='openworker/case0005-resident-bootstrap/v5';case_id='0005';machine=$Machine;workspace_root=$WorkspaceRoot;
     resident_root=$ResidentRoot;transport='go-tool-lan-hostname';target_queue_url="http://$Machine`:8848";business_execution='resident-openworker-local-supervisor';github_action_used_for_business_execution=$false;
-    node=$node;ack=$ack;tool_roots=$envMap;submitted_at=[DateTimeOffset]::UtcNow.ToString('o')
+    node=$node;ack=$ack;python_exe=$pythonExe;tool_roots=$envMap;submitted_at=[DateTimeOffset]::UtcNow.ToString('o')
   }
   $receipt|ConvertTo-Json -Depth 20|Set-Content -LiteralPath (Join-Path $evidence 'case0005-resident-bootstrap.json') -Encoding utf8
   $stage='completed'
