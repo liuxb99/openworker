@@ -14,7 +14,7 @@ function Save-Outcome([bool]$Succeeded,[string]$Reason,$RawResponse=$null,$Ack=$
   $dir=Split-Path $outcomePath
   New-Item -ItemType Directory -Force -Path $dir | Out-Null
   $o=[ordered]@{
-    schema='openworker/case0005-bootstrap-script-outcome/v2'
+    schema='openworker/case0005-bootstrap-script-outcome/v3'
     case_id='0005'
     machine=$env:COMPUTERNAME
     workspace_root=$WorkspaceRoot
@@ -71,6 +71,7 @@ try {
   function Resolve-RepoRoot([string]$Name,[string[]]$Markers){
     $candidates=@(
       (Join-Path 'D:\actions-runner\_work' "$Name\$Name"),
+      (Join-Path 'C:\github-runners' "$Name\_work\$Name\$Name"),
       (Join-Path 'C:\github-runners' $Name),
       (Join-Path 'D:\AI' $Name),
       (Join-Path 'D:\AIWork' $Name),
@@ -81,21 +82,39 @@ try {
       $ok=$true; foreach($m in $Markers){if(-not(Test-Path -LiteralPath (Join-Path $c $m))){$ok=$false;break}}
       if($ok){return (Resolve-Path $c).Path}
     }
+    foreach($base in @('C:\github-runners','D:\actions-runner\_work')){
+      if(-not(Test-Path -LiteralPath $base -PathType Container)){continue}
+      $dirs=Get-ChildItem -LiteralPath $base -Directory -Recurse -ErrorAction SilentlyContinue | Where-Object {$_.Name -ieq $Name} | Select-Object -First 20
+      foreach($d in $dirs){
+        $ok=$true; foreach($m in $Markers){if(-not(Test-Path -LiteralPath (Join-Path $d.FullName $m))){$ok=$false;break}}
+        if($ok){return $d.FullName}
+      }
+    }
     throw "local checkout not found for $Name"
   }
   function Resolve-RepoRootAlias([string[]]$Names,[string[]]$Markers){
     foreach($name in $Names){try{return Resolve-RepoRoot $name $Markers}catch{}}
     throw "local checkout not found for aliases=$($Names -join ',')"
   }
+  function Resolve-GoToolAuthority(){
+    $deploy='C:\ProgramData\go-tool-runtime\work-agent'
+    $required=@('gtr-local-exec.exe','gtr-work-agent.exe','gtr-work-executor.exe','local-queue-authority.json')
+    if(Test-Path -LiteralPath $deploy -PathType Container){
+      $ok=$true;foreach($m in $required){if(-not(Test-Path -LiteralPath (Join-Path $deploy $m) -PathType Leaf)){$ok=$false;break}}
+      if($ok){return (Resolve-Path $deploy).Path}
+    }
+    return Resolve-RepoRoot 'go-tool-runtime' @('go.mod','cmd\gtr-local-exec\main.go')
+  }
 
   $stage='resolve_tool_roots'
   $envMap=@{
-    GO_TOOL_ROOT=(Resolve-RepoRoot 'go-tool-runtime' @('go.mod','cmd\gtr-local-exec\main.go'))
+    GO_TOOL_ROOT=(Resolve-GoToolAuthority)
     COMFYX_ROOT=(Resolve-RepoRoot 'ComfyX' @('go.mod','cmd\comfyx-synthesis-video-real'))
     COMFYX_STUDIO_ROOT=(Resolve-RepoRoot 'Comfyx-Studio' @('go.mod','cmd\operator-director-preproduction'))
     OPENMAIC_ROOT=(Resolve-RepoRootAlias @('OpenMAIC','openmaic-fork') @('package.json','src\cli\presentation.ts'))
   }
   $checks.tool_roots=$envMap
+  $checks.go_tool_authority_kind=if($envMap.GO_TOOL_ROOT -ieq 'C:\ProgramData\go-tool-runtime\work-agent'){'deployed-runtime'}else{'source-checkout'}
 
   $stage='resolve_comfyui_output'
   foreach($p in @('D:\Comfy-Desktop\ComfyUI-Installs\ComfyUI\ComfyUI\output','D:\ComfyUI\output')){
@@ -138,9 +157,9 @@ try {
   $evidence=Join-Path $WorkspaceRoot 'evidence'
   New-Item -ItemType Directory -Force -Path $evidence | Out-Null
   $receipt=[ordered]@{
-    schema='openworker/case0005-resident-bootstrap/v2';case_id='0005';machine=$Machine;workspace_root=$WorkspaceRoot;
+    schema='openworker/case0005-resident-bootstrap/v3';case_id='0005';machine=$Machine;workspace_root=$WorkspaceRoot;
     resident_root=$ResidentRoot;transport='go-tool-lan-hostname';target_queue_url="http://$Machine`:8848";business_execution='resident-openworker-local-supervisor';github_action_used_for_business_execution=$false;
-    node=$node;ack=$ack;submitted_at=[DateTimeOffset]::UtcNow.ToString('o')
+    node=$node;ack=$ack;tool_roots=$envMap;submitted_at=[DateTimeOffset]::UtcNow.ToString('o')
   }
   $receipt|ConvertTo-Json -Depth 20|Set-Content -LiteralPath (Join-Path $evidence 'case0005-resident-bootstrap.json') -Encoding utf8
   $stage='completed'
