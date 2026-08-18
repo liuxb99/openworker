@@ -1,0 +1,36 @@
+name: Case 0005 Bootstrap ODA
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'bootstrap-requests/case-0005-oda.trigger'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    runs-on: [self-hosted, Windows, X64, ODA]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify ODA
+        shell: powershell
+        run: |
+          if ($env:COMPUTERNAME -ine 'DESKTOP-ODAQN0D') { throw "wrong host: $env:COMPUTERNAME" }
+      - name: One-shot local OpenWorker bootstrap only
+        shell: powershell
+        run: |
+          & .\scripts\case0005_resident_bootstrap.ps1
+          if ($LASTEXITCODE -ne 0) { throw "case0005 resident bootstrap failed: $LASTEXITCODE" }
+      - name: Verify bootstrap receipt exists
+        shell: powershell
+        run: |
+          $p='D:\AI-Work\jobs\0005-SNOW-WHITE\evidence\case0005-resident-bootstrap.json'
+          if (-not (Test-Path -LiteralPath $p -PathType Leaf)) { throw "missing bootstrap receipt $p" }
+          $r=Get-Content -Raw -LiteralPath $p | ConvertFrom-Json
+          if ($r.case_id -ne '0005' -or $r.machine -ine 'DESKTOP-ODAQN0D') { throw 'invalid bootstrap receipt' }
+          if (-not $r.ack.job.accepted) { throw 'bootstrap not durably accepted' }
+          Write-Host "CASE0005_LOCAL_BOOTSTRAP_ACCEPTED workspace=$($r.workspace_root)"
