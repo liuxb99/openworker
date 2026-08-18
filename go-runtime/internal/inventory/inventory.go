@@ -21,6 +21,7 @@ var authorityRoots=[]struct{Name,Env string}{
 	{"terrain-to-dxf","TERRAIN_ROOT"},
 	{"scenex","SCENEX_ROOT"},
 	{"engineering-os","ENGINEERING_OS_ROOT"},
+	{"review-drive","OPENWORKER_REVIEW_DRIVE_ROOT"},
 }
 
 func Collect() Snapshot {
@@ -52,7 +53,6 @@ func collectGPUs() []GPU {
 	out:=[]GPU{}
 	for _,line:=range strings.Split(strings.TrimSpace(string(b)),"\n"){
 		parts:=strings.Split(line,",");if len(parts)<2{continue}
-		g:=GPU{Index:strings.TrimSpace(parts[0]),Name:strings.TrimSpace(parts[1])};if len(parts)>2{g.MemoryMiB=strings.TrimSpace(parts[2])};out=append(out,g)
-	}
+		g:=GPU{Index:strings.TrimSpace(parts[0]),Name:strings.TrimSpace(parts[1])};if len(parts)>2{g.MemoryMiB=strings.TrimSpace(parts[2])};out=append(out,g)}
 	return out
 }
