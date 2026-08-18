@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -11,10 +12,20 @@ from coworker.case_worklist_runtime import CaseWorklistRuntime
 from scripts.case0002_apply_openmaic_receipt import apply_receipt, validate_receipt
 
 
-def _write_artifacts(workspace: Path, rel: str = "presentation/storyboard.pptx", *, slides: int = 4):
+def _write_artifacts(
+    workspace: Path,
+    rel: str = "presentation/storyboard.pptx",
+    *,
+    slides: int = 4,
+    media: int = 0,
+):
     pptx = workspace / rel
     pptx.parent.mkdir(parents=True, exist_ok=True)
-    pptx.write_bytes(b"physical-openmaic-pptx")
+    with zipfile.ZipFile(pptx, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        archive.writestr("ppt/presentation.xml", "<p:presentation/>")
+        for index in range(media):
+            archive.writestr(f"ppt/media/image{index + 1}.png", b"png")
     sha = hashlib.sha256(pptx.read_bytes()).hexdigest()
     manifest = pptx.with_suffix(".manifest.json")
     manifest.write_text(
@@ -24,17 +35,27 @@ def _write_artifacts(workspace: Path, rel: str = "presentation/storyboard.pptx",
     return pptx, manifest, sha
 
 
-def _receipt(workspace: Path, *, media: int = 0, rel: str = "presentation/storyboard.pptx", slides: int = 4):
-    pptx, manifest, sha = _write_artifacts(workspace, rel, slides=slides)
+def _receipt(
+    workspace: Path,
+    *,
+    media: int = 0,
+    receipt_media: int | None = None,
+    rel: str = "presentation/storyboard.pptx",
+    slides: int = 4,
+    run_id: str = "42",
+):
+    pptx, manifest, sha = _write_artifacts(workspace, rel, slides=slides, media=media)
     return {
+        "schema_version": "openmaic-presentation-action-receipt/v1",
         "tool": "presentation.openmaic",
         "status": "succeeded",
+        "action": {"run_id": run_id, "run_attempt": "1"},
         "artifact": {
             "path": str(pptx),
             "size_bytes": pptx.stat().st_size,
             "slide_count": slides,
             "sha256": sha,
-            "media_count": media,
+            "media_count": media if receipt_media is None else receipt_media,
         },
         "manifest": str(manifest),
         "runner": {"computer_name": "DESKTOP-ODAQN0D"},
@@ -84,7 +105,8 @@ def test_text_only_receipt_passes_025_and_stops_at_user_approval(tmp_path: Path)
         workspace,
         "0002-025",
         "presentation.openmaic:42",
-        _receipt(workspace, media=0),
+        _receipt(workspace, media=0, run_id="42"),
+        expected_run_id="42",
     )
     data = result.as_dict()
     step = result.step("0002-025")
@@ -100,6 +122,26 @@ def test_text_only_receipt_rejects_embedded_media(tmp_path: Path):
     receipt = _receipt(workspace, media=1)
     with pytest.raises(CaseWorklistError, match="media_count == 0"):
         validate_receipt(workspace, "DESKTOP-ODAQN0D", "0002-025", receipt)
+
+
+def test_receipt_rejects_claimed_media_count_mismatch(tmp_path: Path):
+    workspace = tmp_path.resolve()
+    receipt = _receipt(workspace, media=0, receipt_media=1)
+    with pytest.raises(CaseWorklistError, match="media_count mismatch"):
+        validate_receipt(workspace, "DESKTOP-ODAQN0D", "0002-025", receipt)
+
+
+def test_receipt_rejects_wrong_target_run(tmp_path: Path):
+    workspace = tmp_path.resolve()
+    receipt = _receipt(workspace, media=0, run_id="41")
+    with pytest.raises(CaseWorklistError, match="receipt run mismatch"):
+        validate_receipt(
+            workspace,
+            "DESKTOP-ODAQN0D",
+            "0002-025",
+            receipt,
+            expected_run_id="42",
+        )
 
 
 def test_receipt_rejects_physical_sha_mismatch(tmp_path: Path):
