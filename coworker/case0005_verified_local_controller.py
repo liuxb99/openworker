@@ -1,4 +1,4 @@
-"""Canonical Case 0005 controller gated by REAL local-supervisor verification.
+"""Canonical Case 0005 controller gated by current local-supervisor health.
 
 All business fanout is owned by go-tool :8848. OpenWorker is used only as the
 resident process/progress kernel and runs one lightweight coordinator per
@@ -19,7 +19,7 @@ from .case0005_direct_queue_fanout import Case0005DirectQueueFanoutMixin
 from .case0005_true_local_controller import TrueLocalCase0005Controller
 from .case_worklist import CaseWorklistError
 
-_VERIFY_URL = "http://127.0.0.1:8848/api/execution/local-supervisor/verification"
+_SUPERVISOR_STATUS_URL = "http://127.0.0.1:8848/api/execution/local-supervisor/status"
 _CANONICAL_MODULE = "coworker.case0005_verified_local_controller"
 
 
@@ -30,66 +30,79 @@ class VerifiedLocalCase0005Controller(
 ):
     def _require_verified_local_supervisor(self, operation: str) -> dict:
         try:
-            request = Request(_VERIFY_URL, method="GET")
+            request = Request(_SUPERVISOR_STATUS_URL, method="GET")
             with urlopen(request, timeout=8) as response:
-                payload = response.read(2 * 1024 * 1024)
+                payload = response.read(4 * 1024 * 1024)
         except (HTTPError, URLError, TimeoutError, OSError) as exc:
             self._append_ledger(
-                "local_supervisor_verification_failed",
+                "local_supervisor_operational_check_failed",
                 operation=operation,
-                verification_url=_VERIFY_URL,
-                reason=f"verification endpoint unavailable: {exc}",
+                status_url=_SUPERVISOR_STATUS_URL,
+                reason=f"local supervisor status endpoint unavailable: {exc}",
                 execution_route="blocked",
                 github_action_fallback_allowed=False,
             )
-            raise CaseWorklistError(f"true local supervisor verification endpoint unavailable: {exc}") from exc
+            raise CaseWorklistError(f"true local supervisor status endpoint unavailable: {exc}") from exc
         try:
             value = json.loads(payload.decode("utf-8"))
         except Exception as exc:
             self._append_ledger(
-                "local_supervisor_verification_failed",
+                "local_supervisor_operational_check_failed",
                 operation=operation,
-                verification_url=_VERIFY_URL,
-                reason=f"invalid verification JSON: {exc}",
+                status_url=_SUPERVISOR_STATUS_URL,
+                reason=f"invalid status JSON: {exc}",
                 execution_route="blocked",
                 github_action_fallback_allowed=False,
             )
-            raise CaseWorklistError("true local supervisor verification returned invalid JSON") from exc
+            raise CaseWorklistError("true local supervisor status returned invalid JSON") from exc
         if not isinstance(value, dict):
-            raise CaseWorklistError("true local supervisor verification response must be an object")
+            raise CaseWorklistError("true local supervisor status response must be an object")
         status = str(value.get("status", "")).strip()
-        receipt = value.get("receipt")
-        if status != "REAL_VERIFIED" or not isinstance(receipt, dict):
+        verification = value.get("verification")
+        verification_status = str(verification.get("status", "")).strip() if isinstance(verification, dict) else ""
+        claim_slots = int(value.get("fresh_claim_slot_count", 0) or 0)
+        executor_slots = int(value.get("fresh_executor_slot_count", 0) or 0)
+        operational = bool(value.get("operational"))
+        route_label = str(value.get("route_label", "")).strip()
+        github_used = bool(value.get("github_action_used_for_business_execution"))
+        if (
+            status != "OPERATIONAL"
+            or not operational
+            or verification_status != "REAL_VERIFIED"
+            or claim_slots < 4
+            or executor_slots < 4
+            or route_label != "LOCAL_SUPERVISOR"
+            or github_used
+        ):
             self._append_ledger(
-                "local_supervisor_verification_failed",
+                "local_supervisor_operational_check_failed",
                 operation=operation,
-                verification_url=_VERIFY_URL,
-                verification_status=status or "UNKNOWN",
-                verification=value,
+                status_url=_SUPERVISOR_STATUS_URL,
+                supervisor_status=status or "UNKNOWN",
+                verification_status=verification_status or "UNKNOWN",
+                fresh_claim_slot_count=claim_slots,
+                fresh_executor_slot_count=executor_slots,
+                route_label=route_label,
+                supervisor=value,
                 execution_route="blocked",
                 github_action_fallback_allowed=False,
             )
             raise CaseWorklistError(
-                f"true local supervisor is not REAL_VERIFIED (status={status or 'UNKNOWN'}); "
+                "true local supervisor is not OPERATIONAL with four live claim and executor slots; "
+                f"status={status or 'UNKNOWN'} verification={verification_status or 'UNKNOWN'} "
+                f"claim_slots={claim_slots} executor_slots={executor_slots}; "
                 "business dispatch is blocked and GitHub Actions fallback is forbidden"
             )
-        if str(receipt.get("route_label", "")).strip() != "LOCAL_SUPERVISOR":
-            raise CaseWorklistError("verification receipt route_label is not LOCAL_SUPERVISOR")
-        if bool(receipt.get("github_action_used_for_business_execution")):
-            raise CaseWorklistError("verification receipt reports GitHub business execution")
-        if int(receipt.get("distinct_claim_worker_count", 0) or 0) < 4:
-            raise CaseWorklistError("verification receipt proves fewer than four claim workers")
-        if int(receipt.get("distinct_executor_slot_count", 0) or 0) < 4:
-            raise CaseWorklistError("verification receipt proves fewer than four executor slots")
         self._append_ledger(
-            "local_supervisor_verification_passed",
+            "local_supervisor_operational_check_passed",
             operation=operation,
-            verification_url=_VERIFY_URL,
-            verification_status=status,
-            verification_receipt_path=str(value.get("receipt_path", "")),
-            max_parallel_actions=int(receipt.get("max_parallel_actions", 0) or 0),
-            distinct_claim_worker_count=int(receipt.get("distinct_claim_worker_count", 0) or 0),
-            distinct_executor_slot_count=int(receipt.get("distinct_executor_slot_count", 0) or 0),
+            status_url=_SUPERVISOR_STATUS_URL,
+            supervisor_status=status,
+            verification_status=verification_status,
+            fresh_claim_slot_count=claim_slots,
+            fresh_executor_slot_count=executor_slots,
+            active_slots=int(value.get("active_slots", 0) or 0),
+            free_slots=int(value.get("free_slots", 0) or 0),
             execution_route="local_supervisor",
             github_action_used_for_business_execution=False,
         )
@@ -138,7 +151,7 @@ class VerifiedLocalCase0005Controller(
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Case 0005 REAL-verified local controller")
+    parser = argparse.ArgumentParser(description="Case 0005 OPERATIONAL local controller")
     parser.add_argument("--node-url", default="http://127.0.0.1:8787")
     sub = parser.add_subparsers(dest="command", required=True)
     bootstrap = sub.add_parser("bootstrap"); bootstrap.add_argument("--workspace", required=True); bootstrap.add_argument("--manifest", required=True); bootstrap.add_argument("--spec", required=True)
@@ -170,10 +183,8 @@ def main() -> int:
         else:
             result = controller.watch_video_fanout(args.fanout_manifest)
     except Exception as exc:
-        try:
-            controller._append_ledger("controller_command_failed", command=args.command, error=str(exc))
-        except Exception:
-            pass
+        try: controller._append_ledger("controller_command_failed", command=args.command, error=str(exc))
+        except Exception: pass
         print(json.dumps({"status": "failed", "error": str(exc)}, ensure_ascii=False), file=sys.stderr)
         return 2
     if args.command not in {"run-step", "run-image-asset", "run-video-shot"}:
