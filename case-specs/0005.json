@@ -1,0 +1,24 @@
+{
+  "schema_version": "openworker-case-spec/v1",
+  "case_id": "0005",
+  "title": "Snow White / 白雪公主",
+  "source_story": "A cinematic fairy-tale short about Snow White. Establish a coherent forest and castle world; introduce Snow White with a stable recognizable character design; establish the Queen and magic mirror as the threat; make the poisoned apple the central crisis; end with awakening, safety and hope. Preserve Snow White, the Queen, the apple, the castle, the forest and the magic mirror consistently across shots. The Director may choose the exact shot count and staging, but the result must remain a concise short-film narrative suitable for storyboard approval before expensive image/video generation.",
+  "director_plan_relpath": "director/project-plan.json",
+  "text_storyboard": {
+    "request_relpath": "presentation/storyboard-request.json",
+    "output_relpath": "presentation/storyboard-text-only.pptx",
+    "required_media_count": 0
+  },
+  "illustrated_storyboard": {
+    "request_relpath": "presentation/storyboard-request.bound.json",
+    "output_relpath": "presentation/storyboard-illustrated.pptx",
+    "minimum_media_count": 1
+  },
+  "execution_policy": {
+    "normal_mode": "localexec",
+    "github_actions": "recovery_or_code_update_only",
+    "tool_authority": "go-tool-runtime",
+    "video_planner_authority": "ComfyX durable knowledge graph",
+    "fixed_machine_authority": "COMPUTERNAME"
+  }
+}
