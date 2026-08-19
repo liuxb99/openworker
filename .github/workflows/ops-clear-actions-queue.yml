@@ -23,39 +23,18 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
       - name: Cancel and verify every other non-terminal run
         shell: bash
         run: |
-          set -euo pipefail
-          current="${GITHUB_RUN_ID}"
+          set -uo pipefail
           state="${RUNNER_TEMP}/queue-clear.json"
-          list_runs() {
-            gh api --paginate --slurp "repos/${GH_REPO}/actions/runs?per_page=100" \
-              | jq --arg current "${current}" '[.[].workflow_runs[] | select(.status != "completed" and (.id|tostring) != $current) | {id,name,status}] | unique_by(.id)'
-          }
-          before="$(list_runs)"
-          cancelled='[]'
-          remaining="${before}"
-          for attempt in $(seq 1 84); do
-            while IFS= read -r id; do
-              [[ -z "${id}" ]] && continue
-              if gh api -X POST "repos/${GH_REPO}/actions/runs/${id}/cancel" >/dev/null 2>&1 \
-                || gh api -X POST "repos/${GH_REPO}/actions/runs/${id}/force-cancel" >/dev/null 2>&1; then
-                cancelled="$(jq --argjson id "${id}" '.+[$id]|unique' <<<"${cancelled}")"
-              fi
-            done < <(jq -r '.[].id' <<<"${remaining}")
-            sleep 5
-            remaining="$(list_runs)"
-            echo "QUEUE_CLEAR_POLL attempt=${attempt} remaining=$(jq length <<<"${remaining}")"
-            [[ "$(jq length <<<"${remaining}")" == 0 ]] && break
-          done
-          outcome=PASS
-          [[ "$(jq length <<<"${remaining}")" == 0 ]] || outcome=FAIL
-          jq -n --arg run_id "${current}" --arg source_sha "${GITHUB_SHA}" --arg outcome "${outcome}" \
-            --arg verified_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --argjson before "${before}" \
-            --argjson cancelled "${cancelled}" --argjson remaining "${remaining}" \
-            '{schema_version:"openworker-queue-clear-evidence/v2",run_id:$run_id,source_sha:$source_sha,nonterminal_before:$before,cancelled_ids:$cancelled,remaining_after:$remaining,outcome:$outcome,verified_at:$verified_at}' > "${state}"
-          [[ "${outcome}" == PASS ]]
+          go run ./go-runtime/cmd/openworker-actions-queue-clear \
+            -repo "${GH_REPO}" -exclude-run-id "${GITHUB_RUN_ID}" \
+            -run-id "${GITHUB_RUN_ID}" -source-sha "${GITHUB_SHA}" \
+            -timeout 7m -poll 5s -stuck-after 30m > "${state}"
       - name: Publish queue-clear evidence
         if: always()
         shell: bash
