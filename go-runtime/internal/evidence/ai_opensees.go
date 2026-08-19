@@ -17,7 +17,7 @@ const (
 	AIOpenSeesRepository    = "liuxb99/AI-OpenSees"
 	AIOpenSeesHost          = "O87"
 	AIOpenSeesResultSchema  = "ai-opensees/analysis-result/v0.6"
-	AIOpenSeesReceiptSchema = "ai-opensees/operator-evidence/v0.8"
+	AIOpenSeesReceiptSchema = "ai-opensees/operator-evidence/v0.9"
 	AIOpenSeesRuntimeSchema = "ai-opensees/mct-authority-runtime-state/v0.5"
 )
 
@@ -54,6 +54,9 @@ type AIOpenSeesOperatorEvidence struct {
 	ActiveSourceCoverageValid bool `json:"active_source_coverage_valid"`
 	ActiveSourceCivilVersion string `json:"active_source_civil_version"`
 	ActiveSourceCivilBuild string `json:"active_source_civil_build"`
+	ActiveSourceExportedAt string `json:"active_source_exported_at"`
+	ActiveSourceExportMethod string `json:"active_source_export_method"`
+	ActiveSourceExportProvenanceValid bool `json:"active_source_export_provenance_valid"`
 	ActiveSourceCohortValid bool `json:"active_source_cohort_valid"`
 	AuthoritySnapshotSHA256 string `json:"authority_snapshot_sha256"`
 	OpenSeesExecutable string `json:"opensees_executable"`
@@ -117,6 +120,9 @@ type AIOpenSeesRuntimeState struct {
 	ActiveSourceCoverageValid bool `json:"active_source_coverage_valid"`
 	ActiveSourceCivilVersion string `json:"active_source_civil_version"`
 	ActiveSourceCivilBuild string `json:"active_source_civil_build"`
+	ActiveSourceExportedAt string `json:"active_source_exported_at"`
+	ActiveSourceExportMethod string `json:"active_source_export_method"`
+	ActiveSourceExportProvenanceValid bool `json:"active_source_export_provenance_valid"`
 	ActiveSourceCohortValid bool `json:"active_source_cohort_valid"`
 	SnapshotSHA256 string `json:"snapshot_sha256"`
 	SnapshotValid bool `json:"snapshot_valid"`
@@ -147,7 +153,7 @@ func isPositiveDecimal(value string) bool { if strings.TrimSpace(value)==""{retu
 func samePath(a,b string) bool { if strings.TrimSpace(a)==""||strings.TrimSpace(b)==""{return false}; ca,ea:=filepath.Abs(filepath.Clean(a)); cb,eb:=filepath.Abs(filepath.Clean(b)); if ea!=nil||eb!=nil{return false}; return strings.EqualFold(ca,cb) }
 
 func ValidateAIOpenSeesWorkspace(workspace string) AIOpenSeesEvidenceReport {
-	report:=AIOpenSeesEvidenceReport{SchemaVersion:"openworker/ai-opensees-evidence-report/v0.8",Workspace:filepath.Clean(workspace),Blockers:[]string{}}
+	report:=AIOpenSeesEvidenceReport{SchemaVersion:"openworker/ai-opensees-evidence-report/v0.9",Workspace:filepath.Clean(workspace),Blockers:[]string{}}
 	add:=func(code string){report.Blockers=append(report.Blockers,code)}
 	if strings.TrimSpace(workspace)==""{add("WORKSPACE_EMPTY");return report}
 	var receipt AIOpenSeesOperatorEvidence; if err:=readJSON(filepath.Join(workspace,"operator-evidence.json"),&receipt);err!=nil{add("OPERATOR_EVIDENCE_INVALID:"+err.Error());return report}
@@ -171,8 +177,11 @@ func ValidateAIOpenSeesWorkspace(workspace string) AIOpenSeesEvidenceReport {
 	if receipt.ElasticMaterialAuthorityCount+receipt.PrismaticSectionAuthorityCount+receipt.StaticNodalLoadAuthorityCount!=receipt.AuthorityEntryCount{add("AUTHORITY_COVERAGE_COUNT_MISMATCH")}
 	if !receipt.ActiveSourceCoverageValid{add("ACTIVE_SOURCE_AUTHORITY_COVERAGE_INVALID")}
 	if !receipt.ActiveSourceCohortValid{add("ACTIVE_SOURCE_CIVIL_COHORT_INVALID")}
+	if !receipt.ActiveSourceExportProvenanceValid{add("ACTIVE_SOURCE_GUI_EXPORT_PROVENANCE_INVALID")}
 	if strings.TrimSpace(receipt.ActiveSourceCivilVersion)==""{add("ACTIVE_SOURCE_CIVIL_VERSION_EMPTY")}
 	if strings.TrimSpace(receipt.ActiveSourceCivilBuild)==""{add("ACTIVE_SOURCE_CIVIL_BUILD_EMPTY")}
+	if strings.TrimSpace(receipt.ActiveSourceExportedAt)==""{add("ACTIVE_SOURCE_EXPORTED_AT_EMPTY")}
+	if strings.TrimSpace(receipt.ActiveSourceExportMethod)==""{add("ACTIVE_SOURCE_EXPORT_METHOD_EMPTY")}
 	if !isSHA256(receipt.ActiveSourceSHA256){add("ACTIVE_SOURCE_SHA256_INVALID")}
 	if !strings.EqualFold(receipt.ActiveSourceSHA256,receipt.MCTSHA256){add("ACTIVE_SOURCE_MCT_SHA256_MISMATCH")}
 	if receipt.ActiveSourceAuthorityCount<1{add("ACTIVE_SOURCE_AUTHORITY_COUNT_INVALID")}
@@ -228,10 +237,14 @@ func ValidateAIOpenSeesWorkspace(workspace string) AIOpenSeesEvidenceReport {
 	if runtime.ElasticMaterialAuthorityCount+runtime.PrismaticSectionAuthorityCount+runtime.StaticNodalLoadAuthorityCount!=runtime.EntryCount{add("RUNTIME_AUTHORITY_COVERAGE_COUNT_MISMATCH")}
 	if !runtime.ActiveSourceCoverageValid{add("RUNTIME_ACTIVE_SOURCE_AUTHORITY_COVERAGE_INVALID")}
 	if !runtime.ActiveSourceCohortValid{add("RUNTIME_ACTIVE_SOURCE_CIVIL_COHORT_INVALID")}
+	if !runtime.ActiveSourceExportProvenanceValid{add("RUNTIME_ACTIVE_SOURCE_GUI_EXPORT_PROVENANCE_INVALID")}
 	if strings.TrimSpace(runtime.ActiveSourceCivilVersion)==""{add("RUNTIME_ACTIVE_SOURCE_CIVIL_VERSION_EMPTY")}
 	if strings.TrimSpace(runtime.ActiveSourceCivilBuild)==""{add("RUNTIME_ACTIVE_SOURCE_CIVIL_BUILD_EMPTY")}
 	if runtime.ActiveSourceCivilVersion!=receipt.ActiveSourceCivilVersion{add("ACTIVE_SOURCE_CIVIL_VERSION_CROSS_BIND_MISMATCH")}
 	if runtime.ActiveSourceCivilBuild!=receipt.ActiveSourceCivilBuild{add("ACTIVE_SOURCE_CIVIL_BUILD_CROSS_BIND_MISMATCH")}
+	if runtime.ActiveSourceExportedAt!=receipt.ActiveSourceExportedAt{add("ACTIVE_SOURCE_EXPORTED_AT_CROSS_BIND_MISMATCH")}
+	if runtime.ActiveSourceExportMethod!=receipt.ActiveSourceExportMethod{add("ACTIVE_SOURCE_EXPORT_METHOD_CROSS_BIND_MISMATCH")}
+	if runtime.ActiveSourceExportProvenanceValid!=receipt.ActiveSourceExportProvenanceValid{add("ACTIVE_SOURCE_EXPORT_PROVENANCE_CROSS_BIND_MISMATCH")}
 	if !strings.EqualFold(runtime.ActiveSourceSHA256,receipt.ActiveSourceSHA256){add("RUNTIME_ACTIVE_SOURCE_SHA256_MISMATCH")}
 	if runtime.ActiveSourceAuthorityCount!=receipt.ActiveSourceAuthorityCount{add("RUNTIME_ACTIVE_SOURCE_AUTHORITY_COUNT_MISMATCH")}
 	if runtime.ActiveSourceElasticMaterialAuthorityCount!=receipt.ActiveSourceElasticMaterialAuthorityCount{add("RUNTIME_ACTIVE_SOURCE_MATERIAL_AUTHORITY_COUNT_MISMATCH")}
