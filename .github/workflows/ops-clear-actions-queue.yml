@@ -5,6 +5,7 @@ on:
   push:
     branches: [main]
     paths:
+      - 'ops/triggers/clear-actions-queue.txt'
       - '.github/workflows/ops-clear-actions-queue.yml'
 
 permissions:
@@ -14,72 +15,62 @@ permissions:
 jobs:
   clear:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 12
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
     steps:
-      - name: Checkout repository for evidence publication
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Cancel every other non-terminal OpenWorker workflow run
-        id: clear
+      - name: Cancel and verify every other non-terminal run
         shell: bash
         run: |
           set -euo pipefail
           current="${GITHUB_RUN_ID}"
-          mapfile -t runs < <(gh api --paginate "repos/${GH_REPO}/actions/runs?per_page=100" --jq '.workflow_runs[] | select(.status != "completed") | .id' | sort -u)
-          echo "before=${#runs[@]}" >> "$GITHUB_OUTPUT"
-          echo "OPENWORKER_NONTERMINAL_BEFORE=${#runs[@]} current=${current}"
-          for id in "${runs[@]}"; do
-            if [[ "$id" == "$current" ]]; then
-              continue
-            fi
-            echo "Cancelling stale run $id"
-            gh api --method POST "repos/${GH_REPO}/actions/runs/${id}/cancel" >/dev/null || true
+          state="${RUNNER_TEMP}/queue-clear.json"
+          list_runs() {
+            gh api --paginate --slurp "repos/${GH_REPO}/actions/runs?per_page=100" \
+              | jq --arg current "${current}" '[.[].workflow_runs[] | select(.status != "completed" and (.id|tostring) != $current) | {id,name,status}] | unique_by(.id)'
+          }
+          before="$(list_runs)"
+          cancelled='[]'
+          remaining="${before}"
+          for attempt in $(seq 1 84); do
+            while IFS= read -r id; do
+              [[ -z "${id}" ]] && continue
+              if gh api -X POST "repos/${GH_REPO}/actions/runs/${id}/cancel" >/dev/null 2>&1 \
+                || gh api -X POST "repos/${GH_REPO}/actions/runs/${id}/force-cancel" >/dev/null 2>&1; then
+                cancelled="$(jq --argjson id "${id}" '.+[$id]|unique' <<<"${cancelled}")"
+              fi
+            done < <(jq -r '.[].id' <<<"${remaining}")
+            sleep 5
+            remaining="$(list_runs)"
+            echo "QUEUE_CLEAR_POLL attempt=${attempt} remaining=$(jq length <<<"${remaining}")"
+            [[ "$(jq length <<<"${remaining}")" == 0 ]] && break
           done
-          sleep 3
-          mapfile -t remaining < <(gh api --paginate "repos/${GH_REPO}/actions/runs?per_page=100" --jq --arg cur "$current" '.workflow_runs[] | select(.status != "completed" and (.id|tostring) != $cur) | [.id,.name,.status] | @tsv')
-          echo "remaining=${#remaining[@]}" >> "$GITHUB_OUTPUT"
-          if (( ${#remaining[@]} > 0 )); then
-            printf 'Remaining: %s\n' "${remaining[@]}"
-            exit 1
-          fi
-          echo "OPENWORKER_QUEUE_CLEAR_PASS current=${current}"
-
+          outcome=PASS
+          [[ "$(jq length <<<"${remaining}")" == 0 ]] || outcome=FAIL
+          jq -n --arg run_id "${current}" --arg source_sha "${GITHUB_SHA}" --arg outcome "${outcome}" \
+            --arg verified_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --argjson before "${before}" \
+            --argjson cancelled "${cancelled}" --argjson remaining "${remaining}" \
+            '{schema_version:"openworker-queue-clear-evidence/v2",run_id:$run_id,source_sha:$source_sha,nonterminal_before:$before,cancelled_ids:$cancelled,remaining_after:$remaining,outcome:$outcome,verified_at:$verified_at}' > "${state}"
+          [[ "${outcome}" == PASS ]]
       - name: Publish queue-clear evidence
         if: always()
-        env:
-          CLEAR_OUTCOME: ${{ steps.clear.outcome }}
-          NONTERMINAL_BEFORE: ${{ steps.clear.outputs.before }}
-          REMAINING_AFTER: ${{ steps.clear.outputs.remaining }}
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p evidence/ops
-          python - <<'PY'
-          import json, os
-          payload = {
-              "schema_version": "openworker-queue-clear-evidence/v1",
-              "run_id": os.environ["GITHUB_RUN_ID"],
-              "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
-              "source_sha": os.environ["GITHUB_SHA"],
-              "outcome": os.environ.get("CLEAR_OUTCOME", ""),
-              "nonterminal_before": os.environ.get("NONTERMINAL_BEFORE", ""),
-              "remaining_after": os.environ.get("REMAINING_AFTER", ""),
-          }
-          with open("evidence/ops/latest-queue-clear.json", "w", encoding="utf-8") as f:
-              json.dump(payload, f, ensure_ascii=False, indent=2)
-              f.write("\n")
-          PY
-          git config user.name "openworker-ops-bot"
-          git config user.email "121744662+liuxb99@users.noreply.github.com"
+          cp "${RUNNER_TEMP}/queue-clear.json" evidence/ops/latest-queue-clear.json
+          git config user.name 'openworker-ops-bot'
+          git config user.email '121744662+liuxb99@users.noreply.github.com'
           git add evidence/ops/latest-queue-clear.json
           git diff --cached --quiet && exit 0
-          git commit -m "evidence(ops): publish latest queue clear"
-          git pull --rebase origin main
-          git push origin HEAD:main
-
-# queue-clear trigger: 2026-08-20 force-clear-before-runner-probe
+          git commit -m 'evidence(ops): publish latest queue clear'
+          for attempt in $(seq 1 5); do
+            git pull --rebase origin main && git push origin HEAD:main && exit 0
+            git rebase --abort >/dev/null 2>&1 || true
+            sleep $((attempt*2))
+          done
+          exit 1
