@@ -1,6 +1,6 @@
 param(
   [Parameter(Mandatory=$true)]
-  [ValidateSet('supervisor_status','case_status','case_continue','queue_clear')]
+  [ValidateSet('supervisor_status','case_status','case_diagnose','case_continue','queue_clear')]
   [string]$Command,
   [Parameter(Mandatory=$true)]
   [string]$RequestId
@@ -17,9 +17,7 @@ if([string]::IsNullOrWhiteSpace($RequestId) -or $RequestId -notmatch '^[A-Za-z0-
 
 $repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $wrapper=Join-Path $PSScriptRoot 'invoke-local-supervisor-command-transport.ps1'
-if(-not(Test-Path -LiteralPath $wrapper -PathType Leaf)){
-  throw "transport wrapper missing: $wrapper"
-}
+if(-not(Test-Path -LiteralPath $wrapper -PathType Leaf)){throw "transport wrapper missing: $wrapper"}
 
 $raw=& $wrapper -Command $Command -RequestId $RequestId -ExpectedMachine 'DESKTOP-ODAQN0D' | Out-String
 try{$receipt=$raw|ConvertFrom-Json -ErrorAction Stop}catch{throw "non-JSON transport receipt: $raw"}
@@ -33,7 +31,7 @@ $result=[ordered]@{
   request_id=$RequestId
   command=$Command
   machine='DESKTOP-ODAQN0D'
-  case_id=if($Command -in @('case_status','case_continue')){'0005'}else{$null}
+  case_id=if($Command -in @('case_status','case_diagnose','case_continue')){'0005'}else{$null}
   transport='github_actions_transient_dispatch'
   accepted=[bool]$receipt.accepted
   transport_ok=[bool]$receipt.accepted
@@ -51,40 +49,38 @@ $result=[ordered]@{
   receipt=$receipt
 }
 
-$resultDir=Join-Path $repoRoot 'command-results'
+$resultDir=Join-Path $repoRoot ("command-results\oda\"+$RequestId)
 New-Item -ItemType Directory -Force -Path $resultDir|Out-Null
-$resultPath=Join-Path $resultDir 'oda.json'
-$resultJson=$result|ConvertTo-Json -Depth 40
+$resultPath=Join-Path $resultDir 'final.json'
+$resultJson=$result|ConvertTo-Json -Depth 50
 [IO.File]::WriteAllText($resultPath,$resultJson+[Environment]::NewLine,[Text.UTF8Encoding]::new($false))
-Write-Host ($result|ConvertTo-Json -Depth 40 -Compress)
+Write-Host ($result|ConvertTo-Json -Depth 50 -Compress)
 
 Push-Location $repoRoot
 try{
   git config user.name 'openworker-command-transport'
   git config user.email 'openworker-command-transport@users.noreply.github.com'
-  git add -- 'command-results/oda.json'
+  $rel="command-results/oda/$RequestId/final.json"
+  git add -- $rel
   git diff --cached --quiet
   if($LASTEXITCODE -ne 0){
-    git commit -m "receipt: ODA $Command $RequestId"
+    git commit -m "receipt: ODA $Command $RequestId final"
     if($LASTEXITCODE -ne 0){throw 'failed to commit transport receipt'}
     $pushed=$false
     for($i=0;$i -lt 3;$i++){
       git pull --rebase origin main
-      if($LASTEXITCODE -ne 0){throw 'failed to rebase transport receipt'}
+      if($LASTEXITCODE -ne 0){git rebase --abort 2>$null; Start-Sleep -Seconds 1; continue}
       git push origin HEAD:main
       if($LASTEXITCODE -eq 0){$pushed=$true;break}
       Start-Sleep -Seconds 2
     }
-    if(-not $pushed){throw 'failed to push transport receipt'}
+    if(-not $pushed){throw 'failed to push immutable transport receipt'}
   }
-}finally{
-  Pop-Location
-}
+}finally{Pop-Location}
 
 if(-not $result.accepted){
   Write-Error "LOCAL_TRANSPORT_REJECTED request_id=$RequestId exit_code=$($result.exit_code) error=$($result.error)"
   exit 1
 }
-
 Write-Host 'TRANSPORT_ONLY_VERIFIED github_action_used_for_business_execution=false'
 exit 0
