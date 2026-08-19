@@ -1,0 +1,5 @@
+requested_by=ChatGPT
+machine=DESKTOP-O87PJNR
+purpose=deploy Case0004 story review mapper array-path fix
+required_commit=848e07b7efca9963532059a8e34dd5a6f0759465
+business_execution=false
