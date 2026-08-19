@@ -4,6 +4,8 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+    paths:
+      - '.github/workflows/diagnose-self-hosted-runners.yml'
 
 permissions:
   contents: write
@@ -11,11 +13,12 @@ permissions:
 
 jobs:
   diagnose:
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[diagnose-runners]')
     runs-on: windows-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Query repository self-hosted runners
         shell: powershell
         env:
@@ -32,7 +35,8 @@ jobs:
           $oda=@($rows|Where-Object{($_.name -match 'ODAQN0D|ODA') -or ($_.labels -contains 'ODA')})
           $o87=@($rows|Where-Object{($_.name -match 'O87PJNR|O87') -or ($_.labels -contains 'O87')})
           $ul7=@($rows|Where-Object{($_.name -match 'UL7V2VV|UL7') -or ($_.labels -contains 'UL7')})
-          $receipt=[ordered]@{schema='openworker/self-hosted-runner-diagnostic/v1';observed_at=[DateTimeOffset]::UtcNow.ToString('o');repository='${{ github.repository }}';total_count=$r.total_count;runners=$rows;oda=$oda;o87=$o87;ul7=$ul7}
+          $online=@($rows|Where-Object{$_.status -eq 'online'})
+          $receipt=[ordered]@{schema='openworker/self-hosted-runner-diagnostic/v1';observed_at=[DateTimeOffset]::UtcNow.ToString('o');repository='${{ github.repository }}';total_count=$r.total_count;online_count=$online.Count;runners=$rows;oda=$oda;o87=$o87;ul7=$ul7}
           New-Item -ItemType Directory -Force -Path 'case-evidence/ops'|Out-Null
           $receipt|ConvertTo-Json -Depth 20|Set-Content 'case-evidence/ops/self-hosted-runners.json' -Encoding utf8
       - name: Commit diagnostic evidence
@@ -48,4 +52,4 @@ jobs:
             git push origin HEAD:main
           }
 
-# diagnose trigger: 2026-08-19T23:50+08:00 v5 runner reinstall inspection
+# diagnose trigger: 2026-08-20T00:01+08:00 explicit inventory
