@@ -2,7 +2,9 @@
 
 Default mode binds the published receipt to WorkLedger for formal review revisions.
 Use --direct only for intermediate immutable review evidence that must not mutate
-WorkLedger (for example Case 0004 story-region discovery).
+WorkLedger.  If no review root folder is configured, publication uses the
+authenticated account's My Drive root so local-supervisor artifact return does not
+silently depend on a GitHub transport or a pre-created cloud folder.
 """
 from __future__ import annotations
 
@@ -27,7 +29,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--direct", action="store_true", help="publish immutable intermediate review evidence without WorkLedger mutation")
     parser.add_argument(
         "--drive-folder-id",
-        default=os.environ.get("OPENWORKER_REVIEW_DRIVE_FOLDER_ID", ""),
+        default=os.environ.get("OPENWORKER_REVIEW_DRIVE_FOLDER_ID", "").strip() or "root",
     )
     parser.add_argument("--machine-id", default=platform.node())
     parser.add_argument("--case-id", default="")
@@ -50,6 +52,7 @@ def main() -> int:
             "job_id": str(args.job_id).strip(),
             "run_id": str(args.run_id).strip(),
             "publication_mode": "direct" if args.direct else "ledger",
+            "review_consumer": "chatgpt-drive-connector",
         }.items()
         if value
     }
