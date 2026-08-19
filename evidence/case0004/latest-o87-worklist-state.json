@@ -1,12 +1,12 @@
 {
     "schema":  "openworker-case0004-o87-worklist-state/v1",
     "case_id":  "0004",
-    "run_id":  "32221391431",
+    "run_id":  "32222134771",
     "run_attempt":  "1",
     "machine":  "DESKTOP-O87PJNR",
     "runner":  "DESKTOP-O87PJNR-R003",
     "workspace_root":  "D:\\AI-Work\\jobs\\0004-DWG-TO-3D",
-    "worklist_revision":  144,
+    "worklist_revision":  146,
     "canonical_next_step_id":  "0004-045",
     "steps":  [
                   {
@@ -133,12 +133,12 @@
                                               "cad.build_story_index"
                                           ],
                       "acceptance":  [
-                                         "source_sha256",
-                                         "overview_png",
-                                         "story_index_manifest",
+                                         "layout_id",
                                          "story_count",
-                                         "story_index_png",
-                                         "story_index_sha256"
+                                         "stories",
+                                         "revision",
+                                         "state",
+                                         "evidence_root"
                                      ],
                       "status":  "READY",
                       "evidence":  {
