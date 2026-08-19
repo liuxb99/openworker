@@ -15,30 +15,16 @@ jobs:
     runs-on: [self-hosted, Windows, X64, O87]
     timeout-minutes: 5
     steps:
-      - name: Probe bounded interactive-token bridge
+      - name: Probe bounded user-session token bridge
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
           if($env:COMPUTERNAME -ine 'DESKTOP-O87PJNR'){throw "wrong host=$env:COMPUTERNAME"}
-          $driveProcs=@(Get-CimInstance Win32_Process|Where-Object{$_.Name -eq 'GoogleDriveFS.exe'})
+          $driveProcs=@(Get-Process -Name GoogleDriveFS -ErrorAction SilentlyContinue)
           if($driveProcs.Count -lt 1){throw 'GoogleDriveFS process unavailable'}
           $driveSessionIds=@($driveProcs|Select-Object -ExpandProperty SessionId -Unique)
           if($driveSessionIds.Count -ne 1){throw "expected exactly one GoogleDriveFS session id, got $($driveSessionIds.Count)"}
           $driveSession=[int]$driveSessionIds[0]
-          $sids=@()
-          foreach($p in $driveProcs){
-            try {
-              $logons=@(Get-CimInstance -Query ("ASSOCIATORS OF {Win32_Process.Handle='"+$p.ProcessId+"'} WHERE AssocClass=Win32_SessionProcess ResultClass=Win32_LogonSession") -ErrorAction Stop)
-              foreach($logon in $logons){
-                $accounts=@(Get-CimInstance -Query ("ASSOCIATORS OF {Win32_LogonSession.LogonId='"+$logon.LogonId+"'} WHERE AssocClass=Win32_LoggedOnUser ResultClass=Win32_Account") -ErrorAction Stop)
-                foreach($a in $accounts){if(-not [string]::IsNullOrWhiteSpace([string]$a.SID)){$sids += [string]$a.SID}}
-              }
-            } catch {}
-          }
-          $sids=@($sids|Where-Object{$_ -match '^S-1-5-21-'}|Select-Object -Unique)
-          Write-Host ('OPENWORKER_O87_DRIVE_LOGON_ASSOC session_id='+$driveSession+' sid_count='+$sids.Count)
-          if($sids.Count -ne 1){throw "expected exactly one non-system Drive logon SID, got $($sids.Count)"}
-          $sid=$sids[0]
           $script='C:\ProgramData\OpenWorker\user-session-drive-probe.ps1'
           $receipt='C:\ProgramData\OpenWorker\user-session-drive-probe.json'
           New-Item -ItemType Directory -Force -Path (Split-Path $script)|Out-Null
@@ -46,24 +32,66 @@ jobs:
           `$ErrorActionPreference='Stop'
           `$ok=`$false; `$entries=@(); `$err=''
           try{`$entries=@(Get-ChildItem -LiteralPath 'G:\' -Force -ErrorAction Stop|Select-Object -First 20 -ExpandProperty Name); `$ok=`$true}catch{`$err=`$_.Exception.Message}
-          `$r=[ordered]@{schema='openworker.user-session-drive-probe/v8';machine=`$env:COMPUTERNAME;g_accessible=`$ok;entry_count=`$entries.Count;error=`$err;observed_at=[DateTimeOffset]::UtcNow.ToString('o')}
+          `$r=[ordered]@{schema='openworker.user-session-drive-probe/v9';machine=`$env:COMPUTERNAME;g_accessible=`$ok;entry_count=`$entries.Count;error=`$err;observed_at=[DateTimeOffset]::UtcNow.ToString('o')}
           [IO.File]::WriteAllText('$receipt',(`$r|ConvertTo-Json -Depth 6)+[Environment]::NewLine,[Text.UTF8Encoding]::new(`$false))
           "@|Set-Content -LiteralPath $script -Encoding utf8
           Remove-Item -LiteralPath $receipt -Force -ErrorAction SilentlyContinue
-          $task='OpenWorker-O87-UserSessionDriveProbe'
-          Unregister-ScheduledTask -TaskName $task -Confirm:$false -ErrorAction SilentlyContinue
-          $action=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "'+$script+'"')
-          $principal=New-ScheduledTaskPrincipal -UserId $sid -LogonType Interactive -RunLevel Highest
-          Register-ScheduledTask -TaskName $task -Action $action -Principal $principal -Force -ErrorAction Stop|Out-Null
-          Write-Host 'OPENWORKER_O87_INTERACTIVE_PRINCIPAL_REGISTERED=true'
-          try {
-            Start-ScheduledTask -TaskName $task
-            $deadline=[DateTime]::UtcNow.AddSeconds(45)
-            while([DateTime]::UtcNow -lt $deadline -and -not(Test-Path -LiteralPath $receipt -PathType Leaf)){Start-Sleep -Milliseconds 500}
-            if(-not(Test-Path -LiteralPath $receipt -PathType Leaf)){throw 'interactive probe receipt timeout'}
-            $r=Get-Content -LiteralPath $receipt -Raw|ConvertFrom-Json
-            Write-Host "OPENWORKER_O87_USER_SESSION_BRIDGE g_accessible=$($r.g_accessible) entry_count=$($r.entry_count) error=$($r.error)"
-            if(-not [bool]$r.g_accessible){throw 'Drive WMI-associated SID cannot access G drive'}
-          } finally {
-            Unregister-ScheduledTask -TaskName $task -Confirm:$false -ErrorAction SilentlyContinue
+          Add-Type @'
+          using System;
+          using System.Runtime.InteropServices;
+          public static class UserTokenLauncher {
+            const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+            const uint TOKEN_ASSIGN_PRIMARY = 0x0001;
+            const uint TOKEN_DUPLICATE = 0x0002;
+            const uint TOKEN_QUERY = 0x0008;
+            const uint MAXIMUM_ALLOWED = 0x02000000;
+            const int SecurityImpersonation = 2;
+            const int TokenPrimary = 1;
+            const uint LOGON_WITH_PROFILE = 0x00000001;
+            [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)] public struct STARTUPINFO {
+              public int cb; public string lpReserved; public string lpDesktop; public string lpTitle;
+              public int dwX, dwY, dwXSize, dwYSize, dwXCountChars, dwYCountChars, dwFillAttribute, dwFlags;
+              public short wShowWindow, cbReserved2; public IntPtr lpReserved2, hStdInput, hStdOutput, hStdError;
+            }
+            [StructLayout(LayoutKind.Sequential)] public struct PROCESS_INFORMATION {
+              public IntPtr hProcess, hThread; public int dwProcessId, dwThreadId;
+            }
+            [DllImport("kernel32.dll", SetLastError=true)] static extern IntPtr OpenProcess(uint access, bool inherit, int pid);
+            [DllImport("advapi32.dll", SetLastError=true)] static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
+            [DllImport("advapi32.dll", SetLastError=true)] static extern bool DuplicateTokenEx(IntPtr token, uint access, IntPtr attrs, int level, int type, out IntPtr dup);
+            [DllImport("advapi32.dll", SetLastError=true, CharSet=CharSet.Unicode)] static extern bool CreateProcessWithTokenW(IntPtr token, uint flags, string app, string cmd, uint creationFlags, IntPtr env, string cwd, ref STARTUPINFO si, out PROCESS_INFORMATION pi);
+            [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
+            public static int Launch(int pid, string app, string args) {
+              IntPtr p=IntPtr.Zero,t=IntPtr.Zero,d=IntPtr.Zero; PROCESS_INFORMATION pi=new PROCESS_INFORMATION();
+              try {
+                p=OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,false,pid); if(p==IntPtr.Zero) return Marshal.GetLastWin32Error();
+                if(!OpenProcessToken(p,TOKEN_ASSIGN_PRIMARY|TOKEN_DUPLICATE|TOKEN_QUERY,out t)) return Marshal.GetLastWin32Error();
+                if(!DuplicateTokenEx(t,MAXIMUM_ALLOWED,IntPtr.Zero,SecurityImpersonation,TokenPrimary,out d)) return Marshal.GetLastWin32Error();
+                STARTUPINFO si=new STARTUPINFO(); si.cb=Marshal.SizeOf(typeof(STARTUPINFO)); si.lpDesktop="winsta0\\default";
+                string cmd="\""+app+"\" "+args;
+                if(!CreateProcessWithTokenW(d,LOGON_WITH_PROFILE,app,cmd,0,IntPtr.Zero,null,ref si,out pi)) return Marshal.GetLastWin32Error();
+                return 0;
+              } finally {
+                if(pi.hThread!=IntPtr.Zero) CloseHandle(pi.hThread); if(pi.hProcess!=IntPtr.Zero) CloseHandle(pi.hProcess);
+                if(d!=IntPtr.Zero) CloseHandle(d); if(t!=IntPtr.Zero) CloseHandle(t); if(p!=IntPtr.Zero) CloseHandle(p);
+              }
+            }
           }
+          '@
+          $powershell=(Get-Command powershell.exe).Source
+          $args='-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "'+$script+'"'
+          $errors=@()
+          $launched=$false
+          foreach($p in $driveProcs){
+            $code=[UserTokenLauncher]::Launch([int]$p.Id,$powershell,$args)
+            if($code -eq 0){$launched=$true;break}
+            $errors += $code
+          }
+          Write-Host ('OPENWORKER_O87_TOKEN_BRIDGE launch_ok='+$launched+' drive_session='+$driveSession+' error_codes='+((@($errors|Select-Object -Unique)) -join ','))
+          if(-not $launched){throw 'cannot launch bounded probe from GoogleDriveFS token'}
+          $deadline=[DateTime]::UtcNow.AddSeconds(45)
+          while([DateTime]::UtcNow -lt $deadline -and -not(Test-Path -LiteralPath $receipt -PathType Leaf)){Start-Sleep -Milliseconds 500}
+          if(-not(Test-Path -LiteralPath $receipt -PathType Leaf)){throw 'user-token probe receipt timeout'}
+          $r=Get-Content -LiteralPath $receipt -Raw|ConvertFrom-Json
+          Write-Host "OPENWORKER_O87_USER_SESSION_BRIDGE g_accessible=$($r.g_accessible) entry_count=$($r.entry_count) error=$($r.error)"
+          if(-not [bool]$r.g_accessible){throw 'Drive token-launched process cannot access G drive'}
