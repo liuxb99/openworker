@@ -67,17 +67,20 @@ $result=[ordered]@{
 
 $requestId="diagnose-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
 $rel="case-evidence/case0005-diagnose/$requestId.json"
+$latestRel='case-evidence/case0005-diagnose/latest.json'
 $path=Join-Path $repoRoot $rel
+$latestPath=Join-Path $repoRoot $latestRel
 New-Item -ItemType Directory -Force -Path (Split-Path $path -Parent)|Out-Null
 $json=$result|ConvertTo-Json -Depth 50
 [IO.File]::WriteAllText($path,$json+[Environment]::NewLine,[Text.UTF8Encoding]::new($false))
+[IO.File]::WriteAllText($latestPath,$json+[Environment]::NewLine,[Text.UTF8Encoding]::new($false))
 Write-Host ($result|ConvertTo-Json -Depth 50 -Compress)
 
 Push-Location $repoRoot
 try{
   git config user.name 'openworker-case-diagnose'
   git config user.email 'openworker-case-diagnose@users.noreply.github.com'
-  git add -- $rel
+  git add -- $rel $latestRel
   git commit -m "receipt: Case0005 diagnose $requestId"
   if($LASTEXITCODE -ne 0){throw 'failed to commit diagnose receipt'}
   for($i=0;$i -lt 3;$i++){
