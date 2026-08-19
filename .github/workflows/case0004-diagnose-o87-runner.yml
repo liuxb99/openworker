@@ -37,7 +37,6 @@ jobs:
           python - <<'PY'
           import json, os, pathlib
           raw=json.load(open(os.path.join(os.environ['RUNNER_TEMP'],'runners.json'),encoding='utf-8'))
-          # gh --paginate may return one object or an array of page objects depending on client behavior.
           pages=raw if isinstance(raw,list) else [raw]
           runners=[]
           for page in pages:
@@ -49,22 +48,8 @@ jobs:
               labels=[str(x.get('name','')) for x in r.get('labels',[]) if isinstance(x,dict)]
               hay=' '.join([name,*labels]).lower()
               if target in hay or 'o87' in hay:
-                  matches.append({
-                      'id':r.get('id'),'name':name,'os':r.get('os'),'status':r.get('status'),
-                      'busy':r.get('busy'),'labels':labels,
-                  })
-          payload={
-              'schema':'case0004.o87-runner-diagnostic.v1',
-              'case_id':'0004',
-              'run_id':os.environ['GITHUB_RUN_ID'],
-              'source_commit':os.environ['GITHUB_SHA'],
-              'target_computer':os.environ['TARGET_COMPUTER'],
-              'repository_runner_count':len(runners),
-              'matches':matches,
-              'target_seen':bool(matches),
-              'target_online':any(str(x.get('status','')).lower()=='online' for x in matches),
-              'target_busy':any(bool(x.get('busy')) for x in matches),
-          }
+                  matches.append({'id':r.get('id'),'name':name,'os':r.get('os'),'status':r.get('status'),'busy':r.get('busy'),'labels':labels})
+          payload={'schema':'case0004.o87-runner-diagnostic.v1','case_id':'0004','run_id':os.environ['GITHUB_RUN_ID'],'source_commit':os.environ['GITHUB_SHA'],'target_computer':os.environ['TARGET_COMPUTER'],'repository_runner_count':len(runners),'matches':matches,'target_seen':bool(matches),'target_online':any(str(x.get('status','')).lower()=='online' for x in matches),'target_busy':any(bool(x.get('busy')) for x in matches)}
           pathlib.Path('evidence/case0004/latest-o87-runner-diagnostic.json').write_text(json.dumps(payload,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
           print(json.dumps(payload,ensure_ascii=False))
           PY
