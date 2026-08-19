@@ -1,10 +1,10 @@
 {
   "schema": "openworker/o87-direct-upgrade/v1",
   "machine": "DESKTOP-O87PJNR",
-  "running_commit": "051e52975b2fc318bb5c5728d7d154e290163173",
-  "target_commit": "051e52975b2fc318bb5c5728d7d154e290163173",
+  "running_commit": "14ad1840a5d1fe1bacceefcd9c07bcaefdfe7b89",
+  "target_commit": "14ad1840a5d1fe1bacceefcd9c07bcaefdfe7b89",
   "upgrade_verified": true,
   "max_workers": 4,
   "github_action_used_for_business_execution": false,
-  "verified_at": "2026-08-19T10:07:48.2463215+00:00"
+  "verified_at": "2026-08-19T14:01:11.4794222+00:00"
 }
