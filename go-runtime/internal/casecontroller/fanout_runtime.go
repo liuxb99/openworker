@@ -49,7 +49,29 @@ func submitFanoutPlan(ctx context.Context,client *http.Client,queueURL string,pl
 
 func reconcileFanout(ctx context.Context,client *http.Client,queueURL,workspaceRoot,worklistPath,ledgerPath string,w *Worklist,s fanoutState)(bool,map[string]any,error){
     if w==nil{return false,nil,fmt.Errorf("worklist is required")}
-    if s.CaseID!=w.CaseID||s.Revision!=w.Revision{return false,nil,fmt.Errorf("fanout authority mismatch")}
+    if s.CaseID!=w.CaseID{return false,nil,fmt.Errorf("fanout case authority mismatch")}
+    if s.Revision!=w.Revision{
+        // A newer Case definition may introduce an explicit retry step after a
+        // terminal failure. A stale fanout state may be closed only when every
+        // referenced parent is already durably marked FAILED in the current
+        // runtime worklist. This never treats pending/running/unknown fanout as
+        // retryable and never permits a newer fanout state to be discarded.
+        if s.Revision<w.Revision{
+            allParentsFailed:=len(s.ParentStepIDs)>0
+            for _,parentID:=range s.ParentStepIDs{
+                parent:=findStep(w.Steps,parentID)
+                if parent==nil||!strings.EqualFold(strings.TrimSpace(parent.Status),"FAILED"){allParentsFailed=false;break}
+            }
+            if allParentsFailed{
+                fanoutPath:=filepath.Join(workspaceRoot,".openworker","case-fanout-last.json")
+                if removeErr:=os.Remove(fanoutPath);removeErr!=nil&&!os.IsNotExist(removeErr){return false,nil,fmt.Errorf("close stale failed fanout state: %w",removeErr)}
+                detail:=fmt.Sprintf("closed stale terminal-failed fanout state revision %d after Case definition advanced to revision %d",s.Revision,w.Revision)
+                _=appendLedger(ledgerPath,ledgerEvent{Schema:"openworker.case-supervisor-ledger/v1",Timestamp:time.Now().UTC(),CaseID:w.CaseID,Machine:w.AssignedHost,EventType:"go_fanout_state_closed_stale_failed",WorkspaceRoot:workspaceRoot,Revision:w.Revision,ReadyStepIDs:s.ParentStepIDs,Detail:detail})
+                return true,map[string]any{"stale_failed_fanout_closed":true,"fanout_revision":s.Revision,"current_revision":w.Revision},nil
+            }
+        }
+        return false,nil,fmt.Errorf("fanout authority mismatch state_revision=%d worklist_revision=%d",s.Revision,w.Revision)
+    }
     summary:=map[string]any{}
     allCompleted:=true
     childEvidence:=map[string][]map[string]any{}
