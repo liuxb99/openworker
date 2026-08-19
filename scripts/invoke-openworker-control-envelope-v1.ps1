@@ -38,7 +38,7 @@ $receiptPath=Join-Path $receiptRoot ($requestId+'.json')
 if(Test-Path -LiteralPath $receiptPath -PathType Leaf){
   $cached=Get-Content -LiteralPath $receiptPath -Raw
   try{$cachedObj=$cached|ConvertFrom-Json -ErrorAction Stop}catch{$cachedObj=$null}
-  if($null-ne$cachedObj-and[string]$cachedObj.request_id-eq$requestId){
+  if(($null -ne $cachedObj) -and ([string]$cachedObj.request_id -eq $requestId)){
     Write-Host "OPENWORKER_CONTROL_IDEMPOTENT_HIT request_id=$requestId"
     $cached
     exit ([int]$cachedObj.exit_code)
@@ -72,8 +72,8 @@ try{
     $stdout=if(Test-Path $outFile){Get-Content -LiteralPath $outFile -Raw}else{''}
     $stderr=if(Test-Path $errFile){Get-Content -LiteralPath $errFile -Raw}else{''}
     $combined=($stdout+"`n"+$stderr).Trim()
-    if($exitCode-ne0){
-      if($combined-match'127\.0\.0\.1:8848' -and $combined-match'(refused|connectex|connection)'){$errorClass='go_tool_unreachable'}else{$errorClass='openworker_process_failed'}
+    if($exitCode -ne 0){
+      if(($combined -match '127\.0\.0\.1:8848') -and ($combined -match '(refused|connectex|connection)')){$errorClass='go_tool_unreachable'}else{$errorClass='openworker_process_failed'}
       $errorText=$combined
     }else{
       try{$result=$stdout|ConvertFrom-Json -ErrorAction Stop}catch{$exitCode=72;$errorClass='invalid_control_output';$errorText=$combined}
@@ -83,7 +83,7 @@ try{
   Remove-Item -LiteralPath $outFile,$errFile -Force -ErrorAction SilentlyContinue
 }
 
-$accepted=($exitCode-eq0-and$null-ne$result)
+$accepted = (($exitCode -eq 0) -and ($null -ne $result))
 $response=[ordered]@{
   schema='openworker.control-result.v2';request_id=$requestId;command=$command;case_id=if($needsCase){[string]$envl.case_id}else{$null};machine=$ExpectedMachine
   accepted=$accepted;exit_code=$exitCode;error_class=$errorClass;error=$errorText;max_parallel=$maxParallel
