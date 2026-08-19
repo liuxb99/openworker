@@ -5,6 +5,7 @@ Every claim is derived from already accepted Case evidence and bounded workspace
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -30,7 +31,7 @@ class Case0005LifecycleMixin:
             raise CaseWorklistError(f"{label} is empty")
         path = Path(text)
         if not path.is_absolute():
-            rel = Path(text)
+            rel = path
         else:
             try:
                 rel = path.resolve().relative_to(self.workspace)
@@ -42,7 +43,10 @@ class Case0005LifecycleMixin:
         return normalized
 
     def _write_request(self, relpath: str, payload: Mapping[str, Any]) -> str:
-        path = (self.workspace / Path(relpath.replace("/", str(Path('/'))))).resolve()
+        clean = Path(relpath.replace("/", os.sep))
+        if clean.is_absolute() or clean.as_posix() in {".", ".."} or clean.as_posix().startswith("../"):
+            raise CaseWorklistError(f"request relpath is not bounded: {relpath}")
+        path = (self.workspace / clean).resolve()
         try:
             path.relative_to(self.workspace)
         except ValueError as exc:
@@ -140,7 +144,7 @@ class Case0005LifecycleMixin:
                 "delivery_revision": delivery_revision,
                 "required_kinds": ["video/final"],
                 "required_paths": [],
-                "review_receipt": str((self.workspace / review_receipt).resolve()),
+                "review_receipt": str((self.workspace / review_receipt.replace("/", os.sep)).resolve()),
                 "expected_accepted_revision_id": str(self._required_evidence(worklist, "0005-100", "accepted_revision_id")),
             })
             return {**common, "request_relpath": request_rel, "evidence_relpath": evidence_rel}
