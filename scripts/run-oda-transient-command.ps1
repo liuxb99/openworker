@@ -22,9 +22,6 @@ if(-not(Test-Path -LiteralPath $wrapper -PathType Leaf)){
 }
 
 $raw=& $wrapper -Command $Command -RequestId $RequestId -ExpectedMachine 'DESKTOP-ODAQN0D' | Out-String
-if($LASTEXITCODE -ne 0){
-  throw "transport wrapper process failed exit=$LASTEXITCODE output=$raw"
-}
 try{$receipt=$raw|ConvertFrom-Json -ErrorAction Stop}catch{throw "non-JSON transport receipt: $raw"}
 if($receipt.schema -ne 'openworker.command-transport.v1'){throw "unexpected receipt schema=$($receipt.schema)"}
 if(-not $receipt.github_action_used_for_command_transport){throw 'command transport flag missing'}
