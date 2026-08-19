@@ -36,7 +36,7 @@ jobs:
             runner_label: UL7
             machine: DESKTOP-UL7V2VV
             capabilities: case0003,bridge,blender,scenex,engineering,drive-review
-    runs-on: [self-hosted, Windows, X64, ${{ matrix.runner_label }}]
+    runs-on: [self-hosted, Windows, X64, "${{ matrix.runner_label }}"]
     timeout-minutes: 15
     defaults:
       run:
