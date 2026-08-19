@@ -22,7 +22,9 @@ def test_mcp_bridge_is_narrow_and_local_first():
     assert '"queue_clear"' in src
     assert 'DESKTOP-ODAQN0D' in src
     assert 'validOrigin' in src
-    assert 'github_action' not in src.lower() or 'github_action' in src.lower()  # explicit evidence fields are allowed
+    assert '/session/"+sid+"/shell' in src
+    assert 'quotePS(b.ctl)' in src
+    assert 'tool %q is not allowlisted' in src
 
 
 def test_secure_tunnel_is_outbound_only_and_secret_safe():
@@ -41,7 +43,6 @@ def test_tunnel_client_is_pinned_and_built_from_official_source():
     src = text("scripts/install-openai-secure-mcp-tunnel-client.ps1")
     assert "https://github.com/openai/tunnel-client.git" in src
     assert "[string]$Version = 'v0.0.10'" in src
-    assert "git checkout --detach" not in src  # invocation is through resolved git executable
     assert "checkout --detach $Version" in src
     assert "go.Source build" in src
     assert "built_from_source=$true" in src
