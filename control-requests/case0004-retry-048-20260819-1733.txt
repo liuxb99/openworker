@@ -1,0 +1,6 @@
+command=case0004_continue
+requested_by=ChatGPT
+case_id=0004
+machine=DESKTOP-O87PJNR
+purpose=Refresh runtime to revision 148, close stale revision-147 failed fanout state under terminal-failure rules, and submit canonical 0004-048 retry fanout only.
+boundary=transient control transport only; business execution remains local OpenWorker/go-tool authority.
