@@ -69,6 +69,14 @@ func reconcileFanout(ctx context.Context,client *http.Client,queueURL,workspaceR
             parent.Status="FAILED";parent.Blocker=fmt.Sprintf("child %s: %s",child.WorkID,blocker)
             if err:=persistWorklist(worklistPath,*w);err!=nil{return false,nil,err}
             _=appendLedger(ledgerPath,ledgerEvent{Schema:"openworker.case-supervisor-ledger/v1",Timestamp:time.Now().UTC(),CaseID:w.CaseID,Machine:w.AssignedHost,EventType:"go_fanout_child_failed",WorkspaceRoot:workspaceRoot,Revision:w.Revision,StepID:parent.StepID,ActionID:child.CapabilityID,WorkID:child.WorkID,Detail:parent.Blocker})
+            // A terminal child failure is authoritative and must not remain as an
+            // active fanout forever. Close only this persisted fanout state so a
+            // later, explicitly versioned retry step can proceed. Transport/read
+            // errors and non-terminal states never reach this branch and remain
+            // fail-closed with their state intact.
+            fanoutPath:=filepath.Join(workspaceRoot,".openworker","case-fanout-last.json")
+            if removeErr:=os.Remove(fanoutPath);removeErr!=nil&&!os.IsNotExist(removeErr){return false,summary,fmt.Errorf("fanout child %s failed and terminal fanout state could not be closed: %v; child error: %s",child.WorkID,removeErr,blocker)}
+            _=appendLedger(ledgerPath,ledgerEvent{Schema:"openworker.case-supervisor-ledger/v1",Timestamp:time.Now().UTC(),CaseID:w.CaseID,Machine:w.AssignedHost,EventType:"go_fanout_state_closed_failed",WorkspaceRoot:workspaceRoot,Revision:w.Revision,StepID:parent.StepID,ActionID:child.CapabilityID,WorkID:child.WorkID,Detail:"terminal child failure preserved; active fanout state closed for explicit retry"})
             return false,summary,fmt.Errorf("fanout child %s failed: %s",child.WorkID,blocker)
         default:return false,summary,fmt.Errorf("fanout child %s unsupported status %q",child.WorkID,status)
         }
