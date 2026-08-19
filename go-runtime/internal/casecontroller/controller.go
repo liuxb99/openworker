@@ -20,6 +20,8 @@ type Step struct {
     Dependencies []string `json:"dependencies"`
     AllowedActions []string `json:"allowed_actions,omitempty"`
     Acceptance []string `json:"acceptance,omitempty"`
+    FanoutRole string `json:"fanout_role,omitempty"`
+    FanoutEvidencePrefix string `json:"fanout_evidence_prefix,omitempty"`
     Status string `json:"status"`
     Evidence map[string]any `json:"evidence"`
     Blocker string `json:"blocker,omitempty"`
