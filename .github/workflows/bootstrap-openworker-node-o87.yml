@@ -36,6 +36,10 @@ jobs:
         with:
           go-version: '1.23.x'
           cache-dependency-path: go-runtime/go.sum
+      - name: Run full Go controller tests before install
+        shell: powershell
+        working-directory: go-runtime
+        run: go test ./...
       - name: Build native Windows service binary
         shell: powershell
         working-directory: go-runtime
