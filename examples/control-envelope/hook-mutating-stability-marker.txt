@@ -1,0 +1,3 @@
+2026-08-19 19:30 +08:00
+run=001
+purpose=REAL mutating OPENWORKER_CONTROL stability test: queue_clear x2 + idempotent case_continue + status verification
