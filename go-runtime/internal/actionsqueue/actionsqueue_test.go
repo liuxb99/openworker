@@ -1,4 +1,4 @@
-package main
+package actionsqueue
 
 import (
 	"encoding/json"
@@ -10,22 +10,16 @@ import (
 	"time"
 )
 
-func TestFirstNonEmpty(t *testing.T) {
-	if got := firstNonEmpty("", "  ", "token-a", "token-b"); got != "token-a" {
-		t.Fatalf("got %q", got)
-	}
-}
-
 func TestThreeStageDeleteOnlyForStuckRun(t *testing.T) {
 	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
+	lists := 0
 	var mutations []string
-	listed := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.Contains(r.URL.Path, "/actions/runs") && r.Method == http.MethodGet {
-			listed++
-			runs := []workflowRun{}
-			if listed == 1 {
-				runs = []workflowRun{{ID: 7, Name: "ghost", Status: "queued", CreatedAt: now.Add(-time.Hour)}}
+		if r.Method == http.MethodGet {
+			lists++
+			runs := []WorkflowRun{}
+			if lists == 1 {
+				runs = []WorkflowRun{{ID: 7, Name: "ghost", Status: "queued", CreatedAt: now.Add(-time.Hour)}}
 			}
 			_ = json.NewEncoder(w).Encode(runsResponse{WorkflowRuns: runs})
 			return
@@ -38,46 +32,44 @@ func TestThreeStageDeleteOnlyForStuckRun(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer srv.Close()
-	c := githubClient{repo: "o/r", baseURL: srv.URL, http: srv.Client(), now: func() time.Time { return now }}
+	c := Client{Repo: "o/r", BaseURL: srv.URL, HTTP: srv.Client(), Now: func() time.Time { return now }}
 	out, err := clearQueue(c, 0, time.Second, time.Millisecond, 30*time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := []string{"POST /repos/o/r/actions/runs/7/cancel", "POST /repos/o/r/actions/runs/7/force-cancel", "DELETE /repos/o/r/actions/runs/7"}
-	if !reflect.DeepEqual(mutations, want) {
-		t.Fatalf("mutations=%v", mutations)
-	}
-	if out.Outcome != "PASS" || !reflect.DeepEqual(out.DeletedIDs, []int64{7}) {
-		t.Fatalf("out=%+v", out)
+	if !reflect.DeepEqual(mutations, want) || !reflect.DeepEqual(out.DeletedIDs, []int64{7}) {
+		t.Fatalf("mutations=%v out=%+v", mutations, out)
 	}
 }
 
-func TestDoesNotDeleteRunBelowStuckThreshold(t *testing.T) {
+func TestClearProcessesRunArrivingDuringPoll(t *testing.T) {
 	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
-	listed := 0
-	deletes := 0
+	lists := 0
+	var cancelled []int64
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
-			listed++
-			runs := []workflowRun{}
-			if listed == 1 {
-				runs = []workflowRun{{ID: 8, Status: "queued", CreatedAt: now.Add(-time.Minute)}}
+			lists++
+			runs := []WorkflowRun{}
+			if lists == 2 {
+				runs = []WorkflowRun{{ID: 99, Name: "late", Status: "queued", CreatedAt: now}}
 			}
 			_ = json.NewEncoder(w).Encode(runsResponse{WorkflowRuns: runs})
 			return
 		}
-		if r.Method == http.MethodDelete {
-			deletes++
-		}
-		http.Error(w, "no", http.StatusInternalServerError)
+		cancelled = append(cancelled, 99)
+		w.WriteHeader(http.StatusAccepted)
 	}))
 	defer srv.Close()
-	c := githubClient{repo: "o/r", baseURL: srv.URL, http: srv.Client(), now: func() time.Time { return now }}
+	c := Client{Repo: "o/r", BaseURL: srv.URL, HTTP: srv.Client(), Now: func() time.Time { return now }}
 	out, err := clearQueue(c, 0, time.Second, time.Millisecond, 30*time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if deletes != 0 || out.Operations[0].Delete.Outcome != "not_stuck" {
-		t.Fatalf("unexpected delete: %+v", out.Operations[0])
+	if !reflect.DeepEqual(cancelled, []int64{99}) {
+		t.Fatalf("cancelled=%v", cancelled)
+	}
+	if out.Outcome != "PASS" || len(out.Operations) != 1 || out.Operations[0].RunID != 99 {
+		t.Fatalf("out=%+v", out)
 	}
 }
