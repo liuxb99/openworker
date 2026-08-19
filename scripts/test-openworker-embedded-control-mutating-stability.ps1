@@ -23,19 +23,15 @@ function Invoke-Control([string]$Command,[string]$RequestId,[string]$Case){
   $script:rounds+=[pscustomobject]$item
   if($code-ne0){throw "mutating stability round failed command=$Command request_id=$RequestId exit=$code output=$out"}
   if($null-eq$receipt){throw "missing/invalid durable receipt for $RequestId"}
-  if(-not[bool]$receipt.accepted){throw "control not accepted request_id=$RequestId error_class=$($receipt.error_class) error=$($receipt.error)"}
+  if(-not ([bool]$receipt.accepted)){throw "control not accepted request_id=$RequestId receipt=$($receipt|ConvertTo-Json -Depth 20 -Compress)"}
   return $receipt
 }
 $stamp=(Get-Date).ToUniversalTime().ToString('yyyyMMddHHmmss')
-# 1) Read-only baseline.
 $baseline=Invoke-Control 'CASE.STATUS' ("hook-mut-$stamp-baseline") $CaseId
 $super0=Invoke-Control 'SUPERVISOR.STATUS' ("hook-mut-$stamp-supervisor-before") ''
-# 2) Queue clear twice with distinct request IDs. Second call must also be accepted; this checks clear-on-clean stability.
 $clear1=Invoke-Control 'QUEUE.CLEAR' ("hook-mut-$stamp-clear-1") ''
 $clear2=Invoke-Control 'QUEUE.CLEAR' ("hook-mut-$stamp-clear-2") ''
-# 3) Status after clear.
 $postClear=Invoke-Control 'SUPERVISOR.STATUS' ("hook-mut-$stamp-supervisor-after-clear") ''
-# 4) Continue exactly once, then repeat the exact same request_id. Dispatcher receipt cache must prevent a duplicate control execution.
 $continueId="hook-mut-$stamp-continue-idempotent"
 $cont1=Invoke-Control 'CASE.CONTINUE_BATCH' $continueId $CaseId
 $firstReceiptText=Get-Content -LiteralPath (Join-Path $receiptRoot ($continueId+'.json')) -Raw
@@ -43,7 +39,6 @@ Start-Sleep -Milliseconds 200
 $cont2=Invoke-Control 'CASE.CONTINUE_BATCH' $continueId $CaseId
 $secondReceiptText=Get-Content -LiteralPath (Join-Path $receiptRoot ($continueId+'.json')) -Raw
 if($firstReceiptText -ne $secondReceiptText){throw 'idempotency receipt changed on duplicate CASE.CONTINUE_BATCH request_id'}
-# 5) Multiple read-only observations after continue.
 $status1=Invoke-Control 'CASE.STATUS' ("hook-mut-$stamp-post-1") $CaseId
 $status2=Invoke-Control 'CASE.STATUS' ("hook-mut-$stamp-post-2") $CaseId
 $super1=Invoke-Control 'SUPERVISOR.STATUS' ("hook-mut-$stamp-supervisor-after") ''
