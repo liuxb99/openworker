@@ -3,7 +3,7 @@
   "case_id": "0005",
   "workspace_root": "D:\\AI-Work\\jobs\\0005-SNOW-WHITE",
   "assigned_host": "DESKTOP-ODAQN0D",
-  "revision": 15,
+  "revision": 16,
   "parallel_policy": {
     "authority": "go-tool-runtime-local-supervisor",
     "canonical_controller": "openworker-go-case-engine/v1",
