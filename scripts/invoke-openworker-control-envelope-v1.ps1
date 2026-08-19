@@ -83,7 +83,10 @@ try{
   Remove-Item -LiteralPath $outFile,$errFile -Force -ErrorAction SilentlyContinue
 }
 
-$accepted = (($exitCode -eq 0) -and ($null -ne $result))
+# Acceptance means the native OpenWorker command completed successfully and its
+# stdout passed JSON validation. Valid control responses may be an empty JSON
+# object, so response content must not be used as an additional truthiness gate.
+$accepted = ($exitCode -eq 0)
 $response=[ordered]@{
   schema='openworker.control-result.v2';request_id=$requestId;command=$command;case_id=if($needsCase){[string]$envl.case_id}else{$null};machine=$ExpectedMachine
   accepted=$accepted;exit_code=$exitCode;error_class=$errorClass;error=$errorText;max_parallel=$maxParallel
