@@ -1,6 +1,6 @@
 param(
   [Parameter(Mandatory=$true)]
-  [ValidateSet('supervisor_status','case_status','case_continue','queue_clear')]
+  [ValidateSet('supervisor_status','case_status','case_diagnose','case_continue','queue_clear')]
   [string]$Command,
   [string]$RequestId = '',
   [string]$ExpectedMachine = 'DESKTOP-ODAQN0D'
@@ -34,6 +34,7 @@ $cliArgs=@()
 switch($Command){
   'supervisor_status' { $cliArgs=@('supervisor','status') }
   'case_status'       { $cliArgs=@('case','status','0005') }
+  'case_diagnose'     { $cliArgs=@('case','diagnose','0005') }
   'case_continue'     { $cliArgs=@('case','continue','0005') }
   'queue_clear'       { $cliArgs=@('queue','clear','DESKTOP-ODAQN0D') }
   default             { throw "unsupported command: $Command" }
@@ -103,7 +104,7 @@ $receipt=[ordered]@{
   transport='github_actions'
   request_id=$RequestId
   command=$Command
-  case_id=if($Command -in @('case_status','case_continue')){'0005'}else{$null}
+  case_id=if($Command -in @('case_status','case_diagnose','case_continue')){'0005'}else{$null}
   machine='DESKTOP-ODAQN0D'
   accepted=$accepted
   exit_code=$exitCode
@@ -119,6 +120,6 @@ $receipt=[ordered]@{
   result=$result
 }
 
-$json=$receipt | ConvertTo-Json -Depth 40
+$json=$receipt | ConvertTo-Json -Depth 50
 [IO.File]::WriteAllText($cachePath,$json+[Environment]::NewLine,[Text.UTF8Encoding]::new($false))
 $json
