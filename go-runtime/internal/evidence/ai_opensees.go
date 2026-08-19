@@ -12,11 +12,12 @@ import (
 )
 
 const (
-	AIOpenSeesCapabilityID  = "structural.ai_opensees.authority.analyze"
-	AIOpenSeesRepository    = "liuxb99/AI-OpenSees"
-	AIOpenSeesHost          = "O87"
-	AIOpenSeesResultSchema  = "ai-opensees/analysis-result/v0.4"
-	AIOpenSeesReceiptSchema = "ai-opensees/operator-evidence/v0.1"
+	AIOpenSeesCapabilityID   = "structural.ai_opensees.authority.analyze"
+	AIOpenSeesRepository     = "liuxb99/AI-OpenSees"
+	AIOpenSeesHost           = "O87"
+	AIOpenSeesResultSchema   = "ai-opensees/analysis-result/v0.4"
+	AIOpenSeesReceiptSchema  = "ai-opensees/operator-evidence/v0.1"
+	AIOpenSeesRuntimeSchema  = "ai-opensees/mct-authority-runtime-state/v0.1"
 )
 
 type AIOpenSeesArtifact struct {
@@ -27,37 +28,50 @@ type AIOpenSeesArtifact struct {
 }
 
 type AIOpenSeesOperatorEvidence struct {
-	SchemaVersion       string               `json:"schema_version"`
-	CapabilityID        string               `json:"capability_id,omitempty"`
-	Repository          string               `json:"repository"`
-	CommitSHA           string               `json:"commit_sha"`
-	RunID               string               `json:"run_id"`
-	RunAttempt          string               `json:"run_attempt"`
-	AssignedHostname    string               `json:"assigned_hostname"`
-	MCTPath             string               `json:"mct_path"`
-	MCTSHA256           string               `json:"mct_sha256"`
-	RuntimeConfig       string               `json:"runtime_config"`
-	AuthorityGeneration int64                `json:"authority_generation"`
-	OpenSeesExecutable  string               `json:"opensees_executable"`
-	Workspace           string               `json:"workspace"`
-	Status              string               `json:"status"`
-	Artifacts           []AIOpenSeesArtifact `json:"artifacts"`
+	SchemaVersion        string               `json:"schema_version"`
+	CapabilityID         string               `json:"capability_id"`
+	Repository           string               `json:"repository"`
+	CommitSHA            string               `json:"commit_sha"`
+	RunID                string               `json:"run_id"`
+	RunAttempt           string               `json:"run_attempt"`
+	AssignedHostname     string               `json:"assigned_hostname"`
+	MCTPath              string               `json:"mct_path"`
+	MCTSHA256            string               `json:"mct_sha256"`
+	RuntimeConfig        string               `json:"runtime_config"`
+	AuthorityGeneration  int64                `json:"authority_generation"`
+	AuthorityCatalogRoot string               `json:"authority_catalog_root"`
+	AuthorityEntryCount  int                  `json:"authority_entry_count"`
+	OpenSeesExecutable   string               `json:"opensees_executable"`
+	Workspace            string               `json:"workspace"`
+	Status               string               `json:"status"`
+	Artifacts            []AIOpenSeesArtifact `json:"artifacts"`
 }
 
 type AIOpenSeesAnalysisResult struct {
-	SchemaVersion         string `json:"schema_version"`
-	Status                string `json:"status"`
-	SourceSHA256          string `json:"source_sha256"`
-	AuthorityRuntimeUsed  bool   `json:"authority_runtime_used"`
-	AuthorityGeneration   int64  `json:"authority_generation"`
-	GeometryJSONPath      string `json:"geometry_json_path"`
-	GeometryJSONSHA256    string `json:"geometry_json_sha256"`
-	DeformedOBJPath       string `json:"deformed_obj_path"`
-	DeformedOBJSHA256     string `json:"deformed_obj_sha256"`
-	DisplacementCSVPath   string `json:"displacement_csv_path"`
-	DisplacementCSVSHA256 string `json:"displacement_csv_sha256"`
-	ReactionCSVPath       string `json:"reaction_csv_path"`
-	ReactionCSVSHA256     string `json:"reaction_csv_sha256"`
+	SchemaVersion          string `json:"schema_version"`
+	Status                 string `json:"status"`
+	SourceSHA256           string `json:"source_sha256"`
+	AuthorityRuntimeUsed   bool   `json:"authority_runtime_used"`
+	AuthorityGeneration    int64  `json:"authority_generation"`
+	AuthorityCatalogRoot   string `json:"authority_catalog_root"`
+	AuthorityEntryCount    int    `json:"authority_entry_count"`
+	GeometryJSONPath       string `json:"geometry_json_path"`
+	GeometryJSONSHA256     string `json:"geometry_json_sha256"`
+	DeformedOBJPath        string `json:"deformed_obj_path"`
+	DeformedOBJSHA256      string `json:"deformed_obj_sha256"`
+	DisplacementCSVPath    string `json:"displacement_csv_path"`
+	DisplacementCSVSHA256  string `json:"displacement_csv_sha256"`
+	ReactionCSVPath        string `json:"reaction_csv_path"`
+	ReactionCSVSHA256      string `json:"reaction_csv_sha256"`
+}
+
+type AIOpenSeesRuntimeState struct {
+	SchemaVersion string `json:"schema_version"`
+	Ready         bool   `json:"ready"`
+	Generation    int64  `json:"generation"`
+	CatalogRoot   string `json:"catalog_root"`
+	EntryCount    int    `json:"entry_count"`
+	SnapshotValid bool   `json:"snapshot_valid"`
 }
 
 type AIOpenSeesEvidenceReport struct {
@@ -135,16 +149,19 @@ func ValidateAIOpenSeesWorkspace(workspace string) AIOpenSeesEvidenceReport {
 		return report
 	}
 
-	receiptPath := filepath.Join(workspace, "operator-evidence.json")
-	resultPath := filepath.Join(workspace, "analysis-result.json")
 	var receipt AIOpenSeesOperatorEvidence
-	if err := readJSON(receiptPath, &receipt); err != nil {
+	if err := readJSON(filepath.Join(workspace, "operator-evidence.json"), &receipt); err != nil {
 		add("OPERATOR_EVIDENCE_INVALID:" + err.Error())
 		return report
 	}
 	var result AIOpenSeesAnalysisResult
-	if err := readJSON(resultPath, &result); err != nil {
+	if err := readJSON(filepath.Join(workspace, "analysis-result.json"), &result); err != nil {
 		add("ANALYSIS_RESULT_INVALID:" + err.Error())
+		return report
+	}
+	var runtime AIOpenSeesRuntimeState
+	if err := readJSON(filepath.Join(workspace, "authority-runtime-state.json"), &runtime); err != nil {
+		add("AUTHORITY_RUNTIME_STATE_INVALID:" + err.Error())
 		return report
 	}
 
@@ -152,46 +169,30 @@ func ValidateAIOpenSeesWorkspace(workspace string) AIOpenSeesEvidenceReport {
 	report.RunID = receipt.RunID
 	report.AuthorityGeneration = receipt.AuthorityGeneration
 
-	if receipt.SchemaVersion != AIOpenSeesReceiptSchema {
-		add("OPERATOR_EVIDENCE_SCHEMA_MISMATCH")
-	}
-	if receipt.CapabilityID != "" && receipt.CapabilityID != AIOpenSeesCapabilityID {
-		add("CAPABILITY_ID_MISMATCH")
-	}
-	if receipt.Repository != AIOpenSeesRepository {
-		add("REPOSITORY_MISMATCH")
-	}
-	if !strings.EqualFold(receipt.AssignedHostname, AIOpenSeesHost) {
-		add("ASSIGNED_HOST_MISMATCH")
-	}
-	if receipt.Status != "complete" {
-		add("OPERATOR_STATUS_NOT_COMPLETE")
-	}
-	if receipt.AuthorityGeneration < 1 {
-		add("AUTHORITY_GENERATION_INVALID")
-	}
-	if !isSHA256(receipt.MCTSHA256) {
-		add("MCT_SHA256_INVALID")
-	}
-	if !samePath(receipt.Workspace, workspace) {
-		add("WORKSPACE_RECEIPT_MISMATCH")
-	}
+	if receipt.SchemaVersion != AIOpenSeesReceiptSchema { add("OPERATOR_EVIDENCE_SCHEMA_MISMATCH") }
+	if receipt.CapabilityID != AIOpenSeesCapabilityID { add("CAPABILITY_ID_MISMATCH") }
+	if receipt.Repository != AIOpenSeesRepository { add("REPOSITORY_MISMATCH") }
+	if !strings.EqualFold(receipt.AssignedHostname, AIOpenSeesHost) { add("ASSIGNED_HOST_MISMATCH") }
+	if receipt.Status != "complete" { add("OPERATOR_STATUS_NOT_COMPLETE") }
+	if receipt.AuthorityGeneration < 1 { add("AUTHORITY_GENERATION_INVALID") }
+	if receipt.AuthorityEntryCount < 0 { add("AUTHORITY_ENTRY_COUNT_INVALID") }
+	if strings.TrimSpace(receipt.AuthorityCatalogRoot) == "" { add("AUTHORITY_CATALOG_ROOT_EMPTY") }
+	if !isSHA256(receipt.MCTSHA256) { add("MCT_SHA256_INVALID") }
+	if !samePath(receipt.Workspace, workspace) { add("WORKSPACE_RECEIPT_MISMATCH") }
 
-	if result.SchemaVersion != AIOpenSeesResultSchema {
-		add("ANALYSIS_RESULT_SCHEMA_MISMATCH")
-	}
-	if result.Status != "complete" {
-		add("ANALYSIS_STATUS_NOT_COMPLETE")
-	}
-	if !result.AuthorityRuntimeUsed {
-		add("ANALYSIS_AUTHORITY_RUNTIME_NOT_USED")
-	}
-	if result.AuthorityGeneration != receipt.AuthorityGeneration {
-		add("AUTHORITY_GENERATION_MISMATCH")
-	}
-	if result.SourceSHA256 != receipt.MCTSHA256 {
-		add("SOURCE_SHA256_MISMATCH")
-	}
+	if result.SchemaVersion != AIOpenSeesResultSchema { add("ANALYSIS_RESULT_SCHEMA_MISMATCH") }
+	if result.Status != "complete" { add("ANALYSIS_STATUS_NOT_COMPLETE") }
+	if !result.AuthorityRuntimeUsed { add("ANALYSIS_AUTHORITY_RUNTIME_NOT_USED") }
+	if result.AuthorityGeneration != receipt.AuthorityGeneration { add("AUTHORITY_GENERATION_MISMATCH") }
+	if !samePath(result.AuthorityCatalogRoot, receipt.AuthorityCatalogRoot) { add("ANALYSIS_CATALOG_ROOT_MISMATCH") }
+	if result.AuthorityEntryCount != receipt.AuthorityEntryCount { add("ANALYSIS_ENTRY_COUNT_MISMATCH") }
+	if result.SourceSHA256 != receipt.MCTSHA256 { add("SOURCE_SHA256_MISMATCH") }
+
+	if runtime.SchemaVersion != AIOpenSeesRuntimeSchema { add("AUTHORITY_RUNTIME_SCHEMA_MISMATCH") }
+	if !runtime.Ready || !runtime.SnapshotValid { add("AUTHORITY_RUNTIME_NOT_READY") }
+	if runtime.Generation != receipt.AuthorityGeneration { add("RUNTIME_GENERATION_MISMATCH") }
+	if !samePath(runtime.CatalogRoot, receipt.AuthorityCatalogRoot) { add("RUNTIME_CATALOG_ROOT_MISMATCH") }
+	if runtime.EntryCount != receipt.AuthorityEntryCount { add("RUNTIME_ENTRY_COUNT_MISMATCH") }
 
 	artifactByName := map[string]AIOpenSeesArtifact{}
 	for _, artifact := range receipt.Artifacts {
@@ -233,18 +234,9 @@ func ValidateAIOpenSeesWorkspace(workspace string) AIOpenSeesEvidenceReport {
 			add("ARTIFACT_READ_FAILED:" + name)
 			continue
 		}
-		if hash != strings.ToLower(artifact.SHA256) {
-			add("ARTIFACT_SHA256_MISMATCH:" + name)
-			continue
-		}
-		if bytes != artifact.Bytes {
-			add("ARTIFACT_SIZE_MISMATCH:" + name)
-			continue
-		}
-		if bytes == 0 && name != "opensees.stdout.log" && name != "opensees.stderr.log" {
-			add("ARTIFACT_EMPTY:" + name)
-			continue
-		}
+		if hash != strings.ToLower(artifact.SHA256) { add("ARTIFACT_SHA256_MISMATCH:" + name); continue }
+		if bytes != artifact.Bytes { add("ARTIFACT_SIZE_MISMATCH:" + name); continue }
+		if bytes == 0 && name != "opensees.stdout.log" && name != "opensees.stderr.log" { add("ARTIFACT_EMPTY:" + name); continue }
 		report.VerifiedArtifacts++
 	}
 
@@ -260,15 +252,9 @@ func ValidateAIOpenSeesWorkspace(workspace string) AIOpenSeesEvidenceReport {
 	}
 	for _, check := range checks {
 		artifact, ok := artifactByName[check.name]
-		if !ok {
-			continue
-		}
-		if !samePath(check.path, filepath.Join(workspace, check.name)) {
-			add("ANALYSIS_ARTIFACT_PATH_MISMATCH:" + check.name)
-		}
-		if !isSHA256(check.hash) || strings.ToLower(check.hash) != strings.ToLower(artifact.SHA256) {
-			add("ANALYSIS_ARTIFACT_SHA256_MISMATCH:" + check.name)
-		}
+		if !ok { continue }
+		if !samePath(check.path, filepath.Join(workspace, check.name)) { add("ANALYSIS_ARTIFACT_PATH_MISMATCH:" + check.name) }
+		if !isSHA256(check.hash) || strings.ToLower(check.hash) != strings.ToLower(artifact.SHA256) { add("ANALYSIS_ARTIFACT_SHA256_MISMATCH:" + check.name) }
 	}
 
 	report.Accepted = len(report.Blockers) == 0 && report.VerifiedArtifacts == len(required)
