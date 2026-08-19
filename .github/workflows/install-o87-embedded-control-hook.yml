@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/install-o87-embedded-control-hook.yml'
+      - 'control-triggers/o87-hook-install-*.txt'
   workflow_dispatch:
 
 permissions:
