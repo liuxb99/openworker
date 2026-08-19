@@ -29,7 +29,7 @@ jobs:
       - name: Install latest self-contained Hook and dispatcher
         shell: cmd
         run: >-
-          powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%GITHUB_WORKSPACE%\scripts\install-openworker-runner-hook.ps1" -RunnerRoot "C:\github-runners\openworker" -OpenWorkerRepoRoot "%GITHUB_WORKSPACE%"
+          powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%GITHUB_WORKSPACE%\scripts\install-openworker-runner-hook.ps1" -OpenWorkerRepoRoot "%GITHUB_WORKSPACE%" -InstallFilesOnly
 
       - name: Run Case0005 REAL embedded-control acceptance
         shell: cmd
