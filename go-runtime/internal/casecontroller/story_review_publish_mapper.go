@@ -97,17 +97,20 @@ func mapStoryViewportReviewPublish(ctx actionMapContext) (map[string]any, error)
 		return nil, fmt.Errorf("dependency %s evidence story_pngs must be an array", parent.StepID)
 	}
 
-	// Include the overview when it is already a validated Case artifact. It gives
-	// the reviewer context for judging whether each zoomed floor viewport was
-	// localized correctly, without making the overview a prerequisite of this
-	// publish mapper.
+	// Include the overview only when a terminal-success step actually carries
+	// non-nil overview evidence. Missing optional evidence must not stringify to
+	// "<nil>" and accidentally become a filesystem path.
 	for i := range ctx.Worklist.Steps {
 		step := &ctx.Worklist.Steps[i]
 		if !terminalSuccess(step.Status) {
 			continue
 		}
-		raw := strings.TrimSpace(fmt.Sprint(step.Evidence["overview_png"]))
-		if raw == "" {
+		value, ok := step.Evidence["overview_png"]
+		if !ok || value == nil {
+			continue
+		}
+		raw := strings.TrimSpace(fmt.Sprint(value))
+		if raw == "" || raw == "<nil>" {
 			continue
 		}
 		if err := add(raw, "overview_png"); err != nil {
