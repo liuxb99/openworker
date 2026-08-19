@@ -1,0 +1,102 @@
+package casecontroller
+
+import (
+	"fmt"
+	"path/filepath"
+	"strings"
+)
+
+func init() {
+	actionMappers["openworker.review.publish-story-viewports"] = mapStoryViewportReviewPublish
+	actionDispatchAliases["openworker.review.publish-story-viewports"] = "openworker.case.publish-artifacts"
+}
+
+// mapStoryViewportReviewPublish closes the Case review-visibility gap:
+// a terminal-success Story viewport fanout is converted into an immutable,
+// bounded artifact list and dispatched through the existing
+// openworker.case.publish-artifacts capability. That capability publishes the
+// exact files to Google Drive and returns chatgpt_review_ready=true.
+func mapStoryViewportReviewPublish(ctx actionMapContext) (map[string]any, error) {
+	parent, err := dependencyStep(ctx, 0)
+	if err != nil {
+		return nil, err
+	}
+
+	artifacts := make([]string, 0, 16)
+	seen := map[string]bool{}
+	add := func(raw, key string) error {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			return fmt.Errorf("dependency %s evidence missing %s", parent.StepID, key)
+		}
+		rel, err := workspaceRelativeExistingFile(ctx.WorkspaceRoot, raw, key)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		canon := strings.ToLower(rel)
+		if !seen[canon] {
+			seen[canon] = true
+			artifacts = append(artifacts, rel)
+		}
+		return nil
+	}
+
+	if err := add(fmt.Sprint(parent.Evidence["render_manifest"]), "render_manifest"); err != nil {
+		return nil, err
+	}
+
+	switch values := parent.Evidence["story_pngs"].(type) {
+	case []string:
+		if len(values) == 0 {
+			return nil, fmt.Errorf("dependency %s evidence story_pngs is empty", parent.StepID)
+		}
+		for _, value := range values {
+			if err := add(value, "story_pngs"); err != nil {
+				return nil, err
+			}
+		}
+	case []any:
+		if len(values) == 0 {
+			return nil, fmt.Errorf("dependency %s evidence story_pngs is empty", parent.StepID)
+		}
+		for _, value := range values {
+			if err := add(fmt.Sprint(value), "story_pngs"); err != nil {
+				return nil, err
+			}
+		}
+	default:
+		return nil, fmt.Errorf("dependency %s evidence story_pngs must be an array", parent.StepID)
+	}
+
+	// Include the overview when it is already a validated Case artifact. It gives
+	// the reviewer context for judging whether each zoomed floor viewport was
+	// localized correctly, without making the overview a prerequisite of this
+	// publish mapper.
+	for i := range ctx.Worklist.Steps {
+		step := &ctx.Worklist.Steps[i]
+		if !terminalSuccess(step.Status) {
+			continue
+		}
+		raw := strings.TrimSpace(fmt.Sprint(step.Evidence["overview_png"]))
+		if raw == "" {
+			continue
+		}
+		if err := add(raw, "overview_png"); err != nil {
+			return nil, err
+		}
+		break
+	}
+
+	revisionID := fmt.Sprintf("case%s-%s-r%06d", safeID(ctx.Worklist.CaseID), safeID(ctx.Step.StepID), ctx.Worklist.Revision)
+	workCode := strings.ToUpper(fmt.Sprintf("CASE%s-%s-R%06d", safeID(ctx.Worklist.CaseID), safeID(ctx.Step.StepID), ctx.Worklist.Revision))
+	return map[string]any{
+		"workspace_root": ctx.WorkspaceRoot,
+		"assigned_host":  ctx.Machine,
+		"case_id":        ctx.Worklist.CaseID,
+		"step_id":        ctx.Step.StepID,
+		"revision_id":    revisionID,
+		"work_code":      workCode,
+		"artifacts":      artifacts,
+	}, nil
+}
