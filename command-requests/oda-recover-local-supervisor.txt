@@ -1,4 +1,4 @@
-recover request 2026-08-19 19:09 +08:00
+recover request 2026-08-19 22:03 +08:00
 machine=DESKTOP-ODAQN0D
-reason=8848 refused during OPENWORKER_CONTROL smoke
+reason=Case0005 dispatch-gap REAL verification blocked: ODA runner/status probes produced no receipt
 retrigger=receipt-enabled
