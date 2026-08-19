@@ -19,8 +19,26 @@ New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
 $cachePath=Join-Path $cacheRoot ($RequestId+'.json')
 if(Test-Path -LiteralPath $cachePath -PathType Leaf){ Get-Content -LiteralPath $cachePath -Raw; exit 0 }
 
-$ctl=Join-Path $env:ProgramData 'OpenWorker\bin\openworker.exe'
-if(-not(Test-Path -LiteralPath $ctl -PathType Leaf)){ $ctl=Join-Path $env:ProgramData 'OpenWorker\bin\openworkerctl.exe' }
+$binRoot=Join-Path $env:ProgramData 'OpenWorker\bin'
+New-Item -ItemType Directory -Force -Path $binRoot | Out-Null
+$ctl=Join-Path $binRoot 'openworker.exe'
+$compatCtl=Join-Path $binRoot 'openworkerctl.exe'
+
+if(-not(Test-Path -LiteralPath $ctl -PathType Leaf)){
+  $go=(Get-Command go -ErrorAction SilentlyContinue)
+  if($null -eq $go){ throw 'Go toolchain is required to bootstrap OpenWorker CLI on O87' }
+  $goRoot=Join-Path $repoRoot 'go-runtime'
+  if(-not(Test-Path -LiteralPath (Join-Path $goRoot 'go.mod') -PathType Leaf)){ throw "go-runtime source unavailable: $goRoot" }
+  Push-Location $goRoot
+  try{
+    & $go.Source build -o $ctl ./cmd/openworker
+    if($LASTEXITCODE -ne 0){throw "failed to build openworker.exe exit=$LASTEXITCODE"}
+    & $go.Source build -o $compatCtl ./cmd/openworkerctl
+    if($LASTEXITCODE -ne 0){throw "failed to build openworkerctl.exe exit=$LASTEXITCODE"}
+  } finally { Pop-Location }
+}
+if(-not(Test-Path -LiteralPath $ctl -PathType Leaf) -and (Test-Path -LiteralPath $compatCtl -PathType Leaf)){ $ctl=$compatCtl }
+
 $cliArgs=@()
 switch($Command){
   'supervisor_status' { $cliArgs=@('supervisor','status') }
@@ -37,7 +55,9 @@ if(-not(Test-Path -LiteralPath $ctl -PathType Leaf)){
   $exitCode=127;$errorText="OpenWorker control executable is not installed: $ctl"
 }else{
   try{
-    $raw=& $ctl @cliArgs 2>&1 | Out-String
+    $previousRoot=$env:OPENWORKER_ROOT
+    $env:OPENWORKER_ROOT=$repoRoot
+    try{$raw=& $ctl @cliArgs 2>&1 | Out-String}finally{$env:OPENWORKER_ROOT=$previousRoot}
     $exitCode=$LASTEXITCODE
     if($exitCode -ne 0){$errorText="OpenWorker control command failed exit=$exitCode output=$raw"}
     else{try{$result=$raw|ConvertFrom-Json -ErrorAction Stop}catch{$exitCode=70;$errorText="OpenWorker control command returned non-JSON output: $raw"}}
@@ -51,6 +71,7 @@ if($accepted -and $Command -eq 'case_continue'){
     if($result.work_id){$hasDurableIdentity=$true}
     if($result.fanout_work_ids -and @($result.fanout_work_ids).Count -gt 0){$hasDurableIdentity=$true}
     if($result.accepted -eq $true){$hasDurableIdentity=$true}
+    if($result.queue_status -and @('accepted','fanout_active','already_submitted') -contains [string]$result.queue_status){$hasDurableIdentity=$true}
   }
   if(-not $hasDurableIdentity){$accepted=$false;$exitCode=72;$errorText='case_continue returned no durable work identity/accepted evidence'}
 }
