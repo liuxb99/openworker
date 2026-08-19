@@ -102,4 +102,4 @@ jobs:
           $rel='evidence/runner-admin/UL7.json'; New-Item -ItemType Directory -Force -Path (Split-Path $rel)|Out-Null; [IO.File]::WriteAllText($rel,($e|ConvertTo-Json -Depth 8)+[Environment]::NewLine,[Text.UTF8Encoding]::new($false)); git add -- $rel; git commit -m "evidence: UL7 runner LocalSystem authority"; if($LASTEXITCODE -ne 0){throw 'failed to commit UL7 evidence'}
           for($i=0;$i -lt 5;$i++){git pull --rebase origin main;if($LASTEXITCODE -ne 0){git rebase --abort 2>$null;Start-Sleep 2;continue};git push origin HEAD:main;if($LASTEXITCODE -eq 0){exit 0};Start-Sleep 2}; throw 'failed to push UL7 evidence'
 
-# rerun-trigger: 2026-08-19T23:49:00+08:00
+# rerun-trigger: 2026-08-19T23:54:30+08:00 after user label correction
