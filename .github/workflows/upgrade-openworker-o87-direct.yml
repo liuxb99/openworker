@@ -34,6 +34,8 @@ jobs:
           $commit=(git rev-parse HEAD).Trim()
           Push-Location go-runtime
           try {
+            go mod tidy
+            if($LASTEXITCODE -ne 0){throw "go mod tidy failed exit=$LASTEXITCODE"}
             go test ./internal/api -count=1
             if($LASTEXITCODE -ne 0){throw "resident API tests failed exit=$LASTEXITCODE"}
             $build=[DateTime]::UtcNow.ToString('o')
