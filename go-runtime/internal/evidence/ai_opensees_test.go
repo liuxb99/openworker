@@ -15,12 +15,10 @@ func testHash(data []byte) string { sum:=sha256.Sum256(data); return hex.EncodeT
 func hasBlocker(report AIOpenSeesEvidenceReport, want string) bool { for _,b:=range report.Blockers { if b==want || strings.HasPrefix(b,want) { return true } }; return false }
 func testRuntimeJSON(t *testing.T, runtime AIOpenSeesRuntimeState, exportedAt, exportMethod string, valid bool) []byte {
 	t.Helper()
-	base,err:=json.Marshal(runtime); if err!=nil{t.Fatal(err)}
-	var payload map[string]any; if err:=json.Unmarshal(base,&payload);err!=nil{t.Fatal(err)}
-	payload["active_source_exported_at"]=exportedAt
-	payload["active_source_export_method"]=exportMethod
-	payload["active_source_export_provenance_valid"]=valid
-	out,err:=json.Marshal(payload);if err!=nil{t.Fatal(err)};return out
+	runtime.ActiveSourceExportedAt=exportedAt
+	runtime.ActiveSourceExportMethod=exportMethod
+	runtime.ActiveSourceExportProvenanceValid=valid
+	out,err:=json.Marshal(runtime);if err!=nil{t.Fatal(err)};return out
 }
 
 func TestValidateAIOpenSeesWorkspace(t *testing.T) {
@@ -30,7 +28,7 @@ func TestValidateAIOpenSeesWorkspace(t *testing.T) {
 	exeData:=[]byte("real-opensees-executable-placeholder"); exePath:=filepath.Join(root,"OpenSees.exe"); testWrite(t,exePath,exeData)
 	snapshot:=testHash([]byte("authority-snapshot")); generation:=int64(3); catalog:=filepath.Join(root,"authority-catalog"); if err:=os.MkdirAll(catalog,0o755);err!=nil{t.Fatal(err)}
 	civilVersion:="Civil 2016"; civilBuild:="2016.1.0"; exportedAt:="2026-08-19T12:00:00+08:00"; exportMethod:="MIDAS Civil GUI Export MCT"
-	runtime:=AIOpenSeesRuntimeState{SchemaVersion:AIOpenSeesRuntimeSchema,Ready:true,Generation:generation,ConfigPath:configPath,CatalogRoot:catalog,EntryCount:3,ElasticMaterialAuthorityCount:1,PrismaticSectionAuthorityCount:1,StaticNodalLoadAuthorityCount:1,ActiveSourceSHA256:mctSHA,ActiveSourceAuthorityCount:3,ActiveSourceElasticMaterialAuthorityCount:1,ActiveSourcePrismaticSectionAuthorityCount:1,ActiveSourceStaticNodalLoadAuthorityCount:1,ActiveSourceCoverageValid:true,ActiveSourceCivilVersion:civilVersion,ActiveSourceCivilBuild:civilBuild,ActiveSourceCohortValid:true,SnapshotSHA256:snapshot,SnapshotValid:true}
+	runtime:=AIOpenSeesRuntimeState{SchemaVersion:AIOpenSeesRuntimeSchema,Ready:true,Generation:generation,ConfigPath:configPath,CatalogRoot:catalog,EntryCount:3,ElasticMaterialAuthorityCount:1,PrismaticSectionAuthorityCount:1,StaticNodalLoadAuthorityCount:1,ActiveSourceSHA256:mctSHA,ActiveSourceAuthorityCount:3,ActiveSourceElasticMaterialAuthorityCount:1,ActiveSourcePrismaticSectionAuthorityCount:1,ActiveSourceStaticNodalLoadAuthorityCount:1,ActiveSourceCoverageValid:true,ActiveSourceCivilVersion:civilVersion,ActiveSourceCivilBuild:civilBuild,ActiveSourceExportedAt:exportedAt,ActiveSourceExportMethod:exportMethod,ActiveSourceExportProvenanceValid:true,ActiveSourceCohortValid:true,SnapshotSHA256:snapshot,SnapshotValid:true}
 	runtimeData:=testRuntimeJSON(t,runtime,exportedAt,exportMethod,true)
 	contents:=map[string][]byte{
 		"analysis-geometry.json":[]byte(`{"schema_version":"ai-opensees/analysis-geometry/v0.2"}`),
@@ -46,11 +44,16 @@ func TestValidateAIOpenSeesWorkspace(t *testing.T) {
 	analysisData,_:=json.Marshal(analysis); testWrite(t,filepath.Join(root,"analysis-result.json"),analysisData); contents["analysis-result.json"]=analysisData
 	required:=[]string{"analysis-result.json","analysis-geometry.json","analysis-deformed.obj","analysis-deformation.svg","analysis.tcl","node_displacements.csv","node_reactions.csv","opensees.stdout.log","opensees.stderr.log","authority-runtime-state.json"}
 	artifacts:=make([]AIOpenSeesArtifact,0,len(required)); for _,name:=range required { data:=contents[name]; artifacts=append(artifacts,AIOpenSeesArtifact{Name:name,Path:filepath.Join(root,name),Bytes:int64(len(data)),SHA256:testHash(data)}) }
-	receipt:=AIOpenSeesOperatorEvidence{SchemaVersion:AIOpenSeesReceiptSchema,CapabilityID:AIOpenSeesCapabilityID,Repository:AIOpenSeesRepository,CommitSHA:"0123456789abcdef0123456789abcdef01234567",RunID:"123",RunAttempt:"1",AssignedHostname:AIOpenSeesHost,MCTPath:mctPath,MCTSHA256:mctSHA,RuntimeConfig:configPath,RuntimeConfigSHA256:testHash(configData),AuthorityGeneration:generation,AuthorityCatalogRoot:catalog,AuthorityEntryCount:3,ElasticMaterialAuthorityCount:1,PrismaticSectionAuthorityCount:1,StaticNodalLoadAuthorityCount:1,ActiveSourceSHA256:mctSHA,ActiveSourceAuthorityCount:3,ActiveSourceElasticMaterialAuthorityCount:1,ActiveSourcePrismaticSectionAuthorityCount:1,ActiveSourceStaticNodalLoadAuthorityCount:1,ActiveSourceCoverageValid:true,ActiveSourceCivilVersion:civilVersion,ActiveSourceCivilBuild:civilBuild,ActiveSourceCohortValid:true,AuthoritySnapshotSHA256:snapshot,OpenSeesExecutable:exePath,OpenSeesExecutableSHA256:testHash(exeData),Solver:"OpenSees",SolverVersion:"OpenSees 3.7.1",SolverRawExitCode:0,Workspace:root,Status:"complete",Artifacts:artifacts}
+	receipt:=AIOpenSeesOperatorEvidence{SchemaVersion:AIOpenSeesReceiptSchema,CapabilityID:AIOpenSeesCapabilityID,Repository:AIOpenSeesRepository,CommitSHA:"0123456789abcdef0123456789abcdef01234567",RunID:"123",RunAttempt:"1",AssignedHostname:AIOpenSeesHost,MCTPath:mctPath,MCTSHA256:mctSHA,RuntimeConfig:configPath,RuntimeConfigSHA256:testHash(configData),AuthorityGeneration:generation,AuthorityCatalogRoot:catalog,AuthorityEntryCount:3,ElasticMaterialAuthorityCount:1,PrismaticSectionAuthorityCount:1,StaticNodalLoadAuthorityCount:1,ActiveSourceSHA256:mctSHA,ActiveSourceAuthorityCount:3,ActiveSourceElasticMaterialAuthorityCount:1,ActiveSourcePrismaticSectionAuthorityCount:1,ActiveSourceStaticNodalLoadAuthorityCount:1,ActiveSourceCoverageValid:true,ActiveSourceCivilVersion:civilVersion,ActiveSourceCivilBuild:civilBuild,ActiveSourceExportedAt:exportedAt,ActiveSourceExportMethod:exportMethod,ActiveSourceExportProvenanceValid:true,ActiveSourceCohortValid:true,AuthoritySnapshotSHA256:snapshot,OpenSeesExecutable:exePath,OpenSeesExecutableSHA256:testHash(exeData),Solver:"OpenSees",SolverVersion:"OpenSees 3.7.1",SolverRawExitCode:0,Workspace:root,Status:"complete",Artifacts:artifacts}
 	writeReceipt:=func(v AIOpenSeesOperatorEvidence){ data,_:=json.Marshal(v); testWrite(t,filepath.Join(root,"operator-evidence.json"),data) }
 	writeRuntime:=func(v AIOpenSeesRuntimeState,at,method string,valid bool){ testWrite(t,filepath.Join(root,"authority-runtime-state.json"),testRuntimeJSON(t,v,at,method,valid)) }
 	writeReceipt(receipt)
 	if report:=ValidateAIOpenSeesWorkspace(root); !report.Accepted { t.Fatalf("expected accepted evidence, blockers=%v",report.Blockers) }
+
+	receiptExportDrift:=receipt; receiptExportDrift.ActiveSourceExportedAt="2026-08-19T12:01:00+08:00"; writeReceipt(receiptExportDrift); if r:=ValidateAIOpenSeesWorkspace(root); r.Accepted||!hasBlocker(r,"ACTIVE_SOURCE_EXPORTED_AT_CROSS_BIND_MISMATCH") { t.Fatalf("receipt exported_at drift not blocked: %v",r.Blockers) }
+	receiptMethodDrift:=receipt; receiptMethodDrift.ActiveSourceExportMethod="MIDAS Civil GUI Export Other"; writeReceipt(receiptMethodDrift); if r:=ValidateAIOpenSeesWorkspace(root); r.Accepted||!hasBlocker(r,"ACTIVE_SOURCE_EXPORT_METHOD_CROSS_BIND_MISMATCH") { t.Fatalf("receipt export_method drift not blocked: %v",r.Blockers) }
+	receiptProvenanceDrift:=receipt; receiptProvenanceDrift.ActiveSourceExportProvenanceValid=false; writeReceipt(receiptProvenanceDrift); if r:=ValidateAIOpenSeesWorkspace(root); r.Accepted||!hasBlocker(r,"ACTIVE_SOURCE_GUI_EXPORT_PROVENANCE_INVALID") { t.Fatalf("receipt export provenance flag drift not blocked: %v",r.Blockers) }
+	writeReceipt(receipt)
 
 	writeRuntime(runtime,"",exportMethod,true); if r:=ValidateAIOpenSeesWorkspace(root); r.Accepted||!hasBlocker(r,"AUTHORITY_RUNTIME_STATE_INVALID") { t.Fatalf("missing exported_at not blocked: %v",r.Blockers) }
 	writeRuntime(runtime,exportedAt,"manual text",true); if r:=ValidateAIOpenSeesWorkspace(root); r.Accepted||!hasBlocker(r,"AUTHORITY_RUNTIME_STATE_INVALID") { t.Fatalf("non-authoritative export_method not blocked: %v",r.Blockers) }
