@@ -1,7 +1,7 @@
 {
   "schema": "openworker.control-envelope.v1",
-  "request_id": "case0005-clear-continue-20260819-f1",
-  "command": "CASE.CLEAR_AND_CONTINUE",
+  "request_id": "case0005-queue-clear-20260819-g1",
+  "command": "QUEUE.CLEAR",
   "machine": "DESKTOP-ODAQN0D",
   "case_id": "0005",
   "policy": {
