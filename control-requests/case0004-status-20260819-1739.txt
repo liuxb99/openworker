@@ -1,0 +1,6 @@
+command: case0004_status
+requested_by: ChatGPT
+case_id: 0004
+machine: DESKTOP-O87PJNR
+purpose: Read-only reconcile check for the active revision 148 Story viewport retry fanout. Do not create or duplicate business work.
+Boundary: transient command transport only; GitHub Actions does not execute or wait for Case business work.
