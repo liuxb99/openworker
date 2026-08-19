@@ -98,3 +98,32 @@ REAL 结果：
 验证：`go test ./...` PASS；本机 build PASS；新版 resident 以 hidden detached process 运行，PID 4780、workers=4、data dir 仍为原 `C:\ProgramData\OpenWorker\node`。
 
 尚存缺口：当前用户没有权限覆盖 `C:\ProgramData\OpenWorker\bin\openworker-node.exe`，因此 REAL 验证 binary 暂从用户 temp staging path 启动，但 durable SQLite/data dir 未改变。后续需用既有升级 authority 将同一修复 binary 正式写入 ProgramData，并建立或恢复自动启动机制；这不影响本轮已取得的 durable accepted/claimed/executor-started 证据。
+
+## 2026-08-19 23:20（Asia/Taipei）ODA 正式部署與 Case0005 revision 16 實機續跑
+
+### 正式 resident
+
+- 已把 REAL 驗證版本 `43fcc910635d28896215412d66005f4e66611054` 建置並安裝為 `C:\ProgramData\OpenWorker\bin\openworker-node.exe`。
+- binary SHA256：`51B902F78137FC88AC0200E9E7CF8E44FC1B54FCBBB765FA7BF065C73C6B563F`。
+- 非管理員 installer 無法建立 Windows Service，且原 fallback 會在舊 temp resident 仍佔用 8787 時誤把舊 `/healthz` 當成新程序成功。已精準停止 temp PID 4780，正式 ProgramData resident 首次 PID 11400。
+- 依非管理員 fallback 建立登入自啟 Scheduled Task `OpenWorkerNode-Fallback`，僅指向正式 ProgramData binary，參數固定 `-data C:\ProgramData\OpenWorker\node -workers 4`。
+- restart smoke：停止 PID 11400 後由 task 拉起新 PID 35948；binary path、commit、target commit、workers=4 與 durable data dir 均維持正確。
+- `127.0.0.1:8787/healthz` PASS；Go `openworker supervisor status` 為 `OPERATIONAL`；原 Case ledger 與 durable queue 可讀。
+- GitHub Actions 僅用於 installer / 權限相符的孤兒程序 recovery command transport，未作為 Case business execution、status 或 artifact authority。
+
+### 0005-010 的第二層執行斷點與恢復
+
+- revision 15 work `case0005-0005-010-r000015-50dfa3ce` 原本事件 746 submitted、747 claimed、748 execution started，claim slot 1、executor slot 3。
+- 真實問題為 `comfyx-studio-platform.exe` 孤兒程序持有 executor stdout/stderr pipe，operator 已退出但 executor 等不到 EOF；清除孤兒後 durable work 才顯示原始錯誤：`127.0.0.1:8319` ComfyX Intelligence connection refused。
+- 復用既有 ComfyX 真實 Intelligence binary/環境語意啟動 8319，health PASS；未使用 mock。
+- Case worklist 只把 revision 15 提升到 16。ledger 依序新增 `go_definition_refreshed`、`go_failed_controller_work_ref_cleared`、`go_step_dispatch_start`、`go_step_durable_accepted`。
+- revision 16 work `case0005-0005-010-r000016-f331eb9e` REAL completed：events 798–803，claim slot 2，executor slot 4；Director plan `D:\AI-Work\jobs\0005-SNOW-WHITE\director\project-plan.json`，SHA256 `df190552cf117ad25fad2c5bf81b1529d3f3d205af3cc253850bcbd27005c7a6`。
+
+### revision 16 後續 durable work
+
+- `0005-020`：`case0005-0005-020-r000016-335a1d61` completed；claim slot 1、executor slot 2；產出 storyboard request 與 11 個 visual requirements。
+- `0005-025`：`case0005-0005-025-r000016-3ecf52ff` completed；claim slot 4、executor slot 2；events 810–815。
+- PPTX：`D:\AI-Work\jobs\0005-SNOW-WHITE\presentation\storyboard-text-only.pptx`，172250 bytes，16 slides，SHA256 `9fa0b1311c6bbb7816f9d21e8fa827475fdc61fe8d4e21ab558f6e20b0c19f4d`。
+- `0005-026`：`case0005-0005-026-r000016-089655df` claimed（slot 4 / executor slot 4）後 failed；events 816–819。真實 Drive boundary 缺少 Google ADC / `OPENWORKER_GOOGLE_DRIVE_ACCESS_TOKEN`，因此沒有 Drive file ID 或 upload receipt。
+- ODA 的互動帳號與 `NETWORK SERVICE` 均無 ADC，環境無 Drive token，亦未安裝 gcloud。這是外部 credential blocker，禁止偽造 receipt。
+- 因 026 未完成，尚未到 0005-027 approval gate；沒有派發 030 / 040 或任何後續 fanout。
