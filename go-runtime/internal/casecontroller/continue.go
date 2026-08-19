@@ -103,6 +103,16 @@ func Continue(ctx context.Context, caseID, machine, workspaceRoot, queueURL stri
         return result,nil
     }
     step:=findStep(w.Steps,ready[0]);if step==nil{return ContinueResult{},fmt.Errorf("ready step missing")}
+    if strings.EqualFold(step.Kind,"fanout") && strings.TrimSpace(step.EvidenceProfile)=="dwg_story_viewports"{
+        plan,err:=buildStoryViewportFanoutPlan(w,step,workspaceRoot,machine);if err!=nil{return ContinueResult{},err}
+        state,summary,err:=submitFanoutPlan(ctx,client,queueURL,plan);if err!=nil{return ContinueResult{},err}
+        if err:=persistFanoutState(fanoutPath,state);err!=nil{return ContinueResult{},err}
+        workIDs:=make([]string,0,len(state.Children));for _,child:=range state.Children{workIDs=append(workIDs,child.WorkID)}
+        result:=ContinueResult{Schema:"openworker.go-case-continue/v3",CaseID:caseID,Machine:machine,WorkspaceRoot:workspaceRoot,Revision:w.Revision,StepID:step.StepID,ActionID:"fanout",QueueStatus:"fanout_active",QueueItem:summary,Controller:"go-native",PythonControllerUsed:false,ReconciledStepIDs:reconciled,Fanout:true,FanoutStepIDs:state.ParentStepIDs,FanoutWorkIDs:workIDs,SubmittedAt:time.Now().UTC()}
+        rb,_:=json.MarshalIndent(result,"","  ");if err:=atomicWrite(controllerPath,append(rb,'\n'));err!=nil{return ContinueResult{},err}
+        if err:=appendLedger(ledgerPath,ledgerEvent{Schema:"openworker.case-supervisor-ledger/v1",Timestamp:time.Now().UTC(),CaseID:caseID,Machine:machine,EventType:"go_fanout_durable_accepted",WorkspaceRoot:workspaceRoot,Revision:w.Revision,ReadyStepIDs:state.ParentStepIDs,Detail:fmt.Sprintf("submitted %d DWG story viewport children to durable local-work",len(state.Children))});err!=nil{return ContinueResult{},err}
+        return result,nil
+    }
     action,inputs,err:=mapActionInputs(step,w,workspaceRoot,machine,specPath);if err!=nil{return ContinueResult{},err}
     workID:=executionID(caseID,step.StepID,action,w.Revision)
     submit:=map[string]any{"work_id":workID,"assigned_host":machine,"capability_id":action,"inputs":inputs}
