@@ -41,6 +41,18 @@ func TestGenericCaseActionMapperUsesCapabilityNotCaseID(t *testing.T) {
 	if inputs["case_id"] != "0099" || inputs["source_title"] != "Reusable" { t.Fatalf("unexpected inputs: %#v", inputs) }
 }
 
+func TestGenericActionDispatchAlias(t *testing.T) {
+	root:=t.TempDir()
+	spec:=filepath.Join(root,"case-spec.json")
+	if err:=os.WriteFile(spec,[]byte(`{"case_id":"0099","story_index_build_params":{"source_path":"input/source.dwg"}}`),0644);err!=nil{t.Fatal(err)}
+	step:=Step{StepID:"0099-045",AllowedActions:[]string{"cad.build_story_index"},Status:"PENDING",Evidence:map[string]any{}}
+	w:=Worklist{CaseID:"0099",WorkspaceRoot:root,AssignedHost:"TEST-HOST",Revision:1,Steps:[]Step{step}}
+	action,inputs,err:=mapActionInputs(&w.Steps[0],w,root,"TEST-HOST",spec)
+	if err!=nil{t.Fatal(err)}
+	if action!="dwg.story_index.execute.case-worklist"{t.Fatalf("unexpected dispatch action %q",action)}
+	if inputs["method"]!="cad.build_story_index"{t.Fatalf("unexpected method %#v",inputs)}
+}
+
 func TestGenericCaseRejectsUnsafeCaseID(t *testing.T) {
 	if supportedCaseID("../0005") { t.Fatal("unsafe case id accepted") }
 	if supportedCaseID("0005/evil") { t.Fatal("path-like case id accepted") }
