@@ -1,0 +1,183 @@
+{
+  "case_id": "0003",
+  "workspace_root": "D:\\AI-Work\\jobs\\0003-YUJING-BRIDGE",
+  "assigned_host": "DESKTOP-UL7V2VV",
+  "steps": [
+    {
+      "step_id": "0003-160",
+      "title": "Publish immutable review bundle to Google Drive API and bind WorkLedger receipt",
+      "kind": "work",
+      "dependencies": [],
+      "allowed_actions": [
+        "openworker.review.publish"
+      ],
+      "acceptance": [
+        "review_bundle",
+        "drive_receipt"
+      ],
+      "status": "PASSED",
+      "evidence": {
+        "review_bundle": "D:\\AI-Work\\jobs\\0003-YUJING-BRIDGE\\.openworker\\reviews\\rev_0851c5ab49ff459d83ee1cb6268ea8d3",
+        "drive_receipt": "google-drive-connector:file=15vrTKyhoObSZXxCFCbRfVDbtGTNnGnPA;folder=1dbQDGsbW1_X3SmX7doPbQ27ElIyCtDJh;zip_sha256=e8a498a6f2b9c80029669cf3b0a9afb9943979eb1317d96e03e1999accd4e6ab;manifest_sha256=349e1c0e2eaad9994cb6989c956cc93c8c38f8bd4a5ff0590eb9870ad788a020"
+      },
+      "blocker": "",
+      "repair_parent_step": "",
+      "allow_skip": false
+    },
+    {
+      "step_id": "R-0003-160-0851c5ab49ff",
+      "title": "Bind fresh rework revision for Drive publication",
+      "kind": "repair",
+      "dependencies": [],
+      "allowed_actions": [
+        "openworker.review.repair"
+      ],
+      "acceptance": [
+        "rework_revision",
+        "review_bundle",
+        "bundle_manifest_sha256"
+      ],
+      "status": "PASSED",
+      "evidence": {
+        "rework_revision": "rev_0851c5ab49ff459d83ee1cb6268ea8d3",
+        "review_bundle": "D:\\AI-Work\\jobs\\0003-YUJING-BRIDGE\\.openworker\\reviews\\rev_0851c5ab49ff459d83ee1cb6268ea8d3",
+        "bundle_manifest_sha256": "349e1c0e2eaad9994cb6989c956cc93c8c38f8bd4a5ff0590eb9870ad788a020"
+      },
+      "blocker": "",
+      "repair_parent_step": "0003-160",
+      "allow_skip": false
+    },
+    {
+      "step_id": "R-0003-160-CONNECTOR-CLOUD",
+      "title": "Verify Google Drive connector cloud publication",
+      "kind": "repair",
+      "dependencies": [],
+      "allowed_actions": [
+        "openworker.review.repair"
+      ],
+      "acceptance": [
+        "drive_revision_folder_id",
+        "drive_file_id",
+        "cloud_zip_sha256",
+        "bundle_manifest_sha256"
+      ],
+      "status": "PASSED",
+      "evidence": {
+        "drive_revision_folder_id": "1dbQDGsbW1_X3SmX7doPbQ27ElIyCtDJh",
+        "drive_file_id": "15vrTKyhoObSZXxCFCbRfVDbtGTNnGnPA",
+        "cloud_zip_sha256": "e8a498a6f2b9c80029669cf3b0a9afb9943979eb1317d96e03e1999accd4e6ab",
+        "bundle_manifest_sha256": "349e1c0e2eaad9994cb6989c956cc93c8c38f8bd4a5ff0590eb9870ad788a020"
+      },
+      "blocker": "",
+      "repair_parent_step": "0003-160",
+      "allow_skip": false
+    },
+    {
+      "step_id": "0003-170",
+      "title": "ChatGPT semantic and visual review of the exact published Drive revision",
+      "kind": "work",
+      "dependencies": [
+        "0003-160"
+      ],
+      "allowed_actions": [
+        "openworker.review.inspect_drive"
+      ],
+      "acceptance": [
+        "drive_revision_folder_id",
+        "review_receipt",
+        "review_decision"
+      ],
+      "status": "PASSED",
+      "evidence": {
+        "drive_revision_folder_id": "1dbQDGsbW1_X3SmX7doPbQ27ElIyCtDJh",
+        "review_receipt": "D:\\AI-Work\\jobs\\0003-YUJING-BRIDGE\\.openworker\\reviews\\rev_0851c5ab49ff459d83ee1cb6268ea8d3\\connector-llm-review-receipt.json",
+        "review_decision": "TOOL_GAP"
+      },
+      "blocker": "",
+      "repair_parent_step": "",
+      "allow_skip": false
+    },
+    {
+      "step_id": "0003-180",
+      "title": "Apply ChatGPT review receipt to WorkLedger",
+      "kind": "work",
+      "dependencies": [
+        "0003-170"
+      ],
+      "allowed_actions": [
+        "openworker.review.apply"
+      ],
+      "acceptance": [
+        "review_receipt",
+        "ledger_status",
+        "review_decision"
+      ],
+      "status": "PASSED",
+      "evidence": {
+        "review_receipt": "D:\\AI-Work\\jobs\\0003-YUJING-BRIDGE\\.openworker\\reviews\\rev_0851c5ab49ff459d83ee1cb6268ea8d3\\connector-llm-review-receipt.json",
+        "ledger_status": "TOOL_GAP_REWORK_REQUIRED",
+        "review_decision": "TOOL_GAP"
+      },
+      "blocker": "",
+      "repair_parent_step": "",
+      "allow_skip": false
+    },
+    {
+      "step_id": "0003-190",
+      "title": "Create and validate approved Delivery Revision",
+      "kind": "work",
+      "dependencies": [
+        "0003-180"
+      ],
+      "allowed_actions": [
+        "engineering_os.delivery.publish",
+        "openworker.delivery.validate"
+      ],
+      "acceptance": [
+        "delivery_revision",
+        "delivery_validation"
+      ],
+      "status": "BLOCKED",
+      "evidence": {},
+      "blocker": "Delivery forbidden until fresh rework revision receives ChatGPT PASS",
+      "repair_parent_step": "",
+      "allow_skip": false
+    },
+    {
+      "step_id": "R-0003-190-REVIEW-6e6e40bd0c53",
+      "title": "Re-review repaired SceneX revision before delivery",
+      "kind": "repair",
+      "dependencies": [
+        "0003-180"
+      ],
+      "allowed_actions": [
+        "openworker.review.publish",
+        "openworker.review.inspect_drive",
+        "openworker.review.apply"
+      ],
+      "acceptance": [
+        "rework_revision",
+        "review_bundle",
+        "drive_receipt",
+        "review_receipt",
+        "review_decision",
+        "ledger_status"
+      ],
+      "status": "BLOCKED",
+      "evidence": {
+        "rework_revision": "rev_6e6e40bd0c5341f6b81a340bf719f237",
+        "review_bundle": "D:\\AI-Work\\jobs\\0003-YUJING-BRIDGE\\.openworker\\reviews\\rev_6e6e40bd0c5341f6b81a340bf719f237",
+        "drive_receipt": "google-drive-connector:folder=1ZA2IDh5zGzrwgYxhhHaaGFK1b6Lx2-y8;file=1wqx5fBhbsyLFVwrt_E1VzLOGkMUPsTQq;sha256=f4c8d7dab8294f48af5683ccf0354c8062e8075f6a7040ed2fab1f6d8d75fce9",
+        "review_receipt": "D:\\AI-Work\\jobs\\0003-YUJING-BRIDGE\\.openworker\\reviews\\rev_6e6e40bd0c5341f6b81a340bf719f237\\connector-llm-review-receipt.json",
+        "review_decision": "TOOL_GAP",
+        "ledger_status": "TOOL_GAP_REWORK_REQUIRED"
+      },
+      "blocker": "Exact connector review found SceneX semantic visibility TOOL_GAP; rerun repaired SceneX presentation before delivery.",
+      "repair_parent_step": "0003-190",
+      "allow_skip": false
+    }
+  ],
+  "schema_version": "openworker-case-worklist/v1",
+  "revision": 60,
+  "canonical_next_step_id": null
+}
