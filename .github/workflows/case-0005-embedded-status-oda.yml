@@ -15,7 +15,7 @@ jobs:
     timeout-minutes: 3
     env:
       OPENWORKER_CONTROL: >-
-        {"schema":"openworker.control-envelope.v1","request_id":"case0005-status-20260819-a1","command":"CASE.STATUS","machine":"DESKTOP-ODAQN0D","case_id":"0005","policy":{"max_parallel":4,"join":"wait_all","fail_closed":true}}
+        {"schema":"openworker.control-envelope.v1","request_id":"case0005-status-20260819-b2","command":"CASE.STATUS","machine":"DESKTOP-ODAQN0D","case_id":"0005","policy":{"max_parallel":4,"join":"wait_all","fail_closed":true}}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -30,7 +30,7 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference='Stop'
-          $requestId='case0005-status-20260819-a1'
+          $requestId='case0005-status-20260819-b2'
           $hook=Join-Path $env:ProgramData "OpenWorker\hooks\receipts\$requestId.json"
           $dispatch=Join-Path $env:ProgramData "OpenWorker\control-envelope\receipts\$requestId.json"
           if(-not(Test-Path -LiteralPath $hook -PathType Leaf)){throw "hook receipt missing: $hook"}
