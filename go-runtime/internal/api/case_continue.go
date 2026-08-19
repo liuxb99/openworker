@@ -8,16 +8,17 @@ import (
     "net/http"
     "path/filepath"
     "strings"
+    "sync"
     "time"
 
     "github.com/liuxb99/openworker/go-runtime/internal/casecontroller"
 )
 
-type caseContinueRequest struct {
-    CaseID string `json:"case_id"`
-    Machine string `json:"machine"`
-    WorkspaceRoot string `json:"workspace_root"`
-}
+var nativeCaseContinueRouteOnce sync.Once
+
+func ensureNativeCaseContinueRoute(s *Server){nativeCaseContinueRouteOnce.Do(func(){s.mux.HandleFunc("POST /v1/cases/continue",s.caseContinue)})}
+
+type caseContinueRequest struct { CaseID string `json:"case_id"`; Machine string `json:"machine"`; WorkspaceRoot string `json:"workspace_root"` }
 
 func (s *Server) caseContinue(w http.ResponseWriter,r *http.Request){
     var req caseContinueRequest;dec:=json.NewDecoder(http.MaxBytesReader(w,r.Body,64<<10));dec.DisallowUnknownFields();if err:=dec.Decode(&req);err!=nil{writeErr(w,400,err);return}
