@@ -2,18 +2,36 @@
 
 更新时间：2026-08-19（Asia/Taipei）
 
-## 唯一推荐路径
+## 唯一推荐架构
 
-对已经进入 resident OpenWorker / Local Supervisor 架构的 Case，控制路径必须保持最短：
+新版 Case 主控 authority 是 **Go 版 OpenWorker**，canonical executable：
+
+`C:\ProgramData\OpenWorker\bin\openworker.exe`
+
+相容入口：
+
+`C:\ProgramData\OpenWorker\bin\openworkerctl.exe`
+
+正确链路：
 
 ```text
 ChatGPT / LLM
-  -> 查询 go-tool-runtime 的 openworker.supervisor.control
-  -> 对固定目标机发送一条 high-level short command
-  -> go-tool :8848 Local Supervisor 接管
-  -> OpenWorker :8787 保存 durable business state / append-only ledger
-  -> 本机 worker / executor 并行执行
+  -> 高阶短命令
+  -> （无法直达时）GitHub transient short-command transport
+  -> ODA openworker.exe / openworkerctl.exe
+  -> OpenWorker Go Case Engine / Local Supervisor
+  -> go-tool-runtime :8848 durable queue / tool execution control plane
+  -> resident OpenWorker :8787 node / durable ledger
+  -> 4 claim workers + 4 executor slots 并行执行
 ```
+
+因此：
+
+- `openworker.exe` = 新版 Go 主控 / Case controller authority
+- `openworkerctl.exe` = compatibility CLI / 短命令入口
+- `go-tool-runtime :8848` = durable queue、工具能力、execution control plane，不是 Case 主控本体
+- `OpenWorker :8787` = resident node / durable Case ledger authority
+- `COMPUTERNAME` = fixed-machine authority
 
 Canonical short commands：
 
@@ -27,36 +45,49 @@ case_dispatch
 queue_clear
 ```
 
-Case 0005：
+## GitHub 的正确边界
+
+GitHub 可以在 ChatGPT 无法直接到达目标机时，作为**短命令瞬时 transport**：
 
 ```text
-machine: DESKTOP-ODAQN0D
-operation: case_continue
-case_id: 0005
+ChatGPT
+  -> command-requests/oda.json
+  -> short-lived GitHub Action
+  -> ODA openworkerctl/openworker.exe
+  -> local acceptance
+  -> command-results/oda/<request_id>/final.json
+  -> ChatGPT read-back
 ```
 
-## GitHub 的边界
+GitHub Action 一旦拿到本机 acceptance 就必须结束。
 
-GitHub 只允许在无法直接到达目标机 go-tool 时，作为一次性的 transient short-command transport。GitHub 一旦取得 local acceptance 必须结束，不能等待 Case 完成。
+允许：
+
+- `case_status`
+- `case_continue`
+- `case_bootstrap`
+- `queue_clear`
+- 安装、升级、修复 control-plane
 
 禁止：
 
-```text
-PR -> control workflow -> workflow_dispatch -> Case business control
-GitHub Actions 作 Case status bus
-GitHub Actions 作 Case business executor
-GitHub artifact 作 Case 成果 authority
-Git commit / workflow conclusion 代替 OpenWorker durable ledger
-```
+- GitHub Action 做 Case business execution
+- GitHub Action 等待整个 Case 完成
+- GitHub artifact 作为业务成果 authority
+- GitHub workflow 状态代替 OpenWorker durable ledger
+- PR -> control PR -> 多层 workflow 编排普通 Case 短命令
+- legacy Python controller 作为 Go-native Case controller
 
-## Authority
+## Case 0005 当前特别规则
 
-```text
-go-tool :8848 = command/control authority
-OpenWorker :8787 = durable business-state / ledger authority
-COMPUTERNAME = fixed-machine authority
-```
+当前已存在 durable business work：
 
-没有 local acceptance、CaseWorklist 或 supervisor ledger 的直接证据，不得宣称 Case 已继续或完成。
+`case0005-0005-010-r000014-17b8b780`
 
-机器可读主契约：`liuxb99/go-tool-runtime/capabilities.d/openworker-supervisor.yaml`。
+因此在它 terminal 前：
+
+- **不得再发新的 `case_continue`**
+- 只能发 `case_status` / `case_work_status` 查询
+- terminal completed 后由 Go Case Engine reconciliation 决定下一 ready step
+
+没有 local acceptance、CaseWorklist、durable work 或 append-only ledger 的直接证据，不得宣称 Case 已继续或完成。
