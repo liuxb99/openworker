@@ -1,6 +1,6 @@
 param(
   [Parameter(Mandatory=$true)]
-  [ValidateSet('supervisor_status','case_status','case_diagnose','case_bootstrap','case_continue','queue_clear')]
+  [ValidateSet('supervisor_status','case_status','case_work_status','case_diagnose','case_bootstrap','case_continue','queue_clear')]
   [string]$Command,
   [string]$RequestId = '',
   [string]$ExpectedMachine = 'DESKTOP-ODAQN0D'
@@ -37,6 +37,7 @@ $cliArgs=@()
 switch($Command){
   'supervisor_status' { $cliArgs=@('supervisor','status') }
   'case_status'       { $cliArgs=@('case','status','0005') }
+  'case_work_status'  { $cliArgs=@() }
   'case_diagnose'     { $cliArgs=@('case','diagnose','0005') }
   'case_bootstrap'    { $cliArgs=@('case','bootstrap','0005') }
   'case_continue'     { $cliArgs=@('case','continue','0005') }
@@ -94,7 +95,30 @@ $errorText=''
 $exitCode=0
 $started=[DateTimeOffset]::UtcNow
 
-if(-not(Test-Path -LiteralPath $ctl -PathType Leaf)){
+if($Command -eq 'case_work_status'){
+  try{
+    $workId='case0005-0005-010-r000014-17b8b780'
+    $base='http://127.0.0.1:8848'
+    $work=Invoke-RestMethod -Method GET -Uri ($base+'/api/execution/local-work/'+[uri]::EscapeDataString($workId)) -TimeoutSec 10
+    $events=Invoke-RestMethod -Method GET -Uri ($base+'/api/execution/local-work/'+[uri]::EscapeDataString($workId)+'/events?limit=100') -TimeoutSec 10
+    $supervisor=Invoke-RestMethod -Method GET -Uri ($base+'/api/execution/local-supervisor/status?machine=DESKTOP-ODAQN0D') -TimeoutSec 10
+    $result=[ordered]@{
+      schema='openworker.case-work-status/v1'
+      case_id='0005'
+      work_id=$workId
+      machine='DESKTOP-ODAQN0D'
+      authority='go-tool-runtime-local-supervisor'
+      read_only=$true
+      work=$work
+      events=$events
+      supervisor=$supervisor
+      observed_at=[DateTimeOffset]::UtcNow.ToString('o')
+    }
+  }catch{
+    $exitCode=71
+    $errorText=$_.Exception.Message
+  }
+}elseif(-not(Test-Path -LiteralPath $ctl -PathType Leaf)){
   $exitCode=127
   $errorText="OpenWorker control executable is not installed: $ctl"
 }else{
@@ -137,7 +161,7 @@ $receipt=[ordered]@{
   transport='github_actions'
   request_id=$RequestId
   command=$Command
-  case_id=if($Command -in @('case_status','case_diagnose','case_bootstrap','case_continue')){'0005'}else{$null}
+  case_id=if($Command -in @('case_status','case_work_status','case_diagnose','case_bootstrap','case_continue')){'0005'}else{$null}
   machine='DESKTOP-ODAQN0D'
   accepted=$accepted
   exit_code=$exitCode
