@@ -3,10 +3,11 @@
   "case_id": "0005",
   "workspace_root": "D:\\AI-Work\\jobs\\0005-SNOW-WHITE",
   "assigned_host": "DESKTOP-ODAQN0D",
-  "revision": 13,
+  "revision": 14,
   "parallel_policy": {
     "authority": "go-tool-runtime-local-supervisor",
-    "canonical_controller_module": "coworker.case0005_verified_local_controller",
+    "canonical_controller": "openworker-go-case-engine/v1",
+    "python_controller_allowed": false,
     "queue_endpoint": "http://127.0.0.1:8848/api/execution/local-work",
     "route_query_endpoint": "http://127.0.0.1:8848/api/execution/route",
     "verification_endpoint": "http://127.0.0.1:8848/api/execution/local-supervisor/verification",
