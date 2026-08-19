@@ -22,13 +22,52 @@ on:
     branches: [main]
     paths:
       - 'command-requests/o87.json'
+  pull_request:
+    types: [opened]
 
 permissions:
   contents: write
   actions: read
 
 jobs:
+  direct_pr_dispatch:
+    if: >-
+      github.event_name == 'pull_request' &&
+      startsWith(github.event.pull_request.title, '[openworker-control] case0004_') &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Windows, X64, O87]
+    timeout-minutes: 2
+    concurrency:
+      group: openworker-command-transport-o87-dispatch
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Validate PR command and invoke O87 OpenWorker local supervisor
+        shell: pwsh
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $title=[string]$env:PR_TITLE
+          $body=[string]$env:PR_BODY
+          if($title -eq '[openworker-control] case0004_status'){$command='case_status'}
+          elseif($title -eq '[openworker-control] case0004_continue'){$command='case_continue'}
+          else{throw "unsupported control PR title=$title"}
+          if($body -notmatch '(?im)^requested_by:\s*ChatGPT\s*$'){throw 'control PR must declare requested_by: ChatGPT'}
+          if($body -notmatch '(?im)^case_id:\s*0004\s*$'){throw 'control PR must declare case_id: 0004'}
+          if($body -notmatch '(?im)^machine:\s*DESKTOP-O87PJNR\s*$'){throw 'control PR must declare machine: DESKTOP-O87PJNR'}
+          $requestId="pr-$($env:PR_NUMBER)-$($env:GITHUB_RUN_ID)"
+          if($requestId -notmatch '^[A-Za-z0-9._-]{8,128}$'){throw 'invalid generated request id'}
+          & (Join-Path $env:GITHUB_WORKSPACE 'scripts\run-o87-transient-command.ps1') -Command $command -RequestId $requestId
+          if($LASTEXITCODE -ne 0){throw "O87 transient command failed exit=$LASTEXITCODE"}
+
   ingress:
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 2
     outputs:
@@ -77,6 +116,7 @@ jobs:
           }
 
   dispatch:
+    if: github.event_name != 'pull_request'
     needs: ingress
     runs-on: [self-hosted, Windows, X64, O87]
     timeout-minutes: 2
