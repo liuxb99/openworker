@@ -67,6 +67,28 @@ function Test-Accepted($Value){
   return $false
 }
 
+function Test-GoNativeBootstrapCompleted($Value){
+  if($null -eq $Value){ return $false }
+  if($Value -is [pscustomobject]){
+    if($Value.controller -eq 'go-native' -and $Value.python_required -ne $true -and $Value.stage -eq 'go_native_bootstrap_completed'){
+      return $true
+    }
+    foreach($p in $Value.PSObject.Properties){ if(Test-GoNativeBootstrapCompleted $p.Value){ return $true } }
+    return $false
+  }
+  if($Value -is [System.Collections.IDictionary]){
+    if($Value['controller'] -eq 'go-native' -and $Value['python_required'] -ne $true -and $Value['stage'] -eq 'go_native_bootstrap_completed'){
+      return $true
+    }
+    foreach($k in $Value.Keys){ if(Test-GoNativeBootstrapCompleted $Value[$k]){ return $true } }
+    return $false
+  }
+  if(($Value -is [System.Collections.IEnumerable]) -and -not($Value -is [string])){
+    foreach($item in $Value){ if(Test-GoNativeBootstrapCompleted $item){ return $true } }
+  }
+  return $false
+}
+
 $result=$null
 $errorText=''
 $exitCode=0
@@ -103,8 +125,8 @@ if($accepted -and $Command -eq 'case_continue'){
   }
 }
 if($accepted -and $Command -eq 'case_bootstrap'){
-  if($result.controller -ne 'go-native' -or $result.python_required -eq $true -or $result.stage -ne 'go_native_bootstrap_completed'){
-    $accepted=$false
+  $accepted=Test-GoNativeBootstrapCompleted $result
+  if(-not $accepted){
     $exitCode=73
     $errorText='case_bootstrap did not return Go-native completed bootstrap evidence'
   }
