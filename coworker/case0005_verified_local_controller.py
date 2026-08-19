@@ -2,8 +2,10 @@
 
 All business fanout is owned by go-tool :8848. OpenWorker is used only as the
 resident process/progress kernel and runs one lightweight coordinator per
-fanout group. Approval artifacts are published by an allowlisted local
-capability through Google Drive API. There is no GitHub Actions fallback.
+fanout group. Reviewable artifacts are published by an allowlisted local
+capability through Google Drive API so ChatGPT can fetch the physical files via
+its Drive connector. There is no GitHub Actions fallback or GitHub artifact
+transport.
 """
 from __future__ import annotations
 
@@ -62,17 +64,36 @@ class VerifiedLocalCase0005Controller(
         if recovered: result=dict(result);result["recovered_queue_coordinators"]=recovered
         return result
 
+    @staticmethod
+    def _safe_single_component(value: str, label: str) -> str:
+        value = str(value or "").strip()
+        if not value or value in {".", ".."} or "/" in value or "\\" in value:
+            raise CaseWorklistError(f"{label} must be one safe path component")
+        return value
+
     def _claim_inputs(self, worklist, step, action: str, spec):
         if action == _ARTIFACT_PUBLISH_ACTION:
             if step.step_id == "0005-026":
-                artifact = "presentation/storyboard-text-only.pptx"
+                artifacts = ["presentation/storyboard-text-only.pptx"]
                 label = "text-storyboard"
+                revision_id = f"case0005-{label}-approval-r{worklist.revision:06d}"
             elif step.step_id == "0005-056":
-                artifact = "presentation/storyboard-illustrated.pptx"
+                artifacts = ["presentation/storyboard-illustrated.pptx"]
                 label = "illustrated-storyboard"
+                revision_id = f"case0005-{label}-approval-r{worklist.revision:06d}"
+            elif step.step_id == "0005-090":
+                revision = self._safe_single_component(
+                    str(worklist.step("0005-080").evidence.get("revision_id", "")),
+                    "WorkLedger revision_id",
+                )
+                artifacts = [
+                    "final/final.mp4",
+                    f".openworker/revisions/{revision}/manifest.json",
+                ]
+                label = "final-review"
+                revision_id = f"case0005-{label}-{revision}"
             else:
                 raise CaseWorklistError(f"{_ARTIFACT_PUBLISH_ACTION} is not mapped for {step.step_id}")
-            revision_id = f"case0005-{label}-approval-r{worklist.revision:06d}"
             return {
                 "workspace_root": str(self.workspace),
                 "assigned_host": worklist.assigned_host,
@@ -80,7 +101,7 @@ class VerifiedLocalCase0005Controller(
                 "step_id": step.step_id,
                 "revision_id": revision_id,
                 "work_code": f"CASE0005-{label.upper()}",
-                "artifacts": [artifact],
+                "artifacts": artifacts,
                 "run_id": revision_id,
             }
         return super()._claim_inputs(worklist, step, action, spec)
