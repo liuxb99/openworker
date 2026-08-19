@@ -20,15 +20,15 @@ jobs:
         run: |
           $ErrorActionPreference='Stop'
           if($env:COMPUTERNAME -ine 'DESKTOP-O87PJNR'){throw "wrong host=$env:COMPUTERNAME"}
-          $explorers=Get-CimInstance Win32_Process -Filter "Name='explorer.exe'"
-          $users=@()
-          foreach($p in $explorers){
-            try{$o=Invoke-CimMethod -InputObject $p -MethodName GetOwner; if($o.ReturnValue -eq 0 -and $o.User){$users += ($o.Domain+'\'+$o.User)}}catch{}
+          $driveProcs=Get-CimInstance Win32_Process|Where-Object{$_.Name -match '^(GoogleDriveFS|DriveFS)\.exe$'}
+          $owners=@()
+          foreach($p in $driveProcs){
+            try{$o=Invoke-CimMethod -InputObject $p -MethodName GetOwner; if($o.ReturnValue -eq 0 -and $o.User){$owners += ($o.Domain+'\'+$o.User)}}catch{}
           }
-          $users=@($users|Select-Object -Unique)
-          Write-Host ('OPENWORKER_O87_INTERACTIVE_USERS count='+$users.Count)
-          if($users.Count -ne 1){throw "expected exactly one interactive explorer user, got $($users.Count)"}
-          $user=$users[0]
+          $owners=@($owners|Select-Object -Unique)
+          Write-Host ('OPENWORKER_O87_DRIVE_SESSION_USERS count='+$owners.Count)
+          if($owners.Count -ne 1){throw "expected exactly one GoogleDriveFS owner, got $($owners.Count)"}
+          $user=$owners[0]
           $script='C:\ProgramData\OpenWorker\user-session-drive-probe.ps1'
           $receipt='C:\ProgramData\OpenWorker\user-session-drive-probe.json'
           New-Item -ItemType Directory -Force -Path (Split-Path $script)|Out-Null
@@ -36,7 +36,7 @@ jobs:
           `$ErrorActionPreference='Stop'
           `$ok=`$false; `$entries=@(); `$err=''
           try{`$entries=@(Get-ChildItem -LiteralPath 'G:\' -Force -ErrorAction Stop|Select-Object -First 20 -ExpandProperty Name); `$ok=`$true}catch{`$err=`$_.Exception.Message}
-          `$r=[ordered]@{schema='openworker.user-session-drive-probe/v1';machine=`$env:COMPUTERNAME;user=[Environment]::UserName;g_accessible=`$ok;entries=`$entries;error=`$err;observed_at=[DateTimeOffset]::UtcNow.ToString('o')}
+          `$r=[ordered]@{schema='openworker.user-session-drive-probe/v2';machine=`$env:COMPUTERNAME;user=[Environment]::UserName;g_accessible=`$ok;entries=`$entries;error=`$err;observed_at=[DateTimeOffset]::UtcNow.ToString('o')}
           [IO.File]::WriteAllText('$receipt',(`$r|ConvertTo-Json -Depth 6)+[Environment]::NewLine,[Text.UTF8Encoding]::new(`$false))
           "@|Set-Content -LiteralPath $script -Encoding utf8
           Remove-Item -LiteralPath $receipt -Force -ErrorAction SilentlyContinue
@@ -45,11 +45,14 @@ jobs:
           $action=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "'+$script+'"')
           $principal=New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Highest
           Register-ScheduledTask -TaskName $task -Action $action -Principal $principal -Force|Out-Null
-          Start-ScheduledTask -TaskName $task
-          $deadline=[DateTime]::UtcNow.AddSeconds(45)
-          while([DateTime]::UtcNow -lt $deadline -and -not(Test-Path -LiteralPath $receipt -PathType Leaf)){Start-Sleep -Milliseconds 500}
-          if(-not(Test-Path -LiteralPath $receipt -PathType Leaf)){throw 'interactive probe receipt timeout'}
-          $r=Get-Content -LiteralPath $receipt -Raw|ConvertFrom-Json
-          Write-Host "OPENWORKER_O87_USER_SESSION_BRIDGE user=$($r.user) g_accessible=$($r.g_accessible) entry_count=$(@($r.entries).Count) error=$($r.error)"
-          Unregister-ScheduledTask -TaskName $task -Confirm:$false -ErrorAction SilentlyContinue
-          if(-not [bool]$r.g_accessible){throw 'interactive user session cannot access G drive'}
+          try {
+            Start-ScheduledTask -TaskName $task
+            $deadline=[DateTime]::UtcNow.AddSeconds(45)
+            while([DateTime]::UtcNow -lt $deadline -and -not(Test-Path -LiteralPath $receipt -PathType Leaf)){Start-Sleep -Milliseconds 500}
+            if(-not(Test-Path -LiteralPath $receipt -PathType Leaf)){throw 'interactive probe receipt timeout'}
+            $r=Get-Content -LiteralPath $receipt -Raw|ConvertFrom-Json
+            Write-Host "OPENWORKER_O87_USER_SESSION_BRIDGE user=$($r.user) g_accessible=$($r.g_accessible) entry_count=$(@($r.entries).Count) error=$($r.error)"
+            if(-not [bool]$r.g_accessible){throw 'GoogleDriveFS owner session cannot access G drive'}
+          } finally {
+            Unregister-ScheduledTask -TaskName $task -Confirm:$false -ErrorAction SilentlyContinue
+          }
