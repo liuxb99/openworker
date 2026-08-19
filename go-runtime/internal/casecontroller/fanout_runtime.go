@@ -78,21 +78,59 @@ func reconcileFanout(ctx context.Context,client *http.Client,queueURL,workspaceR
     for _,parentID:=range s.ParentStepIDs{
         parent:=findStep(w.Steps,parentID);if parent==nil{return false,summary,fmt.Errorf("fanout parent %s missing",parentID)}
         evs:=childEvidence[parentID];if len(evs)==0{return false,summary,fmt.Errorf("fanout parent %s has no completed child evidence",parentID)}
-        prefix:=strings.TrimSpace(parent.FanoutEvidencePrefix);if prefix==""{return false,summary,fmt.Errorf("fanout parent %s missing evidence prefix",parentID)}
-        receipts:=make([]any,0,len(evs));images:=make([]string,0,len(evs));hashes:=make([]string,0,len(evs))
-        for _,ev:=range evs{
-            receipt,ok:=ev["receipt"].(map[string]any);if !ok{return false,summary,fmt.Errorf("fanout parent %s child receipt missing",parentID)}
-            data,ok:=receipt["data"].(map[string]any);if !ok{return false,summary,fmt.Errorf("fanout parent %s receipt data missing",parentID)}
-            rel:=strings.TrimSpace(fmt.Sprint(data["workspace_relpath"]));if rel==""{return false,summary,fmt.Errorf("fanout parent %s workspace_relpath missing",parentID)}
-            artifact,ok:=data["workspace_artifact"].(map[string]any);if !ok{return false,summary,fmt.Errorf("fanout parent %s workspace_artifact missing",parentID)}
-            sha:=strings.TrimSpace(fmt.Sprint(artifact["sha256"]));if sha==""{return false,summary,fmt.Errorf("fanout parent %s sha256 missing",parentID)}
-            receipts=append(receipts,receipt);images=append(images,filepath.Join(workspaceRoot,filepath.FromSlash(rel)));hashes=append(hashes,sha)
+        var evidence map[string]any
+        var err error
+        if strings.TrimSpace(parent.EvidenceProfile)=="dwg_story_viewports"{
+            evidence,err=aggregateDWGStoryFanoutEvidence(evs)
+        }else{
+            evidence,err=aggregateVisualFanoutEvidence(parent,workspaceRoot,evs)
         }
-        evidence:=map[string]any{prefix+"_receipts":receipts,prefix+"_images":images,prefix+"_sha256":hashes}
+        if err!=nil{return false,summary,fmt.Errorf("fanout parent %s evidence: %w",parentID,err)}
         if err:=validateAcceptance(*parent,evidence);err!=nil{return false,summary,fmt.Errorf("fanout parent %s acceptance: %w",parentID,err)}
         parent.Status="SUCCEEDED";parent.Evidence=evidence;parent.Blocker=""
         _=appendLedger(ledgerPath,ledgerEvent{Schema:"openworker.case-supervisor-ledger/v1",Timestamp:time.Now().UTC(),CaseID:w.CaseID,Machine:w.AssignedHost,EventType:"go_fanout_parent_reconciled_completed",WorkspaceRoot:workspaceRoot,Revision:w.Revision,StepID:parentID,Detail:fmt.Sprintf("%d durable children completed",len(evs))})
     }
     if err:=persistWorklist(worklistPath,*w);err!=nil{return false,summary,err}
     return true,summary,nil
+}
+
+func aggregateVisualFanoutEvidence(parent *Step,workspaceRoot string,evs []map[string]any)(map[string]any,error){
+    prefix:=strings.TrimSpace(parent.FanoutEvidencePrefix);if prefix==""{return nil,fmt.Errorf("missing evidence prefix")}
+    receipts:=make([]any,0,len(evs));images:=make([]string,0,len(evs));hashes:=make([]string,0,len(evs))
+    for _,ev:=range evs{
+        receipt,ok:=ev["receipt"].(map[string]any);if !ok{return nil,fmt.Errorf("child receipt missing")}
+        data,ok:=receipt["data"].(map[string]any);if !ok{return nil,fmt.Errorf("receipt data missing")}
+        rel:=strings.TrimSpace(fmt.Sprint(data["workspace_relpath"]));if rel==""{return nil,fmt.Errorf("workspace_relpath missing")}
+        artifact,ok:=data["workspace_artifact"].(map[string]any);if !ok{return nil,fmt.Errorf("workspace_artifact missing")}
+        sha:=strings.TrimSpace(fmt.Sprint(artifact["sha256"]));if sha==""{return nil,fmt.Errorf("sha256 missing")}
+        receipts=append(receipts,receipt);images=append(images,filepath.Join(workspaceRoot,filepath.FromSlash(rel)));hashes=append(hashes,sha)
+    }
+    return map[string]any{prefix+"_receipts":receipts,prefix+"_images":images,prefix+"_sha256":hashes},nil
+}
+
+func aggregateDWGStoryFanoutEvidence(evs []map[string]any)(map[string]any,error){
+    workIDs:=make([]string,0,len(evs));manifests:=make([]string,0,len(evs));pngs:=[]string{};hashes:=[]string{}
+    sourceHash:="";rendered:=0
+    for _,ev:=range evs{
+        workID:=strings.TrimSpace(fmt.Sprint(ev["_fanout_work_id"]));if workID==""{return nil,fmt.Errorf("child work_id missing")};workIDs=append(workIDs,workID)
+        manifest:=strings.TrimSpace(fmt.Sprint(ev["manifest_path"]));if manifest==""{return nil,fmt.Errorf("manifest_path missing for %s",workID)};manifests=append(manifests,manifest)
+        stories,ok:=ev["stories"].([]any);if !ok||len(stories)==0{return nil,fmt.Errorf("stories evidence missing for %s",workID)}
+        for _,raw:=range stories{
+            story,ok:=raw.(map[string]any);if !ok{return nil,fmt.Errorf("story evidence is not an object for %s",workID)}
+            png:=strings.TrimSpace(fmt.Sprint(story["png_path"]));sha:=strings.TrimSpace(fmt.Sprint(story["png_sha256"]));src:=strings.TrimSpace(fmt.Sprint(story["source_dwg_sha256"]))
+            if png==""||sha==""||src==""{return nil,fmt.Errorf("story artifact evidence incomplete for %s",workID)}
+            if sourceHash==""{sourceHash=src}else if !strings.EqualFold(sourceHash,src){return nil,fmt.Errorf("source DWG hash mismatch across fanout children")}
+            pngs=append(pngs,png);hashes=append(hashes,sha);rendered++
+        }
+    }
+    if rendered==0{return nil,fmt.Errorf("no rendered stories")}
+    return map[string]any{
+        "source_sha256":sourceHash,
+        "render_manifest":manifests,
+        "story_job_ids":workIDs,
+        "rendered_story_count":rendered,
+        "story_pngs":pngs,
+        "story_png_sha256s":hashes,
+        "all_required_stories_terminal_succeeded":true,
+    },nil
 }
