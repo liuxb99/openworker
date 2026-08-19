@@ -69,70 +69,33 @@ jobs:
           foreach($cap in @('comfyx','case0005','local-supervisor')){if(-not ($s.inventory.capabilities -contains $cap)){throw "missing $cap capability"}}
           if(-not $s.advertise_endpoint){throw 'missing advertise endpoint'}
           $s|ConvertTo-Json -Depth 20
-      - name: Bootstrap Case 0005 through upgraded local supervisor
+      - name: Bootstrap Case 0005 through Go-native Case Engine
         if: github.event_name == 'push' && contains(github.event.head_commit.message, '[case0005-local-bootstrap]')
         shell: powershell
         run: |
-          function Resolve-RepoRoot([string[]]$Names,[string[]]$Markers){
-            $bases=@('D:\actions-runner\_work','D:\AI','D:\AIWork','D:\PyWork') | Where-Object { Test-Path -LiteralPath $_ }
-            foreach($name in $Names){
-              $fast=@(
-                (Join-Path 'D:\actions-runner\_work' "$name\$name"),
-                (Join-Path 'D:\AI' $name),
-                (Join-Path 'D:\AIWork' $name),
-                (Join-Path 'D:\PyWork' $name)
-              )
-              foreach($c in $fast){
-                if(-not (Test-Path -LiteralPath $c -PathType Container)){continue}
-                $ok=$true; foreach($m in $Markers){if(-not (Test-Path -LiteralPath (Join-Path $c $m))){$ok=$false;break}}
-                if($ok){return (Resolve-Path $c).Path}
-              }
-            }
-            foreach($base in $bases){
-              foreach($name in $Names){
-                $dirs=Get-ChildItem -LiteralPath $base -Directory -Recurse -ErrorAction SilentlyContinue | Where-Object {$_.Name -ieq $name} | Select-Object -First 12
-                foreach($d in $dirs){
-                  $ok=$true; foreach($m in $Markers){if(-not (Test-Path -LiteralPath (Join-Path $d.FullName $m))){$ok=$false;break}}
-                  if($ok){return $d.FullName}
-                }
-              }
-            }
-            throw "local checkout not found names=$($Names -join ',') markers=$($Markers -join ',')"
-          }
-
           $workspace='D:\AI-Work\jobs\0005-SNOW-WHITE'
-          $goTool=Resolve-RepoRoot @('go-tool-runtime') @('go.mod','cmd\gtr-local-exec\main.go')
-          $comfyx=Resolve-RepoRoot @('ComfyX') @('go.mod','cmd\comfyx-synthesis-video-real')
-          $studio=Resolve-RepoRoot @('Comfyx-Studio') @('go.mod','cmd\operator-director-preproduction')
-          $openmaic=Resolve-RepoRoot @('OpenMAIC','openmaic-fork') @('package.json','src\cli\presentation.ts')
-          $outputCandidates=@('D:\Comfy-Desktop\ComfyUI-Installs\ComfyUI\ComfyUI\output','D:\ComfyUI\output')
-          $comfyOutput=$outputCandidates | Where-Object {Test-Path -LiteralPath $_ -PathType Container} | Select-Object -First 1
-          if(-not $comfyOutput){throw 'COMFYX_COMFYUI_OUTPUT_ROOT authority not found on ODA'}
-
           $body=@{
             case_id='0005'
             machine='DESKTOP-ODAQN0D'
             workspace_root=$workspace
             openworker_root=$env:GITHUB_WORKSPACE
-            controller_module='coworker.case0005_controller'
             manifest_path='case-worklists\0005.json'
             spec_path='case-specs\0005.json'
-            python_exe='python'
             env=@{
-              GO_TOOL_ROOT=$goTool
-              COMFYX_ROOT=$comfyx
-              COMFYX_STUDIO_ROOT=$studio
-              OPENMAIC_ROOT=$openmaic
-              COMFYX_COMFYUI_OUTPUT_ROOT=$comfyOutput
+              GTR_WORK_QUEUE_URL='http://127.0.0.1:8848'
+              GTR_LOCAL_WORKERS='4'
+              OPENWORKER_ROOT=$env:GITHUB_WORKSPACE
             }
           } | ConvertTo-Json -Depth 10
           $ack=Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:8787/v1/cases/bootstrap' -ContentType 'application/json' -Body $body
-          if(-not $ack.workspace_created){throw 'local case bootstrap did not materialize workspace'}
-          if(-not $ack.job.accepted){throw 'local case bootstrap durable ACK not accepted'}
-          if(-not (Test-Path -LiteralPath $workspace -PathType Container)){throw 'Case 0005 workspace still missing after durable ACK'}
+          if(-not $ack.ok){throw "Go-native Case bootstrap failed: $($ack | ConvertTo-Json -Compress -Depth 20)"}
+          if($ack.controller -ne 'go-native'){throw "unexpected controller=$($ack.controller)"}
+          if($ack.python_required){throw 'Go-native bootstrap unexpectedly requires Python'}
+          if($ack.stage -ne 'go_native_bootstrap_completed'){throw "unexpected stage=$($ack.stage)"}
+          if(-not (Test-Path -LiteralPath $workspace -PathType Container)){throw 'Case 0005 workspace missing after Go-native bootstrap'}
           $receiptDir=Join-Path $workspace 'evidence'; New-Item -ItemType Directory -Force -Path $receiptDir | Out-Null
           $status=Invoke-RestMethod 'http://127.0.0.1:8787/v1/node/status'
           if(-not $status.service.upgrade_verified){throw 'refusing case bootstrap receipt without verified service upgrade'}
-          $receipt=@{schema='openworker/oda-upgrade-case0005-bootstrap/v2'; service_commit=$status.service.running_commit; target_commit=$status.service.target_commit; upgrade_status=$status.service.upgrade_status; upgrade_verified=$status.service.upgrade_verified; service_started_at=$status.service.service_started_at; supervisor_api_version=$status.service.supervisor_api_version; machine=$env:COMPUTERNAME; verified_at=[DateTimeOffset]::UtcNow.ToString('o'); ack=$ack}
-          $receipt | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $receiptDir 'oda-upgrade-case0005-bootstrap.json') -Encoding utf8
+          $receipt=@{schema='openworker/oda-upgrade-case0005-go-bootstrap/v3'; service_commit=$status.service.running_commit; target_commit=$status.service.target_commit; upgrade_status=$status.service.upgrade_status; upgrade_verified=$status.service.upgrade_verified; service_started_at=$status.service.service_started_at; supervisor_api_version=$status.service.supervisor_api_version; machine=$env:COMPUTERNAME; controller='go-native'; python_required=$false; verified_at=[DateTimeOffset]::UtcNow.ToString('o'); ack=$ack}
+          $receipt | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $receiptDir 'oda-upgrade-case0005-go-bootstrap.json') -Encoding utf8
           $ack | ConvertTo-Json -Depth 20
