@@ -18,12 +18,20 @@ type actionMapContext struct {
 type actionMapper func(actionMapContext) (map[string]any, error)
 
 var actionMappers = map[string]actionMapper{
-	"cad.build_story_index":                 mapStoryIndex,
-	"comfyx-studio.director.preproduction":  mapDirectorPreproduction,
-	"comfyx-studio.storyboard.plan":         mapStoryboardPlan,
-	"presentation.openmaic":                  mapPresentationOpenMAIC,
-	"openworker.case.publish-artifacts":      mapCasePublishArtifacts,
-	"openworker.review.await-drive":          mapDriveApprovalGate,
+	"cad.build_story_index":                mapStoryIndex,
+	"comfyx-studio.director.preproduction": mapDirectorPreproduction,
+	"comfyx-studio.storyboard.plan":        mapStoryboardPlan,
+	"presentation.openmaic":                mapPresentationOpenMAIC,
+	"openworker.case.publish-artifacts":     mapCasePublishArtifacts,
+	"openworker.review.await-drive":         mapDriveApprovalGate,
+}
+
+// actionDispatchAliases separates the worklist-facing action contract from the
+// local executor capability. Most actions are identical; aliases are explicit
+// and fail-closed so manifest-driven Cases do not silently route to the wrong
+// leaf executor.
+var actionDispatchAliases = map[string]string{
+	"cad.build_story_index": "dwg.story_index.execute.case-worklist",
 }
 
 func mapActionInputs(step *Step, w Worklist, workspaceRoot, machine, specPath string) (string, map[string]any, error) {
@@ -45,7 +53,11 @@ func mapActionInputs(step *Step, w Worklist, workspaceRoot, machine, specPath st
 	if err != nil {
 		return "", nil, fmt.Errorf("map capability %s for step %s: %w", action, step.StepID, err)
 	}
-	return action, inputs, nil
+	dispatchAction := action
+	if alias := strings.TrimSpace(actionDispatchAliases[action]); alias != "" {
+		dispatchAction = alias
+	}
+	return dispatchAction, inputs, nil
 }
 
 func dependencyStep(ctx actionMapContext, index int) (*Step, error) {
