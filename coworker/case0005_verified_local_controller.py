@@ -27,6 +27,7 @@ from .case_worklist import CaseWorklistError
 _SUPERVISOR_STATUS_URL = "http://127.0.0.1:8848/api/execution/local-supervisor/status"
 _CANONICAL_MODULE = "coworker.case0005_verified_local_controller"
 _ARTIFACT_PUBLISH_ACTION = "openworker.case.publish-artifacts"
+_REVIEW_GATE_ACTION = "openworker.review.await-drive"
 
 
 class VerifiedLocalCase0005Controller(
@@ -110,7 +111,8 @@ class VerifiedLocalCase0005Controller(
 
     def _job_payload(self, worklist, step, action: str, execution_id: str, claim_path: Path) -> dict:
         python=sys.executable or "python";argv=[python,"-m",_CANONICAL_MODULE,"run-step","--workspace",str(self.workspace),"--step-id",step.step_id,"--action-id",action,"--execution-id",execution_id,"--claim",str(claim_path)]
-        return {"job_id":execution_id,"dispatch_id":"verified-local-controller-"+execution_id,"machine":worklist.assigned_host,"priority":100 if step.kind in {"fanout","join"} else 80,"command":subprocess.list2cmdline(argv),"cwd":str(self.openworker_root),"workspace_root":str(self.workspace),"env":self._localexec_env(),"timeout_sec":3600,"locks":[f"case:{worklist.case_id}:step:{step.step_id}"]}
+        timeout_sec=86400 if action==_REVIEW_GATE_ACTION else 3600
+        return {"job_id":execution_id,"dispatch_id":"verified-local-controller-"+execution_id,"machine":worklist.assigned_host,"priority":100 if step.kind in {"fanout","join"} else 80,"command":subprocess.list2cmdline(argv),"cwd":str(self.openworker_root),"workspace_root":str(self.workspace),"env":self._localexec_env(),"timeout_sec":timeout_sec,"locks":[f"case:{worklist.case_id}:step:{step.step_id}"]}
 
     def _image_child_payload(self,*,worklist,step_id:str,group_id:str,child_id:str,asset_id:str,role:str,claim_path:Path,manifest_path:Path)->dict:
         python=sys.executable or "python";argv=[python,"-m",_CANONICAL_MODULE,"run-image-asset","--workspace",str(self.workspace),"--step-id",step_id,"--group-execution-id",group_id,"--child-job-id",child_id,"--asset-id",asset_id,"--role",role,"--claim",str(claim_path),"--fanout-manifest",str(manifest_path)]
