@@ -1,0 +1,4 @@
+purpose=upgrade OpenWorker nodes to latest main before Case0004 queue-clear recovery
+required_fix=3fb94496be84e3954bd99bcefb4a595ce4766fb5
+target_main=2e36fa99453f4ae55b23ded097eb6289bb09b005
+business_execution=false
