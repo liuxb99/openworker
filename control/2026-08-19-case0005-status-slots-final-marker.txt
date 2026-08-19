@@ -1,3 +1,3 @@
-Case0005 ODA resident OpenWorker recovery + Go-native bootstrap marker.
-2026-08-19 21:24 +08:00
-intent=restore-resident-openworker-and-bootstrap-case0005
+Case0005 ODA local-controller kick marker.
+2026-08-19 21:26 +08:00
+intent=start-resident-service-and-submit-case0005
