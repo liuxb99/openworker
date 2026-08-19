@@ -39,8 +39,15 @@ jobs:
           $user=[WtsQuery]::Read($driveSession,5).Trim()
           $domain=[WtsQuery]::Read($driveSession,7).Trim()
           if([string]::IsNullOrWhiteSpace($user)){throw "WTS returned no user for Drive session $driveSession"}
-          $principalUser=if([string]::IsNullOrWhiteSpace($domain)){$user}else{$domain+'\'+$user}
-          Write-Host ('OPENWORKER_O87_DRIVE_SESSION_RESOLVED session_id='+$driveSession+' wts_user_present=true')
+          $account=if([string]::IsNullOrWhiteSpace($domain)){$user}else{$domain+'\'+$user}
+          try {
+            $sid=(New-Object System.Security.Principal.NTAccount($account)).Translate([System.Security.Principal.SecurityIdentifier]).Value
+          } catch {
+            $matches=@(Get-CimInstance Win32_UserAccount -ErrorAction SilentlyContinue|Where-Object{$_.Name -eq $user -and -not [string]::IsNullOrWhiteSpace($_.SID)}|Select-Object -ExpandProperty SID -Unique)
+            if($matches.Count -ne 1){throw "cannot translate Drive session account to one SID"}
+            $sid=$matches[0]
+          }
+          Write-Host ('OPENWORKER_O87_DRIVE_SESSION_RESOLVED session_id='+$driveSession+' sid_present=true')
           $script='C:\ProgramData\OpenWorker\user-session-drive-probe.ps1'
           $receipt='C:\ProgramData\OpenWorker\user-session-drive-probe.json'
           New-Item -ItemType Directory -Force -Path (Split-Path $script)|Out-Null
@@ -48,14 +55,14 @@ jobs:
           `$ErrorActionPreference='Stop'
           `$ok=`$false; `$entries=@(); `$err=''
           try{`$entries=@(Get-ChildItem -LiteralPath 'G:\' -Force -ErrorAction Stop|Select-Object -First 20 -ExpandProperty Name); `$ok=`$true}catch{`$err=`$_.Exception.Message}
-          `$r=[ordered]@{schema='openworker.user-session-drive-probe/v4';machine=`$env:COMPUTERNAME;g_accessible=`$ok;entry_count=`$entries.Count;error=`$err;observed_at=[DateTimeOffset]::UtcNow.ToString('o')}
+          `$r=[ordered]@{schema='openworker.user-session-drive-probe/v5';machine=`$env:COMPUTERNAME;g_accessible=`$ok;entry_count=`$entries.Count;error=`$err;observed_at=[DateTimeOffset]::UtcNow.ToString('o')}
           [IO.File]::WriteAllText('$receipt',(`$r|ConvertTo-Json -Depth 6)+[Environment]::NewLine,[Text.UTF8Encoding]::new(`$false))
           "@|Set-Content -LiteralPath $script -Encoding utf8
           Remove-Item -LiteralPath $receipt -Force -ErrorAction SilentlyContinue
           $task='OpenWorker-O87-UserSessionDriveProbe'
           Unregister-ScheduledTask -TaskName $task -Confirm:$false -ErrorAction SilentlyContinue
           $action=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "'+$script+'"')
-          $principal=New-ScheduledTaskPrincipal -UserId $principalUser -LogonType Interactive -RunLevel Highest
+          $principal=New-ScheduledTaskPrincipal -UserId $sid -LogonType Interactive -RunLevel Highest
           Register-ScheduledTask -TaskName $task -Action $action -Principal $principal -Force|Out-Null
           try {
             Start-ScheduledTask -TaskName $task
@@ -64,7 +71,7 @@ jobs:
             if(-not(Test-Path -LiteralPath $receipt -PathType Leaf)){throw 'interactive probe receipt timeout'}
             $r=Get-Content -LiteralPath $receipt -Raw|ConvertFrom-Json
             Write-Host "OPENWORKER_O87_USER_SESSION_BRIDGE g_accessible=$($r.g_accessible) entry_count=$($r.entry_count) error=$($r.error)"
-            if(-not [bool]$r.g_accessible){throw 'Drive WTS session user cannot access G drive'}
+            if(-not [bool]$r.g_accessible){throw 'Drive WTS session SID cannot access G drive'}
           } finally {
             Unregister-ScheduledTask -TaskName $task -Confirm:$false -ErrorAction SilentlyContinue
           }
