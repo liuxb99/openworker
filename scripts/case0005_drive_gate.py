@@ -1,8 +1,8 @@
 """Wait for and apply one bounded Case 0005 Google Drive gate receipt.
 
-This is review transport only, never command ingress.  The only accepted cloud file is
+This is review transport only, never command ingress. The only accepted cloud file is
 an exact JSON filename inside the already-authoritative revision folder emitted by the
-local publisher.  It cannot contain shell commands, tool names, paths to execute, or
+local publisher. It cannot contain shell commands, tool names, paths to execute, or
 arbitrary next-step instructions.
 """
 from __future__ import annotations
@@ -70,8 +70,15 @@ def _expected_files(evidence: Mapping[str, Any]) -> list[dict[str, str]]:
     return result
 
 
-def _validate_receipt(raw: Mapping[str, Any], *, step_id: str, folder_id: str, manifest_sha: str,
-                      expected_files: list[dict[str, str]]) -> tuple[str, str]:
+def _validate_receipt(
+    raw: Mapping[str, Any],
+    *,
+    step_id: str,
+    folder_id: str,
+    manifest_sha: str,
+    expected_files: list[dict[str, str]],
+    expected_workledger_revision_id: str = "",
+) -> tuple[str, str]:
     if str(raw.get("schema_version") or "") != SCHEMA:
         raise RuntimeError("Drive gate receipt schema mismatch")
     if str(raw.get("case_id") or "") != CASE_ID:
@@ -84,6 +91,10 @@ def _validate_receipt(raw: Mapping[str, Any], *, step_id: str, folder_id: str, m
         raise RuntimeError("Drive gate receipt bundle manifest SHA mismatch")
     if raw.get("commands") is not None or raw.get("command") is not None or raw.get("tool") is not None:
         raise RuntimeError("Drive gate receipt must not contain command/tool fields")
+    if step_id == "0005-100":
+        actual_revision = _safe_id(raw.get("workledger_revision_id"), "workledger_revision_id")
+        if actual_revision != _safe_id(expected_workledger_revision_id, "expected WorkLedger revision id"):
+            raise RuntimeError("Drive final review receipt WorkLedger revision identity mismatch")
 
     reviewed = raw.get("reviewed_files")
     if not isinstance(reviewed, list) or len(reviewed) != len(expected_files):
@@ -171,6 +182,13 @@ def _apply_final_pass(workspace: Path, os_root: Path, worklist, reviewer: str, c
         _stop(process)
 
 
+def _write_local_receipt(path: Path, payload: Mapping[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_suffix(".tmp")
+    temp.write_text(json.dumps(dict(payload), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    os.replace(temp, path)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workspace", required=True)
@@ -197,6 +215,9 @@ def main() -> int:
     folder_id = _safe_id(publish.get("drive_folder_id"), "drive_folder_id")
     manifest_sha = _required(publish.get("manifest_sha256"), "bundle manifest SHA").lower()
     expected_files = _expected_files(publish)
+    expected_revision_id = ""
+    if args.step_id == "0005-100":
+        expected_revision_id = _safe_id(worklist.step("0005-080").evidence.get("revision_id"), "WorkLedger revision_id")
     filename = f"case0005-{args.step_id}-receipt.json"
 
     drive = GoogleDriveReviewReceiptClient.from_environment()
@@ -217,18 +238,16 @@ def main() -> int:
         folder_id=folder_id,
         manifest_sha=manifest_sha,
         expected_files=expected_files,
+        expected_workledger_revision_id=expected_revision_id,
     )
     comment = str(raw.get("comment") or "").strip()
     local_receipt = workspace / ".openworker" / "review-receipts" / filename
-    local_receipt.parent.mkdir(parents=True, exist_ok=True)
     local_payload = dict(raw)
     local_payload["drive_receipt_file_id"] = _safe_id(identity.get("id"), "Drive gate receipt file id")
-    temp = local_receipt.with_suffix(".tmp")
-    temp.write_text(json.dumps(local_payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    os.replace(temp, local_receipt)
 
     if args.step_id in {"0005-027", "0005-057"}:
         if decision != "APPROVE":
+            _write_local_receipt(local_receipt, local_payload)
             raise RuntimeError(f"storyboard gate decision is {decision}; generation remains blocked: {comment}")
         digest = expected_files[0]["sha256"]
         if args.step_id == "0005-027":
@@ -245,6 +264,7 @@ def main() -> int:
             }
     else:
         if decision != "PASS":
+            _write_local_receipt(local_receipt, local_payload)
             revision_id = _required(worklist.step("0005-080").evidence.get("revision_id"), "WorkLedger revision_id")
             ledger = WorkLedger(workspace / ".openworker" / "work-ledger.sqlite")
             try:
@@ -261,6 +281,7 @@ def main() -> int:
             reviewer,
             comment or "ChatGPT reviewed Drive-published physical artifacts and approved them",
         )
+        local_payload["accepted_revision_id"] = accepted_revision_id
         evidence = {
             "review_receipt": str(local_receipt),
             "review_decision": "PASS",
@@ -268,6 +289,7 @@ def main() -> int:
             "engineering_os_review": os_review,
         }
 
+    _write_local_receipt(local_receipt, local_payload)
     output = {
         "schema_version": "openworker-case0005-drive-gate-result/v1",
         "case_id": CASE_ID,
