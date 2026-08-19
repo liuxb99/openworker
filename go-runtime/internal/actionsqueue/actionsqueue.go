@@ -175,21 +175,27 @@ func filterRuns(runs []WorkflowRun, exclude int64) []WorkflowRun {
 	return out
 }
 func (c Client) nonterminalRuns() ([]WorkflowRun, error) {
-	var all []WorkflowRun
-	for page := 1; ; page++ {
-		var rr runsResponse
-		path := fmt.Sprintf("%s/repos/%s/actions/runs?per_page=100&page=%d", c.BaseURL, c.Repo, page)
-		if err := c.doJSON(http.MethodGet, path, nil, &rr); err != nil {
-			return nil, err
-		}
-		for _, r := range rr.WorkflowRuns {
-			if !strings.EqualFold(strings.TrimSpace(r.Status), "completed") {
-				all = append(all, r)
+	byID := map[int64]WorkflowRun{}
+	for _, status := range []string{"queued", "in_progress", "waiting", "requested", "pending"} {
+		for page := 1; ; page++ {
+			var rr runsResponse
+			path := fmt.Sprintf("%s/repos/%s/actions/runs?status=%s&per_page=100&page=%d", c.BaseURL, c.Repo, status, page)
+			if err := c.doJSON(http.MethodGet, path, nil, &rr); err != nil {
+				return nil, err
+			}
+			for _, r := range rr.WorkflowRuns {
+				if !strings.EqualFold(strings.TrimSpace(r.Status), "completed") {
+					byID[r.ID] = r
+				}
+			}
+			if len(rr.WorkflowRuns) < 100 {
+				break
 			}
 		}
-		if len(rr.WorkflowRuns) < 100 {
-			break
-		}
+	}
+	all := make([]WorkflowRun, 0, len(byID))
+	for _, r := range byID {
+		all = append(all, r)
 	}
 	sort.Slice(all, func(i, j int) bool { return all[i].ID < all[j].ID })
 	return all, nil
