@@ -3,7 +3,7 @@
   "case_id": "0004",
   "workspace_root": "D:\\AI-Work\\jobs\\0004-DWG-TO-3D",
   "assigned_host": "DESKTOP-O87PJNR",
-  "revision": 144,
+  "revision": 146,
   "parallel_policy": {
     "authority": "go-tool-runtime-local-supervisor",
     "canonical_controller": "openworker-go-case-engine/v1",
