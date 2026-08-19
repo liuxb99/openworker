@@ -1,0 +1,6 @@
+command=case0004_status
+requested_by=ChatGPT
+case_id=0004
+machine=DESKTOP-O87PJNR
+purpose=read-only reconcile accepted work case0004-0004-045-r000147-ee6e6a0b
+business_execution=false
