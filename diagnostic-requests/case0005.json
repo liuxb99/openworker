@@ -1,0 +1,7 @@
+{
+  "schema": "openworker.case-diagnose-request.v1",
+  "case_id": "0005",
+  "machine": "DESKTOP-ODAQN0D",
+  "requested_by": "chatgpt",
+  "requested_at": "2026-08-19T11:16:00+08:00"
+}
