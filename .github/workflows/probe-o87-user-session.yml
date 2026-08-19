@@ -20,14 +20,31 @@ jobs:
         run: |
           $ErrorActionPreference='Stop'
           if($env:COMPUTERNAME -ine 'DESKTOP-O87PJNR'){throw "wrong host=$env:COMPUTERNAME"}
-          $driveProcs=Get-CimInstance Win32_Process|Where-Object{$_.Name -match '^(GoogleDriveFS|DriveFS)\.exe$'}
+          $driveSessionIds=@(Get-Process -Name GoogleDriveFS -ErrorAction SilentlyContinue|Select-Object -ExpandProperty SessionId -Unique)
+          if($driveSessionIds.Count -ne 1){throw "expected exactly one GoogleDriveFS session id, got $($driveSessionIds.Count)"}
+          $driveSession=[int]$driveSessionIds[0]
           $owners=@()
-          foreach($p in $driveProcs){
-            try{$o=Invoke-CimMethod -InputObject $p -MethodName GetOwner; if($o.ReturnValue -eq 0 -and $o.User){$owners += ($o.Domain+'\'+$o.User)}}catch{}
+          try {
+            $owners=@(Get-Process -Name GoogleDriveFS -IncludeUserName -ErrorAction Stop|Where-Object{$_.SessionId -eq $driveSession -and -not [string]::IsNullOrWhiteSpace($_.UserName)}|Select-Object -ExpandProperty UserName -Unique)
+          } catch {}
+          if($owners.Count -eq 0){
+            $rows=@(& quser.exe 2>$null)
+            foreach($line in $rows){
+              $text=([string]$line).Trim()
+              if([string]::IsNullOrWhiteSpace($text) -or $text -match 'USERNAME|使用者名稱'){continue}
+              $parts=@($text -split '\s+'|Where-Object{$_ -ne ''})
+              for($i=0;$i -lt $parts.Count;$i++){
+                if($parts[$i] -eq [string]$driveSession){
+                  $name=$parts[0].TrimStart('>')
+                  if(-not [string]::IsNullOrWhiteSpace($name)){$owners += $name}
+                  break
+                }
+              }
+            }
+            $owners=@($owners|Select-Object -Unique)
           }
-          $owners=@($owners|Select-Object -Unique)
-          Write-Host ('OPENWORKER_O87_DRIVE_SESSION_USERS count='+$owners.Count)
-          if($owners.Count -ne 1){throw "expected exactly one GoogleDriveFS owner, got $($owners.Count)"}
+          Write-Host ('OPENWORKER_O87_DRIVE_SESSION_RESOLVED session_id='+$driveSession+' user_count='+$owners.Count)
+          if($owners.Count -ne 1){throw "expected exactly one Drive session user, got $($owners.Count)"}
           $user=$owners[0]
           $script='C:\ProgramData\OpenWorker\user-session-drive-probe.ps1'
           $receipt='C:\ProgramData\OpenWorker\user-session-drive-probe.json'
@@ -36,7 +53,7 @@ jobs:
           `$ErrorActionPreference='Stop'
           `$ok=`$false; `$entries=@(); `$err=''
           try{`$entries=@(Get-ChildItem -LiteralPath 'G:\' -Force -ErrorAction Stop|Select-Object -First 20 -ExpandProperty Name); `$ok=`$true}catch{`$err=`$_.Exception.Message}
-          `$r=[ordered]@{schema='openworker.user-session-drive-probe/v2';machine=`$env:COMPUTERNAME;user=[Environment]::UserName;g_accessible=`$ok;entries=`$entries;error=`$err;observed_at=[DateTimeOffset]::UtcNow.ToString('o')}
+          `$r=[ordered]@{schema='openworker.user-session-drive-probe/v3';machine=`$env:COMPUTERNAME;user=[Environment]::UserName;g_accessible=`$ok;entry_count=`$entries.Count;error=`$err;observed_at=[DateTimeOffset]::UtcNow.ToString('o')}
           [IO.File]::WriteAllText('$receipt',(`$r|ConvertTo-Json -Depth 6)+[Environment]::NewLine,[Text.UTF8Encoding]::new(`$false))
           "@|Set-Content -LiteralPath $script -Encoding utf8
           Remove-Item -LiteralPath $receipt -Force -ErrorAction SilentlyContinue
@@ -51,8 +68,8 @@ jobs:
             while([DateTime]::UtcNow -lt $deadline -and -not(Test-Path -LiteralPath $receipt -PathType Leaf)){Start-Sleep -Milliseconds 500}
             if(-not(Test-Path -LiteralPath $receipt -PathType Leaf)){throw 'interactive probe receipt timeout'}
             $r=Get-Content -LiteralPath $receipt -Raw|ConvertFrom-Json
-            Write-Host "OPENWORKER_O87_USER_SESSION_BRIDGE user=$($r.user) g_accessible=$($r.g_accessible) entry_count=$(@($r.entries).Count) error=$($r.error)"
-            if(-not [bool]$r.g_accessible){throw 'GoogleDriveFS owner session cannot access G drive'}
+            Write-Host "OPENWORKER_O87_USER_SESSION_BRIDGE g_accessible=$($r.g_accessible) entry_count=$($r.entry_count) error=$($r.error)"
+            if(-not [bool]$r.g_accessible){throw 'Drive session user cannot access G drive'}
           } finally {
             Unregister-ScheduledTask -TaskName $task -Confirm:$false -ErrorAction SilentlyContinue
           }
