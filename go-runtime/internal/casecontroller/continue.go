@@ -131,6 +131,11 @@ func mapStepInputs(step *Step,w Worklist,workspaceRoot,machine,specPath string)(
         for _,key:=range []string{"storyboard_pptx","storyboard_manifest","reopen_receipt"}{raw:=strings.TrimSpace(fmt.Sprint(parent.Evidence[key]));if raw==""{return "",nil,fmt.Errorf("0005-025 evidence missing %s",key)};rel,err:=workspaceRelativeExistingFile(workspaceRoot,raw,key);if err!=nil{return "",nil,err};artifacts=append(artifacts,filepath.ToSlash(rel))}
         revisionID:=fmt.Sprintf("case0005-text-storyboard-r%06d",w.Revision);workCode:=fmt.Sprintf("CASE0005-TEXT-STORYBOARD-R%06d",w.Revision)
         return step.AllowedActions[0],map[string]any{"workspace_root":workspaceRoot,"assigned_host":machine,"case_id":w.CaseID,"step_id":"0005-026","revision_id":revisionID,"work_code":workCode,"artifacts":artifacts},nil
+    case "0005-027":
+        if len(step.AllowedActions)!=1||step.AllowedActions[0]!="openworker.review.await-drive"{return "",nil,fmt.Errorf("0005-027 action contract mismatch: %v",step.AllowedActions)}
+        parent:=findStep(w.Steps,"0005-026");if parent==nil||!strings.EqualFold(parent.Status,"SUCCEEDED"){return "",nil,fmt.Errorf("0005-027 requires succeeded 0005-026")}
+        if strings.TrimSpace(fmt.Sprint(parent.Evidence["drive_folder_id"]))==""||strings.TrimSpace(fmt.Sprint(parent.Evidence["manifest_sha256"]))==""{return "",nil,fmt.Errorf("0005-026 publish evidence incomplete")}
+        return step.AllowedActions[0],map[string]any{"workspace_root":workspaceRoot,"assigned_host":machine,"step_id":"0005-027","evidence_relpath":filepath.ToSlash(filepath.Join("evidence","0005-027-drive-gate.json")),"timeout_seconds":43200},nil
     default:
         return "",nil,fmt.Errorf("Go continue mapping not implemented for %s",step.StepID)
     }
