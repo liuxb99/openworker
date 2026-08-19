@@ -13,6 +13,7 @@ on:
       - 'scripts/openworker-job-started-hook.ps1'
       - 'scripts/invoke-openworker-control-envelope-v1.ps1'
       - 'scripts/install-openworker-runner-hook.ps1'
+      - 'scripts/show-case0005-embedded-control-readback.ps1'
       - '.github/workflows/case0005-embedded-control-real.yml'
 
 permissions:
@@ -40,4 +41,4 @@ jobs:
         if: always()
         shell: cmd
         run: >-
-          powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$root=Join-Path $env:ProgramData 'OpenWorker\case0005\embedded-control-tests'; if(Test-Path $root){$f=Get-ChildItem $root -Filter '*.json' ^| Sort-Object LastWriteTime -Descending ^| Select-Object -First 1; if($null-ne$f){Write-Host ('EVIDENCE='+$f.FullName); Get-Content $f.FullName -Raw}}"
+          powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%GITHUB_WORKSPACE%\scripts\show-case0005-embedded-control-readback.ps1" -CaseId "0005" -Machine "DESKTOP-ODAQN0D" -RunTag "evidence-%GITHUB_RUN_ID%"
