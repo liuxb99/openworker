@@ -39,7 +39,17 @@ if($svc -and $svc.Status -ne 'Stopped'){
   Stop-Service -Name $ServiceName -Force
   $svc.WaitForStatus('Stopped',[TimeSpan]::FromSeconds(30))
 }
-Copy-Item -LiteralPath $SourceExe -Destination $target -Force
+$targetFull=[IO.Path]::GetFullPath($target)
+Get-CimInstance Win32_Process -Filter "Name='openworker-node.exe'" -ErrorAction SilentlyContinue |
+  Where-Object { $_.ExecutablePath -and ([IO.Path]::GetFullPath($_.ExecutablePath) -ieq $targetFull) } |
+  ForEach-Object {
+    Stop-Process -Id $_.ProcessId -Force -ErrorAction Stop
+    Wait-Process -Id $_.ProcessId -Timeout 15 -ErrorAction SilentlyContinue
+  }
+for($attempt=1;$attempt -le 30;$attempt++){
+  try{Copy-Item -LiteralPath $SourceExe -Destination $target -Force;break}
+  catch{if($attempt -eq 30){throw};Start-Sleep -Milliseconds 500}
+}
 $targetHash=(Get-FileHash -Algorithm SHA256 -LiteralPath $target).Hash.ToLowerInvariant()
 if($targetHash -ne $sourceHash){throw "installed binary SHA256 mismatch source=$sourceHash target=$targetHash"}
 
