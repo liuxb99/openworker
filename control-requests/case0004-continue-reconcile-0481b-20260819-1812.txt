@@ -1,0 +1,6 @@
+command: case0004_continue
+requested_by: ChatGPT
+case_id: 0004
+machine: DESKTOP-O87PJNR
+purpose: Idempotently re-read existing 0004-0481 fanout work after worker claim. If completed, reconcile and advance to 0004-0485 Drive publish; if active, return active without duplicate submit.
+Boundary: transient command transport only; GitHub Actions does not execute Case business work.
