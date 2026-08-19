@@ -64,22 +64,32 @@ jobs:
           "command=$command" >> $env:GITHUB_OUTPUT
           "request_id=$requestId" >> $env:GITHUB_OUTPUT
 
-          $headers=@{Authorization="Bearer $env:GH_TOKEN";Accept='application/vnd.github+json';'X-GitHub-Api-Version'='2022-11-28'}
-          $runnerPayload=Invoke-RestMethod -Uri "https://api.github.com/repos/$env:GITHUB_REPOSITORY/actions/runners?per_page=100" -Headers $headers
-          $odaMatches=@($runnerPayload.runners | Where-Object { $_.name -like 'DESKTOP-ODAQN0D*' })
           $odaRunnerState=@()
-          foreach($runner in $odaMatches){
-            $odaRunnerState += [ordered]@{
-              name=$runner.name
-              runner_id=$runner.id
-              status=$runner.status
-              busy=[bool]$runner.busy
-              labels=@($runner.labels | ForEach-Object {[string]$_.name})
+          $odaRegistered=$false
+          $odaOnline=$false
+          $odaBusy=$false
+          $runnerLookupOk=$false
+          $runnerLookupError=''
+          try {
+            $headers=@{Authorization="Bearer $env:GH_TOKEN";Accept='application/vnd.github+json';'X-GitHub-Api-Version'='2022-11-28'}
+            $runnerPayload=Invoke-RestMethod -Uri "https://api.github.com/repos/$env:GITHUB_REPOSITORY/actions/runners?per_page=100" -Headers $headers -ErrorAction Stop
+            $odaMatches=@($runnerPayload.runners | Where-Object { $_.name -like 'DESKTOP-ODAQN0D*' })
+            foreach($runner in $odaMatches){
+              $odaRunnerState += [ordered]@{
+                name=$runner.name
+                runner_id=$runner.id
+                status=$runner.status
+                busy=[bool]$runner.busy
+                labels=@($runner.labels | ForEach-Object {[string]$_.name})
+              }
             }
+            $odaRegistered=($odaMatches.Count -gt 0)
+            $odaOnline=(@($odaMatches | Where-Object {$_.status -eq 'online'}).Count -gt 0)
+            $odaBusy=(@($odaMatches | Where-Object {$_.busy -eq $true}).Count -gt 0)
+            $runnerLookupOk=$true
+          } catch {
+            $runnerLookupError=$_.Exception.Message
           }
-          $odaRegistered=($odaMatches.Count -gt 0)
-          $odaOnline=(@($odaMatches | Where-Object {$_.status -eq 'online'}).Count -gt 0)
-          $odaBusy=(@($odaMatches | Where-Object {$_.busy -eq $true}).Count -gt 0)
 
           $queued=[ordered]@{
             schema='openworker.command-result.v1'
@@ -98,6 +108,8 @@ jobs:
             business_completion_claimed=$false
             authoritative_business_state='openworker'
             queued_for_oda_at=[DateTimeOffset]::UtcNow.ToString('o')
+            runner_registry_lookup_ok=$runnerLookupOk
+            runner_registry_lookup_error=$runnerLookupError
             oda_runner_registered=$odaRegistered
             oda_runner_online=$odaOnline
             oda_runner_busy=$odaBusy
