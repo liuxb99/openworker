@@ -1,0 +1,4 @@
+command=case0005_continue
+machine=DESKTOP-ODAQN0D
+case_id=0005
+controller=go-native
