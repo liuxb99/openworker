@@ -1,2 +1,3 @@
 Case0005 Embedded Control read-only marker
-2026-08-19 19:40 +08:00
+2026-08-19 20:31 +08:00
+purpose=verify current durable work before continue
