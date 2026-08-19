@@ -1,0 +1,16 @@
+{
+    "schema":  "openworkerctl-oda-install/v3",
+    "succeeded":  false,
+    "status":  "FAILED",
+    "machine":  "DESKTOP-ODAQN0D",
+    "runner_name":  "DESKTOP-ODAQN0D-R001",
+    "executable":  "",
+    "supervisor_status":  "",
+    "route_label":  "",
+    "error":  "At C:\\github-runners\\openworker\\_work\\openworker\\openworker\\scripts\\install-openworkerctl.ps1:18 char:47\r\n+ [IO.File]::WriteAllText($shim,\"@echo off`r`n\\\"$target\\\" %*`r`n\",[Text ...\r\n+                                               ~\nMissing \u0027)\u0027 in method call.\r\n\r\nAt C:\\github-runners\\openworker\\_work\\openworker\\openworker\\scripts\\install-openworkerctl.ps1:18 char:47\r\n+ ... O.File]::WriteAllText($shim,\"@echo off`r`n\\\"$target\\\" %*`r`n\",[Text.U ...\r\n+                                                 ~~~~~~~~~~~~~~~~~\nUnexpected token \u0027$target\\\" %*`r`n\"\u0027 in expression or statement.\r\n\r\nAt C:\\github-runners\\openworker\\_work\\openworker\\openworker\\scripts\\install-openworkerctl.ps1:18 char:54\r\n+ ... O.File]::WriteAllText($shim,\"@echo off`r`n\\\"$target\\\" %*`r`n\",[Text.U ...\r\n+                                                        ~~~~~~~~~~\nUnexpected token \u0027\\\" %*`r`n\"\u0027 in expression or statement.\r\n\r\nAt C:\\github-runners\\openworker\\_work\\openworker\\openworker\\scripts\\install-openworkerctl.ps1:18 char:64\r\n+ ... .File]::WriteAllText($shim,\"@echo off`r`n\\\"$target\\\" %*`r`n\",[Text.UT ...\r\n+                                                                 ~\nMissing argument in parameter list.\r\n\r\nAt C:\\github-runners\\openworker\\_work\\openworker\\openworker\\scripts\\install-openworkerctl.ps1:18 char:97\r\n+ ... m,\"@echo off`r`n\\\"$target\\\" %*`r`n\",[Text.UTF8Encoding]::new($false))\r\n+                                                                         ~\nUnexpected token \u0027)\u0027 in expression or statement.",
+    "github_run_id":  "32210994754",
+    "github_run_attempt":  "1",
+    "github_action_used_for_command_transport":  true,
+    "github_action_used_for_business_execution":  false,
+    "observed_at":  "2026-08-19T03:07:20.6880869+00:00"
+}
