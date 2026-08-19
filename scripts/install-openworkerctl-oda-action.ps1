@@ -2,7 +2,7 @@ $ErrorActionPreference='Stop'
 
 $repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $result=[ordered]@{
-  schema='openworker-control-install/v5'
+  schema='openworker-control-install/v6'
   succeeded=$false
   status='FAILED'
   machine=$env:COMPUTERNAME
@@ -63,25 +63,30 @@ Write-Host ($result|ConvertTo-Json -Depth 30 -Compress)
 
 Push-Location $repoRoot
 try {
-  git rebase --abort 2>$null
-  git fetch origin main
+  $gitDir=Join-Path $repoRoot '.git'
+  if((Test-Path -LiteralPath (Join-Path $gitDir 'rebase-merge')) -or (Test-Path -LiteralPath (Join-Path $gitDir 'rebase-apply'))){
+    & git rebase --abort
+    if($LASTEXITCODE -ne 0){throw 'failed to abort existing rebase'}
+  }
+  & git fetch origin main
   if($LASTEXITCODE -ne 0){throw 'failed to fetch origin/main before receipt publication'}
-  git reset --hard origin/main
+  & git reset --hard origin/main
   if($LASTEXITCODE -ne 0){throw 'failed to reset clean origin/main before receipt publication'}
-  git clean -ffdx
+  & git clean -ffdx
+  if($LASTEXITCODE -ne 0){throw 'failed to clean checkout before receipt publication'}
   $resultPath=Join-Path $repoRoot $rel
   New-Item -ItemType Directory -Force -Path (Split-Path $resultPath -Parent)|Out-Null
   Copy-Item -LiteralPath $receiptTemp -Destination $resultPath -Force
   if(Test-Path -LiteralPath $sumTemp){Copy-Item -LiteralPath $sumTemp -Destination (Join-Path $repoRoot 'go-runtime\go.sum') -Force}
-  git config user.name 'openworker-control-plane-installer'
-  git config user.email 'openworker-control-plane-installer@users.noreply.github.com'
-  git add -- $rel
-  if(Test-Path -LiteralPath (Join-Path $repoRoot 'go-runtime\go.sum')){git add -- 'go-runtime/go.sum'}
-  git diff --cached --quiet
+  & git config user.name 'openworker-control-plane-installer'
+  & git config user.email 'openworker-control-plane-installer@users.noreply.github.com'
+  & git add -- $rel
+  if(Test-Path -LiteralPath (Join-Path $repoRoot 'go-runtime\go.sum')){& git add -- 'go-runtime/go.sum'}
+  & git diff --cached --quiet
   if($LASTEXITCODE -ne 0){
-    git commit -m "receipt: unified Go OpenWorker install $env:GITHUB_RUN_ID"
+    & git commit -m "receipt: unified Go OpenWorker install $env:GITHUB_RUN_ID"
     if($LASTEXITCODE -ne 0){throw 'failed to commit install receipt/module sums'}
-    git push origin HEAD:main
+    & git push origin HEAD:main
     if($LASTEXITCODE -ne 0){throw 'failed to push clean immutable install receipt'}
   }
 } finally { Pop-Location; Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue }
