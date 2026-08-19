@@ -21,7 +21,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: openworker-command-transport-oda-${{ github.run_id }}
+  group: openworker-command-transport-oda
   cancel-in-progress: false
 
 jobs:
@@ -30,6 +30,8 @@ jobs:
     timeout-minutes: 2
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Resolve fixed transport request
         id: request
@@ -52,8 +54,9 @@ jobs:
             try{$req=Get-Content -LiteralPath $path -Raw | ConvertFrom-Json -ErrorAction Stop}catch{throw "invalid request JSON: $_"}
             if($req.schema -ne 'openworker.command-request.v1'){throw "unsupported request schema=$($req.schema)"}
             if($req.machine -ine 'DESKTOP-ODAQN0D'){throw "unsupported request machine=$($req.machine)"}
-            if($req.case_id -and $req.case_id -ne '0005'){throw "unsupported request case_id=$($req.case_id)"}
-            if(-not $req.request_id){throw 'request_id is required'}
+            if($req.case_id -ne '0005'){throw "unsupported request case_id=$($req.case_id)"}
+            if($req.requested_by -ne 'chatgpt'){throw "unsupported requested_by=$($req.requested_by)"}
+            if(-not $req.request_id -or [string]$req.request_id -notmatch '^[A-Za-z0-9._-]{8,128}$'){throw 'invalid request_id'}
             $command=[string]$req.command
             $requestId=[string]$req.request_id
           }else{
@@ -74,10 +77,9 @@ jobs:
         run: |
           $ErrorActionPreference='Stop'
           $raw=& "$env:GITHUB_WORKSPACE\scripts\invoke-local-supervisor-command-transport.ps1" -Command $env:COMMAND -RequestId $env:REQUEST_ID -ExpectedMachine 'DESKTOP-ODAQN0D' | Out-String
-          if($LASTEXITCODE -ne 0){throw "transport script failed exit=$LASTEXITCODE output=$raw"}
+          if($LASTEXITCODE -ne 0){throw "transport wrapper failed before receipt exit=$LASTEXITCODE output=$raw"}
           try{$receipt=$raw|ConvertFrom-Json -ErrorAction Stop}catch{throw "non-JSON transport receipt: $raw"}
           if($receipt.schema -ne 'openworker.command-transport.v1'){throw "unexpected receipt schema=$($receipt.schema)"}
-          if(-not $receipt.accepted){throw "transport not accepted: $raw"}
           if(-not $receipt.github_action_used_for_command_transport){throw 'command transport flag missing'}
           if($receipt.github_action_used_for_business_execution){throw 'business execution escaped into GitHub Action'}
 
@@ -87,11 +89,17 @@ jobs:
             command=$env:COMMAND
             machine='DESKTOP-ODAQN0D'
             case_id=if($env:COMMAND -in @('case_status','case_continue')){'0005'}else{$null}
-            transport='github_actions'
+            transport='github_actions_transient_dispatch'
+            accepted=[bool]$receipt.accepted
+            transport_ok=[bool]$receipt.accepted
+            exit_code=$receipt.exit_code
+            error=$receipt.error
             github_run_id=$env:GITHUB_RUN_ID
             github_run_attempt=$env:GITHUB_RUN_ATTEMPT
             github_action_used_for_command_transport=$true
             github_action_used_for_business_execution=$false
+            business_completion_claimed=$false
+            authoritative_business_state='openworker'
             completed_at=[DateTimeOffset]::UtcNow.ToString('o')
             receipt=$receipt
           }
@@ -113,15 +121,25 @@ jobs:
           git add -- 'command-results/oda.json'
           git diff --cached --quiet
           if($LASTEXITCODE -ne 0){
-            git commit -m "ops: publish ODA transport receipt $env:REQUEST_ID"
+            git commit -m "receipt: ODA $env:COMMAND $env:REQUEST_ID"
             if($LASTEXITCODE -ne 0){throw 'failed to commit transport receipt'}
-            git pull --rebase origin main
-            if($LASTEXITCODE -ne 0){throw 'failed to rebase transport receipt'}
-            git push origin HEAD:main
-            if($LASTEXITCODE -ne 0){throw 'failed to push transport receipt'}
+            $pushed=$false
+            for($i=0;$i -lt 3;$i++){
+              git pull --rebase origin main
+              if($LASTEXITCODE -ne 0){throw 'failed to rebase transport receipt'}
+              git push origin HEAD:main
+              if($LASTEXITCODE -eq 0){$pushed=$true;break}
+              Start-Sleep -Seconds 2
+            }
+            if(-not $pushed){throw 'failed to push transport receipt'}
           }
 
-      - name: Assert transport-only boundary
+      - name: Assert transport-only boundary and surface rejection after receipt publish
         shell: powershell
         run: |
+          $result=Get-Content -LiteralPath 'command-results\oda.json' -Raw | ConvertFrom-Json
+          if($result.github_action_used_for_business_execution){throw 'business execution escaped into GitHub Action'}
           Write-Host 'TRANSPORT_ONLY_VERIFIED github_action_used_for_business_execution=false'
+          if(-not $result.accepted){
+            throw "LOCAL_TRANSPORT_REJECTED request_id=$($result.request_id) exit_code=$($result.exit_code) error=$($result.error)"
+          }
