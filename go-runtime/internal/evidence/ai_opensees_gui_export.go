@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // UnmarshalJSON makes GUI-export provenance part of the final acceptance
@@ -26,11 +27,15 @@ func (s *AIOpenSeesRuntimeState) UnmarshalJSON(data []byte) error {
 	if version == "" || !strings.Contains(strings.ToUpper(version), "2016") {
 		return fmt.Errorf("runtime active source Civil version is not Civil 2016: %s", version)
 	}
-	method := strings.TrimSpace(provenance.ActiveSourceExportMethod)
-	upperMethod := strings.ToUpper(method)
-	if strings.TrimSpace(provenance.ActiveSourceExportedAt) == "" {
+	exportedAt := strings.TrimSpace(provenance.ActiveSourceExportedAt)
+	if exportedAt == "" {
 		return fmt.Errorf("runtime active source exported_at is empty")
 	}
+	if _, err := time.Parse(time.RFC3339, exportedAt); err != nil {
+		return fmt.Errorf("runtime active source exported_at is not RFC3339: %s", exportedAt)
+	}
+	method := strings.TrimSpace(provenance.ActiveSourceExportMethod)
+	upperMethod := strings.ToUpper(method)
 	if method == "" || !strings.Contains(upperMethod, "MIDAS") || !strings.Contains(upperMethod, "GUI") || !strings.Contains(upperMethod, "EXPORT") {
 		return fmt.Errorf("runtime active source export_method is not authoritative MIDAS GUI export: %s", method)
 	}
