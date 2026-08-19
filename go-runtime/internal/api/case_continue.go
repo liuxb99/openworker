@@ -14,9 +14,9 @@ import (
     "github.com/liuxb99/openworker/go-runtime/internal/casecontroller"
 )
 
-var nativeCaseContinueRouteOnce sync.Once
+var nativeCaseContinueRoutes sync.Map
 
-func ensureNativeCaseContinueRoute(s *Server){nativeCaseContinueRouteOnce.Do(func(){s.mux.HandleFunc("POST /v1/cases/continue",s.caseContinue)})}
+func ensureNativeCaseContinueRoute(s *Server){if _,loaded:=nativeCaseContinueRoutes.LoadOrStore(s,struct{}{});!loaded{s.mux.HandleFunc("POST /v1/cases/continue",s.caseContinue)}}
 
 type caseContinueRequest struct { CaseID string `json:"case_id"`; Machine string `json:"machine"`; WorkspaceRoot string `json:"workspace_root"` }
 
