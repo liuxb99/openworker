@@ -5,7 +5,7 @@ import(
  "github.com/liuxb99/openworker/go-runtime/internal/buildinfo";"github.com/liuxb99/openworker/go-runtime/internal/cluster";"github.com/liuxb99/openworker/go-runtime/internal/inventory";"github.com/liuxb99/openworker/go-runtime/internal/model";owruntime "github.com/liuxb99/openworker/go-runtime/internal/runtime";"github.com/liuxb99/openworker/go-runtime/internal/store"
 )
 type Server struct{store *store.Store;runtime *owruntime.Manager;machine,advertise string;cluster *cluster.Controller;mux *http.ServeMux}
-func New(st *store.Store,rt *owruntime.Manager,machine,advertise string,cc ...*cluster.Controller)*Server{var c *cluster.Controller;if len(cc)>0{c=cc[0]};s:=&Server{store:st,runtime:rt,machine:machine,advertise:strings.TrimRight(advertise,"/"),cluster:c,mux:http.NewServeMux()};s.routes();return s}
+func New(st *store.Store,rt *owruntime.Manager,machine,advertise string,cc ...*cluster.Controller)*Server{var c *cluster.Controller;if len(cc)>0{c=cc[0]};s:=&Server{store:st,runtime:rt,machine:machine,advertise:strings.TrimRight(advertise,"/"),cluster:c,mux:http.NewServeMux()};s.routes();ensureNativeCaseContinueRoute(s);return s}
 func(s *Server)Handler()http.Handler{return s.mux}
 func writeJSON(w http.ResponseWriter,status int,v any){w.Header().Set("Content-Type","application/json");w.WriteHeader(status);_=json.NewEncoder(w).Encode(v)}
 func writeErr(w http.ResponseWriter,status int,e error){writeJSON(w,status,map[string]any{"ok":false,"error":e.Error()})}
