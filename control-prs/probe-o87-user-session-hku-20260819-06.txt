@@ -1,0 +1,4 @@
+requested_by=ChatGPT
+machine=DESKTOP-O87PJNR
+case_id=0004
+purpose=resolve loaded user SID from HKU and prove G drive access
