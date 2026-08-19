@@ -66,14 +66,14 @@ jobs:
           }
 
           switch([string]$req.command){
-            'supervisor_status' { $args=@('supervisor','status') }
-            'case_status'       { $args=@('case','status','0005') }
-            'case_continue'     { $args=@('case','continue','0005') }
-            'queue_clear'       { $args=@('queue','clear','DESKTOP-ODAQN0D') }
+            'supervisor_status' { $cliArgs=@('supervisor','status') }
+            'case_status'       { $cliArgs=@('case','status','0005') }
+            'case_continue'     { $cliArgs=@('case','continue','0005') }
+            'queue_clear'       { $cliArgs=@('queue','clear','DESKTOP-ODAQN0D') }
           }
 
           $started=[DateTimeOffset]::UtcNow
-          $lines=& $ctl @args 2>&1
+          $lines=& $ctl @cliArgs 2>&1
           $exitCode=$LASTEXITCODE
           $raw=($lines | Out-String).Trim()
           $parsed=$null
@@ -88,6 +88,8 @@ jobs:
             elseif($null -ne $parsed.accepted){ $accepted=[bool]$parsed.accepted }
             else { $accepted=$true }
           }
+          $errorText=''
+          if($exitCode -ne 0){ $errorText=$raw }
 
           $receipt=[ordered]@{
             schema='openworker.command-result.v1'
@@ -104,7 +106,7 @@ jobs:
             accepted=$accepted
             exit_code=$exitCode
             result=$parsed
-            error=if($exitCode -eq 0){''}else{$raw}
+            error=$errorText
             github_action_used_for_command_transport=$true
             github_action_used_for_business_execution=$false
             business_completion_claimed=$false
