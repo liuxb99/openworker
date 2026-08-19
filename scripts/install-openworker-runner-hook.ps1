@@ -1,15 +1,38 @@
 param(
-  [Parameter(Mandatory=$true)]
-  [string]$RunnerRoot,
+  [string]$RunnerRoot = '',
   [string]$OpenWorkerRepoRoot = ''
 )
 
 $ErrorActionPreference='Stop'
-$RunnerRoot=(Resolve-Path -LiteralPath $RunnerRoot).Path
-$envFile=Join-Path $RunnerRoot '.env'
-if(-not(Test-Path -LiteralPath $envFile -PathType Leaf)){
-  throw "runner .env not found: $envFile"
+
+function Resolve-RunnerRoot {
+  param([string]$ExplicitRoot)
+  if(-not [string]::IsNullOrWhiteSpace($ExplicitRoot)){
+    $resolved=(Resolve-Path -LiteralPath $ExplicitRoot).Path
+    if(Test-Path -LiteralPath (Join-Path $resolved '.env') -PathType Leaf){return $resolved}
+    throw "runner .env not found under explicit root: $resolved"
+  }
+
+  $seeds=New-Object System.Collections.Generic.List[string]
+  foreach($seed in @($env:RUNNER_WORKSPACE,$env:RUNNER_TEMP,$PWD.Path)){
+    if(-not [string]::IsNullOrWhiteSpace([string]$seed)){[void]$seeds.Add([string]$seed)}
+  }
+  foreach($seed in $seeds){
+    try{$current=(Resolve-Path -LiteralPath $seed).Path}catch{continue}
+    while(-not [string]::IsNullOrWhiteSpace($current)){
+      if((Test-Path -LiteralPath (Join-Path $current '.env') -PathType Leaf) -and (Test-Path -LiteralPath (Join-Path $current '.runner') -PathType Leaf)){
+        return $current
+      }
+      $parent=Split-Path -Parent $current
+      if([string]::IsNullOrWhiteSpace($parent) -or $parent-eq$current){break}
+      $current=$parent
+    }
+  }
+  throw 'unable to auto-discover self-hosted runner root; pass -RunnerRoot explicitly'
 }
+
+$RunnerRoot=Resolve-RunnerRoot $RunnerRoot
+$envFile=Join-Path $RunnerRoot '.env'
 if([string]::IsNullOrWhiteSpace($OpenWorkerRepoRoot)){
   $OpenWorkerRepoRoot=$PSScriptRoot | Split-Path -Parent
 }
@@ -28,7 +51,6 @@ Copy-Item -LiteralPath $srcPs -Destination (Join-Path $dest 'openworker-job-star
 Copy-Item -LiteralPath $srcCmd -Destination (Join-Path $dest 'openworker-job-started.cmd') -Force
 Copy-Item -LiteralPath $srcDispatcher -Destination (Join-Path $dest 'invoke-openworker-control-envelope-v1.ps1') -Force
 
-# Verify the deployed files before touching runner configuration.
 $deployed=@(
   (Join-Path $dest 'openworker-job-started-hook.ps1'),
   (Join-Path $dest 'openworker-job-started.cmd'),
@@ -59,7 +81,6 @@ $tmp=$envFile+'.tmp.'+[Guid]::NewGuid().ToString('N')
 [IO.File]::WriteAllLines($tmp,$out,[Text.UTF8Encoding]::new($false))
 Move-Item -LiteralPath $tmp -Destination $envFile -Force
 
-# Re-read the file so a malformed update fails before reporting success.
 $configured=@(Get-Content -LiteralPath $envFile | Where-Object {$_ -eq ('ACTIONS_RUNNER_HOOK_JOB_STARTED='+$hookPath)})
 if($configured.Count -ne 1){throw "runner hook configuration verification failed in $envFile"}
 
