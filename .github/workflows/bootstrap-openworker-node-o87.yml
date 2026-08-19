@@ -57,7 +57,6 @@ jobs:
         run: |
           & "$env:GITHUB_WORKSPACE\scripts\install_openworker_node_service.ps1" -SourceExe "$env:GITHUB_WORKSPACE\go-runtime\openworker-node.exe" -Workers 4 -Capabilities 'case0004,dwg,story-index,engineering' -Listen $env:LISTEN -Advertise $env:ADVERTISE -Peers $env:PEERS
       - name: Verify installed service and authoritative upgrade status
-        id: verify
         shell: powershell
         run: |
           $svc=Get-Service OpenWorkerNode
@@ -94,5 +93,12 @@ jobs:
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add deploy-evidence/o87-openworker-node.json
-          git commit -m "ops: record O87 OpenWorker code deployment $env:GITHUB_SHA" || exit 0
+          git diff --cached --quiet
+          if($LASTEXITCODE -eq 0){
+            Write-Host 'Deployment marker already current; nothing to commit.'
+            exit 0
+          }
+          git commit -m "ops: record O87 OpenWorker code deployment $env:GITHUB_SHA"
+          if($LASTEXITCODE -ne 0){throw 'deployment marker git commit failed'}
           git push
+          if($LASTEXITCODE -ne 0){throw 'deployment marker git push failed'}
