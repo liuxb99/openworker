@@ -43,8 +43,8 @@ jobs:
         working-directory: go-runtime
         run: |
           go mod tidy
-          go test ./internal/api -count=1
-          if($LASTEXITCODE -ne 0){throw "resident API regression tests failed: $LASTEXITCODE"}
+          go test ./... -count=1
+          if($LASTEXITCODE -ne 0){throw "full Go regression tests failed: $LASTEXITCODE"}
           $commit=$env:GITHUB_SHA
           $build=[DateTime]::UtcNow.ToString('o')
           go build -ldflags "-X github.com/liuxb99/openworker/go-runtime/internal/buildinfo.Version=p2-node -X github.com/liuxb99/openworker/go-runtime/internal/buildinfo.Commit=$commit -X github.com/liuxb99/openworker/go-runtime/internal/buildinfo.TargetCommit=$commit -X github.com/liuxb99/openworker/go-runtime/internal/buildinfo.BuildTime=$build" -o openworker-node.exe ./cmd/openworker-node
