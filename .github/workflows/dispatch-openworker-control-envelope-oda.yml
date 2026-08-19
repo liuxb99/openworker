@@ -1,0 +1,64 @@
+name: Dispatch OpenWorker Control Envelope ODA
+
+on:
+  workflow_dispatch:
+    inputs:
+      command:
+        description: OpenWorker Control Envelope command
+        required: true
+        type: choice
+        options:
+          - CASE.STATUS
+          - CASE.CONTINUE_BATCH
+          - SUPERVISOR.STATUS
+          - QUEUE.CLEAR
+      case_id:
+        description: Case ID
+        required: false
+        default: '0005'
+      request_id:
+        description: Unique idempotent request ID
+        required: true
+      max_parallel:
+        description: Max local parallelism (1-4)
+        required: false
+        default: '4'
+
+permissions:
+  contents: read
+
+jobs:
+  dispatch:
+    name: ODA control envelope
+    runs-on: [self-hosted, Windows, X64, ODA]
+    timeout-minutes: 2
+    steps:
+      - name: Checkout transport code
+        uses: actions/checkout@v4
+
+      - name: Build and dispatch control envelope
+        shell: powershell
+        env:
+          OW_COMMAND: ${{ inputs.command }}
+          OW_CASE_ID: ${{ inputs.case_id }}
+          OW_REQUEST_ID: ${{ inputs.request_id }}
+          OW_MAX_PARALLEL: ${{ inputs.max_parallel }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $max=[int]$env:OW_MAX_PARALLEL
+          if($max -lt 1 -or $max -gt 4){ throw "max_parallel must be 1..4" }
+          $envelope=[ordered]@{
+            schema='openworker.control-envelope.v1'
+            request_id=$env:OW_REQUEST_ID
+            command=$env:OW_COMMAND
+            machine='DESKTOP-ODAQN0D'
+            case_id=$env:OW_CASE_ID
+            policy=[ordered]@{
+              max_parallel=$max
+              join='case-defined'
+              fail_closed=$true
+            }
+          }
+          $path=Join-Path $env:RUNNER_TEMP 'openworker-control-envelope.json'
+          $envelope | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $path -Encoding UTF8
+          & .\scripts\invoke-openworker-control-envelope-v1.ps1 -EnvelopePath $path -ExpectedMachine 'DESKTOP-ODAQN0D'

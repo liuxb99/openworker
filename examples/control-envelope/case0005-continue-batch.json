@@ -1,0 +1,12 @@
+{
+  "schema": "openworker.control-envelope.v1",
+  "request_id": "case0005-batch-smoke-001",
+  "command": "CASE.CONTINUE_BATCH",
+  "machine": "DESKTOP-ODAQN0D",
+  "case_id": "0005",
+  "policy": {
+    "max_parallel": 4,
+    "join": "case-defined",
+    "fail_closed": true
+  }
+}
