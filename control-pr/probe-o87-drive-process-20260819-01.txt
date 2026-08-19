@@ -1,0 +1,4 @@
+requested_by=ChatGPT
+machine=DESKTOP-O87PJNR
+purpose=inspect Google Drive process and service availability without credentials
+business_execution=false
