@@ -19,6 +19,11 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
     steps:
+      - name: Checkout repository for evidence publication
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Cancel every other non-terminal OpenWorker workflow run
         id: clear
         shell: bash
@@ -74,6 +79,7 @@ jobs:
           git add evidence/ops/latest-queue-clear.json
           git diff --cached --quiet && exit 0
           git commit -m "evidence(ops): publish latest queue clear"
+          git pull --rebase origin main
           git push origin HEAD:main
 
-# queue-clear trigger: 2026-08-19T23:58:00+08:00 force-clear-before-runner-admin
+# queue-clear trigger: 2026-08-19T23:59:30+08:00 checkout-fix-and-force-clear
