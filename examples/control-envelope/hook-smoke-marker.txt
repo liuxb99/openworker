@@ -1,0 +1,2 @@
+OpenWorker Embedded Control pre-install smoke trigger
+2026-08-19 18:46 +08:00
