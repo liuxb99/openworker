@@ -20,7 +20,7 @@ function Resolve-RunnerRoot {
   foreach($seed in $seeds){
     try{$current=(Resolve-Path -LiteralPath $seed).Path}catch{continue}
     while(-not [string]::IsNullOrWhiteSpace($current)){
-      if((Test-Path -LiteralPath (Join-Path $current '.env') -PathType Leaf) -and (Test-Path -LiteralPath (Join-Path $current '.runner') -PathType Leaf)){
+      if(Test-Path -LiteralPath (Join-Path $current '.env') -PathType Leaf){
         return $current
       }
       $parent=Split-Path -Parent $current
