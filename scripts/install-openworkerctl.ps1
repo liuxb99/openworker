@@ -10,6 +10,8 @@ $openworkerTarget=Join-Path $InstallRoot 'openworker.exe'
 $ctlTarget=Join-Path $InstallRoot 'openworkerctl.exe'
 Push-Location $goRoot
 try{
+ & go mod tidy
+ if($LASTEXITCODE-ne 0){throw "go mod tidy failed: $LASTEXITCODE"}
  & go test ./... -count=1
  if($LASTEXITCODE-ne 0){throw "openworker full Go test suite failed: $LASTEXITCODE"}
  & go build -trimpath -o $openworkerTarget ./cmd/openworker
