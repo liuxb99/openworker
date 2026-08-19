@@ -18,7 +18,7 @@ on:
       - 'command-requests/oda.json'
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: openworker-command-transport-oda-${{ github.run_id }}
@@ -65,7 +65,7 @@ jobs:
           "command=$command" >> $env:GITHUB_OUTPUT
           "request_id=$requestId" >> $env:GITHUB_OUTPUT
 
-      - name: Submit to localhost local supervisor
+      - name: Submit to localhost local supervisor and publish transport receipt
         id: dispatch
         shell: powershell
         env:
@@ -80,11 +80,46 @@ jobs:
           if(-not $receipt.accepted){throw "transport not accepted: $raw"}
           if(-not $receipt.github_action_used_for_command_transport){throw 'command transport flag missing'}
           if($receipt.github_action_used_for_business_execution){throw 'business execution escaped into GitHub Action'}
-          Write-Host ($receipt|ConvertTo-Json -Depth 30 -Compress)
+
+          $result=[ordered]@{
+            schema='openworker.command-result.v1'
+            request_id=$env:REQUEST_ID
+            command=$env:COMMAND
+            machine='DESKTOP-ODAQN0D'
+            case_id=if($env:COMMAND -in @('case_status','case_continue')){'0005'}else{$null}
+            transport='github_actions'
+            github_run_id=$env:GITHUB_RUN_ID
+            github_run_attempt=$env:GITHUB_RUN_ATTEMPT
+            github_action_used_for_command_transport=$true
+            github_action_used_for_business_execution=$false
+            completed_at=[DateTimeOffset]::UtcNow.ToString('o')
+            receipt=$receipt
+          }
+
+          $resultJson=$result|ConvertTo-Json -Depth 40
+          Write-Host ($result|ConvertTo-Json -Depth 40 -Compress)
           Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value '### OpenWorker transient command transport'
           Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value '```json'
-          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value ($receipt|ConvertTo-Json -Depth 30)
+          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value $resultJson
           Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value '```'
+
+          $resultDir=Join-Path $env:GITHUB_WORKSPACE 'command-results'
+          New-Item -ItemType Directory -Force -Path $resultDir|Out-Null
+          $resultPath=Join-Path $resultDir 'oda.json'
+          [IO.File]::WriteAllText($resultPath,$resultJson+[Environment]::NewLine,[Text.UTF8Encoding]::new($false))
+
+          git config user.name 'openworker-command-transport'
+          git config user.email 'openworker-command-transport@users.noreply.github.com'
+          git add -- 'command-results/oda.json'
+          git diff --cached --quiet
+          if($LASTEXITCODE -ne 0){
+            git commit -m "ops: publish ODA transport receipt $env:REQUEST_ID"
+            if($LASTEXITCODE -ne 0){throw 'failed to commit transport receipt'}
+            git pull --rebase origin main
+            if($LASTEXITCODE -ne 0){throw 'failed to rebase transport receipt'}
+            git push origin HEAD:main
+            if($LASTEXITCODE -ne 0){throw 'failed to push transport receipt'}
+          }
 
       - name: Assert transport-only boundary
         shell: powershell
