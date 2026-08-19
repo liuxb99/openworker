@@ -48,7 +48,7 @@ def test_tunnel_client_is_pinned_and_built_from_official_source():
     assert "built_from_source=$true" in src
 
 
-def test_one_shot_activation_never_uses_github_actions():
+def test_one_shot_activation_never_uses_github_actions_and_binds_case_ledger():
     src = text("scripts/activate-case0005-secure-mcp-remote.ps1")
     assert "activate-case0005-local-supervisor.ps1" in src
     assert "install-openworker-opencode-bridge.ps1" in src
@@ -58,5 +58,11 @@ def test_one_shot_activation_never_uses_github_actions():
     assert "start-openworker-secure-mcp-tunnel.ps1" in src
     assert "verify-openworker-secure-mcp-tunnel.ps1" in src
     assert "REMOTE_TRANSPORT_READY" in src
+    assert "LOCAL_VERIFIED" in src
+    assert "TUNNEL_VERIFIED" in src
+    assert "secure-mcp-remote-activation.json" in src
+    assert "case-supervisor-ledger.jsonl" in src
+    assert "remote_transport_ready" in src
+    assert "AppendAllText" in src
     assert "workflow_dispatch" not in src
     assert "gh workflow" not in src.lower()
