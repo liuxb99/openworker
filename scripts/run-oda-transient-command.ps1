@@ -1,6 +1,6 @@
 param(
   [Parameter(Mandatory=$true)]
-  [ValidateSet('supervisor_status','case_status','case_diagnose','case_bootstrap','case_continue','queue_clear')]
+  [ValidateSet('supervisor_status','case_status','case_work_status','case_diagnose','case_bootstrap','case_continue','queue_clear')]
   [string]$Command,
   [Parameter(Mandatory=$true)]
   [string]$RequestId
@@ -31,7 +31,7 @@ $result=[ordered]@{
   request_id=$RequestId
   command=$Command
   machine='DESKTOP-ODAQN0D'
-  case_id=if($Command -in @('case_status','case_diagnose','case_bootstrap','case_continue')){'0005'}else{$null}
+  case_id=if($Command -in @('case_status','case_work_status','case_diagnose','case_bootstrap','case_continue')){'0005'}else{$null}
   transport='github_actions_transient_dispatch'
   accepted=[bool]$receipt.accepted
   transport_ok=[bool]$receipt.accepted
