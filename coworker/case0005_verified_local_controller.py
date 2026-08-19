@@ -18,6 +18,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from .case0005_artifact_publish_acceptance import Case0005ArtifactPublishAcceptanceMixin
+from .case0005_lifecycle import Case0005LifecycleMixin
 from .case0005_coordinator_recovery import Case0005CoordinatorRecoveryMixin
 from .case0005_direct_queue_fanout import Case0005DirectQueueFanoutMixin
 from .case0005_true_local_controller import TrueLocalCase0005Controller
@@ -30,6 +31,7 @@ _ARTIFACT_PUBLISH_ACTION = "openworker.case.publish-artifacts"
 
 class VerifiedLocalCase0005Controller(
     Case0005ArtifactPublishAcceptanceMixin,
+    Case0005LifecycleMixin,
     Case0005CoordinatorRecoveryMixin,
     Case0005DirectQueueFanoutMixin,
     TrueLocalCase0005Controller,
@@ -93,7 +95,7 @@ class VerifiedLocalCase0005Controller(
                 label = "final-review"
                 revision_id = f"case0005-{label}-{revision}"
             else:
-                raise CaseWorklistError(f"{_ARTIFACT_PUBLISH_ACTION} is not mapped for {step.step_id}")
+                return super()._claim_inputs(worklist, step, action, spec)
             return {
                 "workspace_root": str(self.workspace),
                 "assigned_host": worklist.assigned_host,
