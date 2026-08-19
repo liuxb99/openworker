@@ -27,12 +27,18 @@ on:
     branches: [main]
     paths:
       - 'examples/control-envelope/case0005-continue-batch.json'
+  pull_request:
+    types: [closed]
+    branches: [main]
+    paths:
+      - 'examples/control-envelope/case0005-continue-batch.json'
 
 permissions:
   contents: write
 
 jobs:
   dispatch:
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.merged == true }}
     name: ODA control envelope
     runs-on: [self-hosted, Windows, X64, ODA]
     timeout-minutes: 2
@@ -52,7 +58,7 @@ jobs:
           OW_MAX_PARALLEL: ${{ inputs.max_parallel }}
         run: |
           $ErrorActionPreference='Stop'
-          if($env:OW_EVENT -eq 'push'){
+          if($env:OW_EVENT -eq 'push' -or $env:OW_EVENT -eq 'pull_request'){
             $path=Join-Path $env:GITHUB_WORKSPACE 'examples\control-envelope\case0005-continue-batch.json'
           }else{
             $max=[int]$env:OW_MAX_PARALLEL
