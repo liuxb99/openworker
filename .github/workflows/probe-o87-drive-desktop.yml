@@ -1,0 +1,36 @@
+name: Probe O87 Google Drive Desktop
+
+on:
+  pull_request:
+    types: [opened]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    if: >-
+      github.event.pull_request.title == '[openworker-control] probe_o87_drive_desktop' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Windows, X64, O87]
+    timeout-minutes: 5
+    steps:
+      - name: Verify O87 and discover Drive Desktop
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if($env:COMPUTERNAME -ine 'DESKTOP-O87PJNR'){throw "wrong host=$env:COMPUTERNAME"}
+          $candidates=@()
+          if(-not [string]::IsNullOrWhiteSpace('${{ vars.OPENWORKER_GOOGLE_DRIVE_SYNC_ROOT }}')){$candidates += '${{ vars.OPENWORKER_GOOGLE_DRIVE_SYNC_ROOT }}'}
+          foreach($d in Get-PSDrive -PSProvider FileSystem){
+            $candidates += (Join-Path $d.Root 'My Drive')
+            $candidates += (Join-Path $d.Root '我的雲端硬碟')
+          }
+          $found=@()
+          foreach($c in $candidates|Select-Object -Unique){
+            if([string]::IsNullOrWhiteSpace($c)){continue}
+            try{if(Test-Path -LiteralPath $c -PathType Container -ErrorAction Stop){$found += (Resolve-Path -LiteralPath $c).Path}}catch{}
+          }
+          Get-PSDrive -PSProvider FileSystem|Format-Table Name,Root,Description -AutoSize|Out-String|Write-Host
+          if($found.Count -eq 0){throw 'O87 Google Drive Desktop root not found'}
+          Write-Host ('OPENWORKER_O87_DRIVE_DESKTOP_PASS roots='+($found -join ';'))
