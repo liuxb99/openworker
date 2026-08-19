@@ -10,6 +10,7 @@ on:
         options:
           - supervisor_status
           - case_status
+          - case_work_status
           - case_bootstrap
           - case_continue
           - queue_clear
@@ -56,7 +57,7 @@ jobs:
             $command=[string]$req.command
             $requestId=[string]$req.request_id
           }else{throw "unsupported event=$env:EVENT_NAME"}
-          $allowed=@('supervisor_status','case_status','case_bootstrap','case_continue','queue_clear')
+          $allowed=@('supervisor_status','case_status','case_work_status','case_bootstrap','case_continue','queue_clear')
           if($allowed -notcontains $command){throw "unsupported command=$command"}
           "command=$command" >> $env:GITHUB_OUTPUT
           "request_id=$requestId" >> $env:GITHUB_OUTPUT
@@ -66,7 +67,7 @@ jobs:
             request_id=$requestId
             command=$command
             machine='DESKTOP-ODAQN0D'
-            case_id=if($command -in @('case_status','case_bootstrap','case_continue')){'0005'}else{$null}
+            case_id=if($command -in @('case_status','case_work_status','case_bootstrap','case_continue')){'0005'}else{$null}
             transport='github_actions_transient_dispatch'
             accepted=$false
             transport_ok=$false
