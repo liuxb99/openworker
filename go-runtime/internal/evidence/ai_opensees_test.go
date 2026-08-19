@@ -25,6 +25,19 @@ func TestValidateAIOpenSeesWorkspace(t *testing.T) {
 	root := t.TempDir()
 	mctSHA := testHash([]byte("real-mct-placeholder-for-validator-test"))
 	generation := int64(3)
+	catalogRoot := filepath.Join(root, "authority-catalog")
+	if err := os.MkdirAll(catalogRoot, 0o755); err != nil { t.Fatal(err) }
+
+	runtime := AIOpenSeesRuntimeState{
+		SchemaVersion: AIOpenSeesRuntimeSchema,
+		Ready:         true,
+		Generation:    generation,
+		CatalogRoot:   catalogRoot,
+		EntryCount:    2,
+		SnapshotValid: true,
+	}
+	runtimeData, err := json.Marshal(runtime)
+	if err != nil { t.Fatal(err) }
 
 	contents := map[string][]byte{
 		"analysis-geometry.json":       []byte(`{"schema_version":"ai-opensees/analysis-geometry/v0.1"}`),
@@ -34,7 +47,7 @@ func TestValidateAIOpenSeesWorkspace(t *testing.T) {
 		"node_reactions.csv":           []byte("node_id,fx,fy,fz,mx,my,mz\n1,0,0,0,0,0,0\n"),
 		"opensees.stdout.log":          []byte{},
 		"opensees.stderr.log":          []byte{},
-		"authority-runtime-state.json": []byte(`{"ready":true,"generation":3,"snapshot_valid":true}`),
+		"authority-runtime-state.json": runtimeData,
 	}
 	for name, data := range contents {
 		testWrite(t, filepath.Join(root, name), data)
@@ -46,6 +59,8 @@ func TestValidateAIOpenSeesWorkspace(t *testing.T) {
 		SourceSHA256:          mctSHA,
 		AuthorityRuntimeUsed:  true,
 		AuthorityGeneration:   generation,
+		AuthorityCatalogRoot:  catalogRoot,
+		AuthorityEntryCount:   2,
 		GeometryJSONPath:      filepath.Join(root, "analysis-geometry.json"),
 		GeometryJSONSHA256:    testHash(contents["analysis-geometry.json"]),
 		DeformedOBJPath:       filepath.Join(root, "analysis-deformed.obj"),
@@ -78,21 +93,23 @@ func TestValidateAIOpenSeesWorkspace(t *testing.T) {
 		})
 	}
 	receipt := AIOpenSeesOperatorEvidence{
-		SchemaVersion:       AIOpenSeesReceiptSchema,
-		CapabilityID:        AIOpenSeesCapabilityID,
-		Repository:          AIOpenSeesRepository,
-		CommitSHA:           testHash([]byte("commit")),
-		RunID:               "123",
-		RunAttempt:          "1",
-		AssignedHostname:    AIOpenSeesHost,
-		MCTPath:             `D:\jobs\real.mct`,
-		MCTSHA256:           mctSHA,
-		RuntimeConfig:       `D:\jobs\runtime.config`,
-		AuthorityGeneration: generation,
-		OpenSeesExecutable:  `C:\OpenSees\OpenSees.exe`,
-		Workspace:           root,
-		Status:              "complete",
-		Artifacts:           artifacts,
+		SchemaVersion:        AIOpenSeesReceiptSchema,
+		CapabilityID:         AIOpenSeesCapabilityID,
+		Repository:           AIOpenSeesRepository,
+		CommitSHA:            testHash([]byte("commit")),
+		RunID:                "123",
+		RunAttempt:           "1",
+		AssignedHostname:     AIOpenSeesHost,
+		MCTPath:              `D:\jobs\real.mct`,
+		MCTSHA256:            mctSHA,
+		RuntimeConfig:        `D:\jobs\runtime.config`,
+		AuthorityGeneration:  generation,
+		AuthorityCatalogRoot: catalogRoot,
+		AuthorityEntryCount:  2,
+		OpenSeesExecutable:   `C:\OpenSees\OpenSees.exe`,
+		Workspace:            root,
+		Status:               "complete",
+		Artifacts:            artifacts,
 	}
 	receiptData, err := json.Marshal(receipt)
 	if err != nil { t.Fatal(err) }
