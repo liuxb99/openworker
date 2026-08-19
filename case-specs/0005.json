@@ -20,12 +20,27 @@
     "review_consumer": "chatgpt-drive-connector",
     "default_drive_root_when_unconfigured": "root",
     "text_storyboard_publish_step": "0005-026",
+    "text_storyboard_review_gate_step": "0005-027",
     "illustrated_storyboard_publish_step": "0005-056",
+    "illustrated_storyboard_review_gate_step": "0005-057",
     "final_review_publish_step": "0005-090",
+    "final_review_gate_step": "0005-100",
+    "review_gate_capability": "openworker.review.await-drive",
+    "review_receipt_schema": "openworker-case0005-drive-gate-receipt/v1",
+    "review_receipt_formats": ["raw-json-or-text", "google-doc-exported-as-text-plain"],
+    "review_receipt_exact_parent_folder_required": true,
+    "review_receipt_exact_artifact_sha256_required": true,
+    "review_receipt_exact_drive_file_ids_required": true,
+    "review_receipt_command_fields_forbidden": ["command", "commands", "tool"],
+    "cloud_command_ingress_allowed": false,
     "final_review_required_artifacts": [
       "final/final.mp4",
+      "final/review-contact-sheet.jpg",
       "immutable WorkLedger revision manifest"
     ],
+    "final_review_pass_requires_workledger_accept": true,
+    "final_review_pass_requires_engineering_os_artifact_approval": true,
+    "final_delivery_validation_requires_review_provenance": true,
     "github_actions_allowed": false,
     "github_artifact_transport_allowed": false,
     "immutable_manifest_required": true,
@@ -53,6 +68,8 @@
     "openworker_fanout_role": "single-coordinator-only",
     "approval_artifact_transport": "google-drive-api",
     "approval_artifact_github_allowed": false,
+    "review_gate_execution_authority": "go-tool-runtime:8848",
+    "review_gate_wait_is_bounded_and_non-command": true,
     "github_actions": "code_update_or_repair_only",
     "github_actions_business_execution_allowed": false,
     "github_actions_fallback_allowed": false,
@@ -67,6 +84,8 @@
     "success_requires_current_operational_four_plus_four_heartbeats": true,
     "success_requires_queue_owned_fanout": true,
     "success_requires_local_artifact_return": true,
-    "success_requires_chatgpt_visible_drive_artifacts": true
+    "success_requires_chatgpt_visible_drive_artifacts": true,
+    "success_requires_chatgpt_review_receipt_roundtrip": true,
+    "success_requires_final_review_provenance": true
   }
 }
