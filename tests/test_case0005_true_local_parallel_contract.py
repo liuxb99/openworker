@@ -18,6 +18,29 @@ def test_activation_uses_canonical_operational_supervisor() -> None:
     assert "controllerModule = 'coworker.case0005_local_supervisor'" not in text
 
 
+def test_activation_cannot_skip_real_verification_or_reuse_unknown_old_binaries() -> None:
+    text = (ROOT / "scripts" / "activate-case0005-local-supervisor.ps1").read_text(encoding="utf-8")
+    assert "SkipParallelVerification" not in text
+    assert "binaries_reinstalled_from_current_checkout = $true" in text
+    assert "install-and-verify-true-local-supervisor.ps1" in text
+    assert "REAL_VERIFIED" in text
+    assert "registered_capabilities" in text
+    assert "required_case_capabilities" in text
+    assert "capability_coverage_complete = $true" in text
+    for capability in (
+        "comfyx-studio.director.preproduction",
+        "comfyx-studio.storyboard.plan",
+        "presentation.openmaic",
+        "image.comfyx.storyboard-real",
+        "comfyx-studio.storyboard.real-bind",
+        "comfyx.production.video.real",
+        "comfyx-studio.finalize",
+        "openworker.case.publish-artifacts",
+        "drive.review.publish",
+    ):
+        assert capability in text
+
+
 def test_case0005_worklist_requires_live_four_plus_four_and_queue_owned_fanout() -> None:
     worklist = json.loads((ROOT / "case-worklists" / "0005.json").read_text(encoding="utf-8"))
     policy = worklist["parallel_policy"]
