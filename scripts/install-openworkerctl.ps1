@@ -15,6 +15,7 @@ try{
  if($LASTEXITCODE-ne 0){throw "openworkerctl build failed: $LASTEXITCODE"}
 }finally{Pop-Location}
 $shim=Join-Path $InstallRoot 'openworkerctl.cmd'
-[IO.File]::WriteAllText($shim,"@echo off`r`n\"$target\" %*`r`n",[Text.UTF8Encoding]::new($false))
+$shimText="@echo off`r`n`"$target`" %*`r`n"
+[IO.File]::WriteAllText($shim,$shimText,[Text.UTF8Encoding]::new($false))
 $result=[ordered]@{schema='openworkerctl-install/v1';status='installed';machine=$env:COMPUTERNAME;exe=$target;shim=$shim;server='http://127.0.0.1:8848';github_action_used_for_business_execution=$false;installed_at=[DateTime]::UtcNow.ToString('o')}
 $result|ConvertTo-Json -Depth 5
