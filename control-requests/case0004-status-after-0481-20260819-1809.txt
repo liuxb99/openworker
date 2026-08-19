@@ -1,0 +1,6 @@
+command: case0004_status
+requested_by: ChatGPT
+case_id: 0004
+machine: DESKTOP-O87PJNR
+purpose: Read-only detailed status for Case0004 revision 149 after 0004-0481 submission; do not create duplicate work.
+Boundary: transient read-only command transport only; GitHub Actions does not execute Case business work.
