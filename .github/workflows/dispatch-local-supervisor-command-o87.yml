@@ -1,0 +1,67 @@
+name: Dispatch Local Supervisor Command O87
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'command-requests/o87.json'
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  ingress:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      command: ${{ steps.request.outputs.command }}
+      request_id: ${{ steps.request.outputs.request_id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate bounded ChatGPT request
+        id: request
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $path=Join-Path $env:GITHUB_WORKSPACE 'command-requests\o87.json'
+          $req=Get-Content -LiteralPath $path -Raw | ConvertFrom-Json -ErrorAction Stop
+          if($req.schema -ne 'openworker.command-request.v1'){throw "unsupported request schema=$($req.schema)"}
+          if($req.machine -ine 'DESKTOP-O87PJNR'){throw "unsupported request machine=$($req.machine)"}
+          if($req.case_id -ne '0004'){throw "unsupported request case_id=$($req.case_id)"}
+          if($req.requested_by -ne 'chatgpt'){throw "unsupported requested_by=$($req.requested_by)"}
+          if(-not $req.request_id -or [string]$req.request_id -notmatch '^[A-Za-z0-9._-]{8,128}$'){throw 'invalid request_id'}
+          $command=[string]$req.command
+          $allowed=@('supervisor_status','case_status','case_diagnose','case_bootstrap','case_continue','queue_clear')
+          if($allowed -notcontains $command){throw "unsupported command=$command"}
+          "command=$command" >> $env:GITHUB_OUTPUT
+          "request_id=$($req.request_id)" >> $env:GITHUB_OUTPUT
+          $queued=[ordered]@{schema='openworker.command-result.v1';phase='queued_for_o87';request_id=[string]$req.request_id;command=$command;machine='DESKTOP-O87PJNR';case_id=if($command -like 'case_*'){'0004'}else{$null};transport='github_actions_transient_dispatch';accepted=$false;transport_ok=$false;github_run_id=$env:GITHUB_RUN_ID;github_run_attempt=$env:GITHUB_RUN_ATTEMPT;github_action_used_for_command_transport=$true;github_action_used_for_business_execution=$false;business_completion_claimed=$false;authoritative_business_state='openworker';queued_at=[DateTimeOffset]::UtcNow.ToString('o')}
+          $rel="command-results/o87/$($req.request_id)/queued.json";$out=Join-Path $env:GITHUB_WORKSPACE ($rel -replace '/','\');New-Item -ItemType Directory -Force -Path (Split-Path $out)|Out-Null
+          [IO.File]::WriteAllText($out,($queued|ConvertTo-Json -Depth 20)+[Environment]::NewLine,[Text.UTF8Encoding]::new($false))
+          git config user.name 'openworker-command-ingress';git config user.email 'openworker-command-ingress@users.noreply.github.com';git add -- $rel;git commit -m "receipt: O87 queued $command $($req.request_id)"
+          if($LASTEXITCODE -ne 0){throw 'failed to commit queued receipt'}
+          $pushed=$false
+          for($i=0;$i -lt 3;$i++){git pull --rebase origin main;if($LASTEXITCODE -ne 0){git rebase --abort 2>$null;Start-Sleep -Seconds 1;continue};git push origin HEAD:main;if($LASTEXITCODE -eq 0){$pushed=$true;break};Start-Sleep -Seconds 2}
+          if(-not $pushed){throw 'failed to push queued receipt'}
+
+  dispatch:
+    needs: ingress
+    runs-on: [self-hosted, Windows, X64, O87]
+    timeout-minutes: 2
+    concurrency:
+      group: openworker-command-transport-o87-dispatch
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Invoke O87 OpenWorker local supervisor
+        shell: cmd
+        env:
+          COMMAND: ${{ needs.ingress.outputs.command }}
+          REQUEST_ID: ${{ needs.ingress.outputs.request_id }}
+        run: >-
+          powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%GITHUB_WORKSPACE%\scripts\run-o87-transient-command.ps1" -Command "%COMMAND%" -RequestId "%REQUEST_ID%"
