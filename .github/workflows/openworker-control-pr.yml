@@ -30,7 +30,7 @@ jobs:
           set -euo pipefail
           command=$(printf '%s\n' "$BODY" | sed -nE 's/^[[:space:]]*command:[[:space:]]*([A-Za-z0-9_-]+)[[:space:]]*$/\1/p' | head -n1 | tr '[:upper:]' '[:lower:]')
           case "$command" in
-            drain|upgrade|case0004_status|case0004_continue) ;;
+            drain|upgrade|case0004_status|case0004_continue|case0005_status|case0005_continue|case0005_bootstrap|case0005_queue_clear) ;;
             *) echo "unsupported or missing command: $command" >&2; exit 2 ;;
           esac
           api="https://api.github.com/repos/${REPO}"
@@ -52,6 +52,18 @@ jobs:
             code=$(curl -sS -o /tmp/dispatch-response -w '%{http_code}' -X POST "${auth[@]}" "${api}/actions/workflows/upgrade-openworker-nodes-v4.yml/dispatches" -d '{"ref":"main"}')
             if [ "$code" != '204' ]; then cat /tmp/dispatch-response || true; exit 1; fi
             result='upgrade-openworker-nodes-v4.yml dispatch accepted'
+          elif [[ "$command" == case0005_* ]]; then
+            request_id="pr-${PR}-${GITHUB_RUN_ID}"
+            case "$command" in
+              case0005_status) local_command='case_status' ;;
+              case0005_continue) local_command='case_continue' ;;
+              case0005_bootstrap) local_command='case_bootstrap' ;;
+              case0005_queue_clear) local_command='queue_clear' ;;
+            esac
+            payload=$(jq -nc --arg c "$local_command" --arg r "$request_id" '{ref:"main",inputs:{command:$c,request_id:$r}}')
+            code=$(curl -sS -o /tmp/dispatch-response -w '%{http_code}' -X POST "${auth[@]}" "${api}/actions/workflows/dispatch-local-supervisor-command-oda.yml/dispatches" -d "$payload")
+            if [ "$code" != '204' ]; then cat /tmp/dispatch-response || true; echo "ODA transient dispatch failed http=${code}" >&2; exit 1; fi
+            result="ODA local supervisor transport dispatched request_id=${request_id} command=${local_command}; business authority remains OpenWorker"
           else
             request_id="pr-${PR}-${GITHUB_RUN_ID}"
             local_command='case_status'
