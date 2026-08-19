@@ -57,10 +57,12 @@ class Case0005ArtifactPublishAcceptanceMixin:
             lowered = {path.lower() for path in relpaths}
             if "final/final.mp4" not in lowered:
                 raise CaseWorklistError("final review bundle must include final/final.mp4")
+            if "final/review-contact-sheet.jpg" not in lowered:
+                raise CaseWorklistError("final review bundle must include final/review-contact-sheet.jpg")
             if not any(path.lower().startswith(".openworker/revisions/") and path.lower().endswith("/manifest.json") for path in relpaths):
                 raise CaseWorklistError("final review bundle must include immutable WorkLedger revision manifest")
-            if len(relpaths) != 2:
-                raise CaseWorklistError("final review bundle must contain exactly final MP4 and revision manifest")
+            if len(relpaths) != 3:
+                raise CaseWorklistError("final review bundle must contain exactly final MP4, review contact sheet, and revision manifest")
         else:
             raise CaseWorklistError(f"artifact publish acceptance is not mapped for {step.step_id}")
         if expected is not None and [path.lower() for path in relpaths] != [path.lower() for path in expected]:
