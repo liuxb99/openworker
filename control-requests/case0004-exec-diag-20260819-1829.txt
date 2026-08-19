@@ -1,0 +1,5 @@
+requested_by: ChatGPT
+case_id: 0004
+machine: DESKTOP-O87PJNR
+purpose: Read-only diagnose the active 0004-0481 execution stage (cargo/rustc/OpenCAD/dwg-editor/cache/evidence logs) without mutating Case or queue.
+Boundary: diagnostic transport only; GitHub Actions does not execute Case business work.
