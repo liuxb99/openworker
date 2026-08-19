@@ -18,6 +18,11 @@ on:
     branches: [main]
     paths:
       - 'command-requests/oda.json'
+  pull_request:
+    types: [closed]
+    branches: [main]
+    paths:
+      - 'command-requests/oda.json'
 
 permissions:
   contents: write
@@ -25,6 +30,7 @@ permissions:
 
 jobs:
   ingress:
+    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     timeout-minutes: 2
     outputs:
@@ -34,6 +40,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.ref || github.ref }}
       - name: Validate request and publish immutable queued receipt
         id: request
         shell: pwsh
@@ -45,7 +52,7 @@ jobs:
           if($env:EVENT_NAME -eq 'workflow_dispatch'){
             $command=$env:INPUT_COMMAND
             $requestId="manual-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
-          }elseif($env:EVENT_NAME -eq 'push'){
+          }elseif($env:EVENT_NAME -in @('push','pull_request')){
             $path=Join-Path $env:GITHUB_WORKSPACE 'command-requests\oda.json'
             if(-not(Test-Path -LiteralPath $path -PathType Leaf)){throw "request missing: $path"}
             $req=Get-Content -LiteralPath $path -Raw | ConvertFrom-Json -ErrorAction Stop
