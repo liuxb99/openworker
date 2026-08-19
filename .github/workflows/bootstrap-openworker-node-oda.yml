@@ -20,7 +20,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   install:
@@ -29,6 +29,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Verify fixed ODA computer
         shell: powershell
         run: if($env:COMPUTERNAME -ine 'DESKTOP-ODAQN0D'){throw "wrong host $env:COMPUTERNAME"}
@@ -52,7 +54,8 @@ jobs:
           PEERS: ${{ inputs.peers }}
         run: |
           & "$env:GITHUB_WORKSPACE\scripts\install_openworker_node_service.ps1" -SourceExe "$env:GITHUB_WORKSPACE\go-runtime\openworker-node.exe" -Workers 4 -Capabilities 'case0002,case0005,comfyx,minimax-h3,video,storyboard,presentation,local-supervisor' -Listen $env:LISTEN -Advertise $env:ADVERTISE -Peers $env:PEERS
-      - name: Verify installed service and authoritative upgrade status
+      - name: Verify installed service and Go Case continue route
+        id: verify
         shell: powershell
         run: |
           $svc=Get-Service OpenWorkerNode
@@ -68,7 +71,62 @@ jobs:
           if(-not $s.lease_until){throw 'missing lease_until'}
           foreach($cap in @('comfyx','case0005','local-supervisor')){if(-not ($s.inventory.capabilities -contains $cap)){throw "missing $cap capability"}}
           if(-not $s.advertise_endpoint){throw 'missing advertise endpoint'}
+
+          $routeStatus=0
+          try {
+            Invoke-WebRequest -UseBasicParsing -Method Post -Uri 'http://127.0.0.1:8787/v1/cases/continue' -ContentType 'application/json' -Body '{}' -TimeoutSec 5 | Out-Null
+            $routeStatus=200
+          } catch {
+            if($null -ne $_.Exception.Response){$routeStatus=[int]$_.Exception.Response.StatusCode}else{throw}
+          }
+          if($routeStatus -eq 404 -or $routeStatus -eq 0){throw "Go Case continue route unavailable status=$routeStatus"}
+          "route_status=$routeStatus" >> $env:GITHUB_OUTPUT
           $s|ConvertTo-Json -Depth 20
+      - name: Publish immutable resident node deployment receipt
+        shell: powershell
+        env:
+          ROUTE_STATUS: ${{ steps.verify.outputs.route_status }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $status=Invoke-RestMethod 'http://127.0.0.1:8787/v1/node/status'
+          $receipt=[ordered]@{
+            schema='openworker.oda-resident-node-deployment/v1'
+            machine=$env:COMPUTERNAME
+            github_run_id=$env:GITHUB_RUN_ID
+            github_run_attempt=$env:GITHUB_RUN_ATTEMPT
+            requested_commit=$env:GITHUB_SHA
+            running_commit=$status.service.running_commit
+            target_commit=$status.service.target_commit
+            upgrade_status=$status.service.upgrade_status
+            upgrade_verified=[bool]$status.service.upgrade_verified
+            service_started_at=$status.service.service_started_at
+            supervisor_api_version=$status.service.supervisor_api_version
+            case_continue_route_status=[int]$env:ROUTE_STATUS
+            case_continue_route_present=([int]$env:ROUTE_STATUS -ne 404 -and [int]$env:ROUTE_STATUS -gt 0)
+            python_controller_allowed=$false
+            github_action_used_for_business_execution=$false
+            verified_at=[DateTimeOffset]::UtcNow.ToString('o')
+          }
+          git config user.name 'openworker-node-deploy'
+          git config user.email 'openworker-node-deploy@users.noreply.github.com'
+          git fetch origin main
+          git reset --hard origin/main
+          $rel="evidence/deployments/openworker-node-ODA/$env:GITHUB_RUN_ID.json"
+          $path=Join-Path $env:GITHUB_WORKSPACE ($rel -replace '/','\')
+          New-Item -ItemType Directory -Force -Path (Split-Path $path)|Out-Null
+          [IO.File]::WriteAllText($path,($receipt|ConvertTo-Json -Depth 12)+[Environment]::NewLine,[Text.UTF8Encoding]::new($false))
+          git add -- $rel
+          git commit -m "receipt: ODA resident Go node $env:GITHUB_RUN_ID"
+          if($LASTEXITCODE -ne 0){throw 'failed to commit node receipt'}
+          $pushed=$false
+          for($i=0;$i -lt 4;$i++){
+            git pull --rebase origin main
+            if($LASTEXITCODE -ne 0){git rebase --abort 2>$null;Start-Sleep -Seconds 1;continue}
+            git push origin HEAD:main
+            if($LASTEXITCODE -eq 0){$pushed=$true;break}
+            Start-Sleep -Seconds 2
+          }
+          if(-not $pushed){throw 'failed to push node receipt'}
       - name: Bootstrap Case 0005 through Go-native Case Engine
         if: github.event_name == 'push' && contains(github.event.head_commit.message, '[case0005-local-bootstrap]')
         shell: powershell
