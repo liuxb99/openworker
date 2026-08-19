@@ -1,0 +1,1213 @@
+{
+  "schema_version": "openworker.github-actions-queue-clear/v3",
+  "repository": "liuxb99/openworker",
+  "run_id": "32278633678",
+  "source_sha": "3e5fcc3538202bf747dfcf8750507d84ac2488fd",
+  "nonterminal_before": [
+    {
+      "id": 32210076404,
+      "name": "Case 0005 PDF Input Locator UL7",
+      "status": "in_progress",
+      "created_at": "2026-08-19T02:51:54Z"
+    },
+    {
+      "id": 32210372689,
+      "name": "Bootstrap OpenWorker Node Service O87",
+      "status": "queued",
+      "created_at": "2026-08-19T02:56:57Z"
+    },
+    {
+      "id": 32210415708,
+      "name": "Diagnose Self Hosted Runners",
+      "status": "queued",
+      "created_at": "2026-08-19T02:57:41Z"
+    },
+    {
+      "id": 32210916495,
+      "name": "Upgrade OpenWorker Nodes V2",
+      "status": "queued",
+      "created_at": "2026-08-19T03:05:53Z"
+    },
+    {
+      "id": 32211109367,
+      "name": "Diagnose Self Hosted Runners",
+      "status": "queued",
+      "created_at": "2026-08-19T03:09:03Z"
+    },
+    {
+      "id": 32211654622,
+      "name": "Case 0005 Local Parallel Bootstrap ODA v2",
+      "status": "queued",
+      "created_at": "2026-08-19T03:18:14Z"
+    },
+    {
+      "id": 32211939334,
+      "name": "Case 0005 Local Parallel Bootstrap ODA",
+      "status": "queued",
+      "created_at": "2026-08-19T03:23:02Z"
+    },
+    {
+      "id": 32212441741,
+      "name": "Upgrade OpenWorker Nodes V3",
+      "status": "queued",
+      "created_at": "2026-08-19T03:31:24Z"
+    },
+    {
+      "id": 32212887240,
+      "name": "Bootstrap OpenWorker Three Node Labels V2",
+      "status": "queued",
+      "created_at": "2026-08-19T03:38:54Z"
+    },
+    {
+      "id": 32212930059,
+      "name": "Case 0005 Local Parallel Bootstrap ODA v3",
+      "status": "queued",
+      "created_at": "2026-08-19T03:39:38Z"
+    },
+    {
+      "id": 32212983378,
+      "name": "CI",
+      "status": "queued",
+      "created_at": "2026-08-19T03:40:31Z"
+    },
+    {
+      "id": 32212992346,
+      "name": "Bootstrap OpenWorker Node Service ODA",
+      "status": "queued",
+      "created_at": "2026-08-19T03:40:40Z"
+    },
+    {
+      "id": 32213239935,
+      "name": "Diagnose Self Hosted Runners",
+      "status": "queued",
+      "created_at": "2026-08-19T03:44:51Z"
+    },
+    {
+      "id": 32213479651,
+      "name": "CI",
+      "status": "queued",
+      "created_at": "2026-08-19T03:48:55Z"
+    },
+    {
+      "id": 32213529275,
+      "name": "OpenWorker Go Runtime P0-P1",
+      "status": "queued",
+      "created_at": "2026-08-19T03:49:46Z"
+    },
+    {
+      "id": 32213841553,
+      "name": "Case 0005 Local Parallel Bootstrap ODA v3",
+      "status": "queued",
+      "created_at": "2026-08-19T03:55:02Z"
+    },
+    {
+      "id": 32213863303,
+      "name": "Case 0005 O87 Probe ODA Authority",
+      "status": "queued",
+      "created_at": "2026-08-19T03:55:22Z"
+    },
+    {
+      "id": 32214580870,
+      "name": "Diagnose Self Hosted Runners",
+      "status": "queued",
+      "created_at": "2026-08-19T04:07:14Z"
+    },
+    {
+      "id": 32214657897,
+      "name": "Upgrade OpenWorker Nodes V3",
+      "status": "pending",
+      "created_at": "2026-08-19T04:08:32Z"
+    },
+    {
+      "id": 32215172315,
+      "name": "Case 0005 O87 Probe ODA Authority",
+      "status": "queued",
+      "created_at": "2026-08-19T04:16:39Z"
+    },
+    {
+      "id": 32215172533,
+      "name": "Case 0005 Local Controller Kick ODA",
+      "status": "queued",
+      "created_at": "2026-08-19T04:16:39Z"
+    },
+    {
+      "id": 32215665554,
+      "name": "Case 0005 ODA Recover And Local Start",
+      "status": "queued",
+      "created_at": "2026-08-19T04:24:47Z"
+    },
+    {
+      "id": 32215665558,
+      "name": "Case 0005 Local Controller Kick ODA",
+      "status": "queued",
+      "created_at": "2026-08-19T04:24:47Z"
+    },
+    {
+      "id": 32216681635,
+      "name": "CI",
+      "status": "queued",
+      "created_at": "2026-08-19T04:41:40Z"
+    },
+    {
+      "id": 32216789206,
+      "name": "OpenWorker Go Runtime CI",
+      "status": "queued",
+      "created_at": "2026-08-19T04:43:31Z"
+    },
+    {
+      "id": 32217954239,
+      "name": "Bootstrap OpenWorker Three Node Labels V2",
+      "status": "queued",
+      "created_at": "2026-08-19T05:02:45Z"
+    },
+    {
+      "id": 32218021940,
+      "name": "Case 0005 O87 Probe ODA Authority",
+      "status": "queued",
+      "created_at": "2026-08-19T05:03:52Z"
+    },
+    {
+      "id": 32218161307,
+      "name": "Bootstrap OpenWorker Node Service UL7",
+      "status": "queued",
+      "created_at": "2026-08-19T05:06:07Z"
+    },
+    {
+      "id": 32219222962,
+      "name": "Diagnose Self Hosted Runners",
+      "status": "queued",
+      "created_at": "2026-08-19T05:23:11Z"
+    },
+    {
+      "id": 32221162177,
+      "name": "Case 0005 Local Parallel Bootstrap ODA v3",
+      "status": "queued",
+      "created_at": "2026-08-19T05:53:42Z"
+    },
+    {
+      "id": 32278606437,
+      "name": "OpenWorker Go Runtime CI",
+      "status": "in_progress",
+      "created_at": "2026-08-19T16:54:39Z"
+    },
+    {
+      "id": 32278606681,
+      "name": "CI",
+      "status": "in_progress",
+      "created_at": "2026-08-19T16:54:39Z"
+    }
+  ],
+  "operations": [
+    {
+      "run_id": 32210076404,
+      "name": "Case 0005 PDF Input Locator UL7",
+      "status": "in_progress",
+      "created_at": "2026-08-19T02:51:54Z",
+      "stuck": true,
+      "stuck_age_seconds": 50610,
+      "cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "force_cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#force-cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "delete_stuck_run": {
+        "attempted": true,
+        "status_code": 403,
+        "outcome": "failed",
+        "error": "{\"message\":\"Could not delete the workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#delete-a-workflow-run\",\"status\":\"403\"}"
+      }
+    },
+    {
+      "run_id": 32210372689,
+      "name": "Bootstrap OpenWorker Node Service O87",
+      "status": "queued",
+      "created_at": "2026-08-19T02:56:57Z",
+      "stuck": true,
+      "stuck_age_seconds": 50307,
+      "cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "force_cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#force-cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "delete_stuck_run": {
+        "attempted": true,
+        "status_code": 403,
+        "outcome": "failed",
+        "error": "{\"message\":\"Could not delete the workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#delete-a-workflow-run\",\"status\":\"403\"}"
+      }
+    },
+    {
+      "run_id": 32210415708,
+      "name": "Diagnose Self Hosted Runners",
+      "status": "queued",
+      "created_at": "2026-08-19T02:57:41Z",
+      "stuck": true,
+      "stuck_age_seconds": 50263,
+      "cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "force_cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#force-cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "delete_stuck_run": {
+        "attempted": true,
+        "status_code": 403,
+        "outcome": "failed",
+        "error": "{\"message\":\"Could not delete the workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#delete-a-workflow-run\",\"status\":\"403\"}"
+      }
+    },
+    {
+      "run_id": 32210916495,
+      "name": "Upgrade OpenWorker Nodes V2",
+      "status": "queued",
+      "created_at": "2026-08-19T03:05:53Z",
+      "stuck": true,
+      "stuck_age_seconds": 49772,
+      "cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "force_cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#force-cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "delete_stuck_run": {
+        "attempted": true,
+        "status_code": 403,
+        "outcome": "failed",
+        "error": "{\"message\":\"Could not delete the workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#delete-a-workflow-run\",\"status\":\"403\"}"
+      }
+    },
+    {
+      "run_id": 32211109367,
+      "name": "Diagnose Self Hosted Runners",
+      "status": "queued",
+      "created_at": "2026-08-19T03:09:03Z",
+      "stuck": true,
+      "stuck_age_seconds": 49582,
+      "cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "force_cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#force-cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "delete_stuck_run": {
+        "attempted": true,
+        "status_code": 403,
+        "outcome": "failed",
+        "error": "{\"message\":\"Could not delete the workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#delete-a-workflow-run\",\"status\":\"403\"}"
+      }
+    },
+    {
+      "run_id": 32211654622,
+      "name": "Case 0005 Local Parallel Bootstrap ODA v2",
+      "status": "queued",
+      "created_at": "2026-08-19T03:18:14Z",
+      "stuck": true,
+      "stuck_age_seconds": 49032,
+      "cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "force_cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#force-cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "delete_stuck_run": {
+        "attempted": true,
+        "status_code": 403,
+        "outcome": "failed",
+        "error": "{\"message\":\"Could not delete the workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#delete-a-workflow-run\",\"status\":\"403\"}"
+      }
+    },
+    {
+      "run_id": 32211939334,
+      "name": "Case 0005 Local Parallel Bootstrap ODA",
+      "status": "queued",
+      "created_at": "2026-08-19T03:23:02Z",
+      "stuck": true,
+      "stuck_age_seconds": 48744,
+      "cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "force_cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#force-cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "delete_stuck_run": {
+        "attempted": true,
+        "status_code": 403,
+        "outcome": "failed",
+        "error": "{\"message\":\"Could not delete the workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#delete-a-workflow-run\",\"status\":\"403\"}"
+      }
+    },
+    {
+      "run_id": 32212441741,
+      "name": "Upgrade OpenWorker Nodes V3",
+      "status": "queued",
+      "created_at": "2026-08-19T03:31:24Z",
+      "stuck": true,
+      "stuck_age_seconds": 48242,
+      "cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "force_cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#force-cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "delete_stuck_run": {
+        "attempted": true,
+        "status_code": 403,
+        "outcome": "failed",
+        "error": "{\"message\":\"Could not delete the workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#delete-a-workflow-run\",\"status\":\"403\"}"
+      }
+    },
+    {
+      "run_id": 32212887240,
+      "name": "Bootstrap OpenWorker Three Node Labels V2",
+      "status": "queued",
+      "created_at": "2026-08-19T03:38:54Z",
+      "stuck": true,
+      "stuck_age_seconds": 47793,
+      "cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "force_cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#force-cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "delete_stuck_run": {
+        "attempted": true,
+        "status_code": 403,
+        "outcome": "failed",
+        "error": "{\"message\":\"Could not delete the workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#delete-a-workflow-run\",\"status\":\"403\"}"
+      }
+    },
+    {
+      "run_id": 32212930059,
+      "name": "Case 0005 Local Parallel Bootstrap ODA v3",
+      "status": "queued",
+      "created_at": "2026-08-19T03:39:38Z",
+      "stuck": true,
+      "stuck_age_seconds": 47749,
+      "cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "force_cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#force-cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "delete_stuck_run": {
+        "attempted": true,
+        "status_code": 403,
+        "outcome": "failed",
+        "error": "{\"message\":\"Could not delete the workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#delete-a-workflow-run\",\"status\":\"403\"}"
+      }
+    },
+    {
+      "run_id": 32212983378,
+      "name": "CI",
+      "status": "queued",
+      "created_at": "2026-08-19T03:40:31Z",
+      "stuck": true,
+      "stuck_age_seconds": 47697,
+      "cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "force_cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#force-cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "delete_stuck_run": {
+        "attempted": true,
+        "status_code": 403,
+        "outcome": "failed",
+        "error": "{\"message\":\"Could not delete the workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#delete-a-workflow-run\",\"status\":\"403\"}"
+      }
+    },
+    {
+      "run_id": 32212992346,
+      "name": "Bootstrap OpenWorker Node Service ODA",
+      "status": "queued",
+      "created_at": "2026-08-19T03:40:40Z",
+      "stuck": true,
+      "stuck_age_seconds": 47688,
+      "cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "force_cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#force-cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "delete_stuck_run": {
+        "attempted": true,
+        "status_code": 403,
+        "outcome": "failed",
+        "error": "{\"message\":\"Could not delete the workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#delete-a-workflow-run\",\"status\":\"403\"}"
+      }
+    },
+    {
+      "run_id": 32213239935,
+      "name": "Diagnose Self Hosted Runners",
+      "status": "queued",
+      "created_at": "2026-08-19T03:44:51Z",
+      "stuck": true,
+      "stuck_age_seconds": 47438,
+      "cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "force_cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#force-cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "delete_stuck_run": {
+        "attempted": true,
+        "status_code": 403,
+        "outcome": "failed",
+        "error": "{\"message\":\"Could not delete the workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#delete-a-workflow-run\",\"status\":\"403\"}"
+      }
+    },
+    {
+      "run_id": 32213479651,
+      "name": "CI",
+      "status": "queued",
+      "created_at": "2026-08-19T03:48:55Z",
+      "stuck": true,
+      "stuck_age_seconds": 47194,
+      "cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "force_cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#force-cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "delete_stuck_run": {
+        "attempted": true,
+        "status_code": 403,
+        "outcome": "failed",
+        "error": "{\"message\":\"Could not delete the workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#delete-a-workflow-run\",\"status\":\"403\"}"
+      }
+    },
+    {
+      "run_id": 32213529275,
+      "name": "OpenWorker Go Runtime P0-P1",
+      "status": "queued",
+      "created_at": "2026-08-19T03:49:46Z",
+      "stuck": true,
+      "stuck_age_seconds": 47143,
+      "cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "force_cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#force-cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "delete_stuck_run": {
+        "attempted": true,
+        "status_code": 403,
+        "outcome": "failed",
+        "error": "{\"message\":\"Could not delete the workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#delete-a-workflow-run\",\"status\":\"403\"}"
+      }
+    },
+    {
+      "run_id": 32213841553,
+      "name": "Case 0005 Local Parallel Bootstrap ODA v3",
+      "status": "queued",
+      "created_at": "2026-08-19T03:55:02Z",
+      "stuck": true,
+      "stuck_age_seconds": 46828,
+      "cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "force_cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#force-cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "delete_stuck_run": {
+        "attempted": true,
+        "status_code": 403,
+        "outcome": "failed",
+        "error": "{\"message\":\"Could not delete the workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#delete-a-workflow-run\",\"status\":\"403\"}"
+      }
+    },
+    {
+      "run_id": 32213863303,
+      "name": "Case 0005 O87 Probe ODA Authority",
+      "status": "queued",
+      "created_at": "2026-08-19T03:55:22Z",
+      "stuck": true,
+      "stuck_age_seconds": 46808,
+      "cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "force_cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#force-cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "delete_stuck_run": {
+        "attempted": true,
+        "status_code": 403,
+        "outcome": "failed",
+        "error": "{\"message\":\"Could not delete the workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#delete-a-workflow-run\",\"status\":\"403\"}"
+      }
+    },
+    {
+      "run_id": 32214580870,
+      "name": "Diagnose Self Hosted Runners",
+      "status": "queued",
+      "created_at": "2026-08-19T04:07:14Z",
+      "stuck": true,
+      "stuck_age_seconds": 46097,
+      "cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "force_cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#force-cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "delete_stuck_run": {
+        "attempted": true,
+        "status_code": 403,
+        "outcome": "failed",
+        "error": "{\"message\":\"Could not delete the workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#delete-a-workflow-run\",\"status\":\"403\"}"
+      }
+    },
+    {
+      "run_id": 32214657897,
+      "name": "Upgrade OpenWorker Nodes V3",
+      "status": "pending",
+      "created_at": "2026-08-19T04:08:32Z",
+      "stuck": true,
+      "stuck_age_seconds": 46019,
+      "cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "force_cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#force-cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "delete_stuck_run": {
+        "attempted": true,
+        "status_code": 403,
+        "outcome": "failed",
+        "error": "{\"message\":\"Could not delete the workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#delete-a-workflow-run\",\"status\":\"403\"}"
+      }
+    },
+    {
+      "run_id": 32215172315,
+      "name": "Case 0005 O87 Probe ODA Authority",
+      "status": "queued",
+      "created_at": "2026-08-19T04:16:39Z",
+      "stuck": true,
+      "stuck_age_seconds": 45533,
+      "cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "force_cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#force-cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "delete_stuck_run": {
+        "attempted": true,
+        "status_code": 403,
+        "outcome": "failed",
+        "error": "{\"message\":\"Could not delete the workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#delete-a-workflow-run\",\"status\":\"403\"}"
+      }
+    },
+    {
+      "run_id": 32215172533,
+      "name": "Case 0005 Local Controller Kick ODA",
+      "status": "queued",
+      "created_at": "2026-08-19T04:16:39Z",
+      "stuck": true,
+      "stuck_age_seconds": 45533,
+      "cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "force_cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#force-cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "delete_stuck_run": {
+        "attempted": true,
+        "status_code": 403,
+        "outcome": "failed",
+        "error": "{\"message\":\"Could not delete the workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#delete-a-workflow-run\",\"status\":\"403\"}"
+      }
+    },
+    {
+      "run_id": 32215665554,
+      "name": "Case 0005 ODA Recover And Local Start",
+      "status": "queued",
+      "created_at": "2026-08-19T04:24:47Z",
+      "stuck": true,
+      "stuck_age_seconds": 45045,
+      "cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "force_cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#force-cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "delete_stuck_run": {
+        "attempted": true,
+        "status_code": 403,
+        "outcome": "failed",
+        "error": "{\"message\":\"Could not delete the workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#delete-a-workflow-run\",\"status\":\"403\"}"
+      }
+    },
+    {
+      "run_id": 32215665558,
+      "name": "Case 0005 Local Controller Kick ODA",
+      "status": "queued",
+      "created_at": "2026-08-19T04:24:47Z",
+      "stuck": true,
+      "stuck_age_seconds": 45046,
+      "cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "force_cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#force-cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "delete_stuck_run": {
+        "attempted": true,
+        "status_code": 403,
+        "outcome": "failed",
+        "error": "{\"message\":\"Could not delete the workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#delete-a-workflow-run\",\"status\":\"403\"}"
+      }
+    },
+    {
+      "run_id": 32216681635,
+      "name": "CI",
+      "status": "queued",
+      "created_at": "2026-08-19T04:41:40Z",
+      "stuck": true,
+      "stuck_age_seconds": 44033,
+      "cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "force_cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#force-cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "delete_stuck_run": {
+        "attempted": true,
+        "status_code": 403,
+        "outcome": "failed",
+        "error": "{\"message\":\"Could not delete the workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#delete-a-workflow-run\",\"status\":\"403\"}"
+      }
+    },
+    {
+      "run_id": 32216789206,
+      "name": "OpenWorker Go Runtime CI",
+      "status": "queued",
+      "created_at": "2026-08-19T04:43:31Z",
+      "stuck": true,
+      "stuck_age_seconds": 43923,
+      "cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "force_cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#force-cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "delete_stuck_run": {
+        "attempted": true,
+        "status_code": 403,
+        "outcome": "failed",
+        "error": "{\"message\":\"Could not delete the workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#delete-a-workflow-run\",\"status\":\"403\"}"
+      }
+    },
+    {
+      "run_id": 32217954239,
+      "name": "Bootstrap OpenWorker Three Node Labels V2",
+      "status": "queued",
+      "created_at": "2026-08-19T05:02:45Z",
+      "stuck": true,
+      "stuck_age_seconds": 42769,
+      "cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "force_cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#force-cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "delete_stuck_run": {
+        "attempted": true,
+        "status_code": 403,
+        "outcome": "failed",
+        "error": "{\"message\":\"Could not delete the workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#delete-a-workflow-run\",\"status\":\"403\"}"
+      }
+    },
+    {
+      "run_id": 32218021940,
+      "name": "Case 0005 O87 Probe ODA Authority",
+      "status": "queued",
+      "created_at": "2026-08-19T05:03:52Z",
+      "stuck": true,
+      "stuck_age_seconds": 42703,
+      "cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "force_cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#force-cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "delete_stuck_run": {
+        "attempted": true,
+        "status_code": 403,
+        "outcome": "failed",
+        "error": "{\"message\":\"Could not delete the workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#delete-a-workflow-run\",\"status\":\"403\"}"
+      }
+    },
+    {
+      "run_id": 32218161307,
+      "name": "Bootstrap OpenWorker Node Service UL7",
+      "status": "queued",
+      "created_at": "2026-08-19T05:06:07Z",
+      "stuck": true,
+      "stuck_age_seconds": 42568,
+      "cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "force_cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#force-cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "delete_stuck_run": {
+        "attempted": true,
+        "status_code": 403,
+        "outcome": "failed",
+        "error": "{\"message\":\"Could not delete the workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#delete-a-workflow-run\",\"status\":\"403\"}"
+      }
+    },
+    {
+      "run_id": 32219222962,
+      "name": "Diagnose Self Hosted Runners",
+      "status": "queued",
+      "created_at": "2026-08-19T05:23:11Z",
+      "stuck": true,
+      "stuck_age_seconds": 41544,
+      "cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "force_cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#force-cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "delete_stuck_run": {
+        "attempted": true,
+        "status_code": 403,
+        "outcome": "failed",
+        "error": "{\"message\":\"Could not delete the workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#delete-a-workflow-run\",\"status\":\"403\"}"
+      }
+    },
+    {
+      "run_id": 32221162177,
+      "name": "Case 0005 Local Parallel Bootstrap ODA v3",
+      "status": "queued",
+      "created_at": "2026-08-19T05:53:42Z",
+      "stuck": true,
+      "stuck_age_seconds": 39714,
+      "cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "force_cancel": {
+        "attempted": true,
+        "status_code": 500,
+        "outcome": "failed",
+        "error": "{\"message\":\"Failed to cancel workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#force-cancel-a-workflow-run\",\"status\":\"500\"}"
+      },
+      "delete_stuck_run": {
+        "attempted": true,
+        "status_code": 403,
+        "outcome": "failed",
+        "error": "{\"message\":\"Could not delete the workflow run\",\"documentation_url\":\"https://docs.github.com/rest/actions/workflow-runs#delete-a-workflow-run\",\"status\":\"403\"}"
+      }
+    },
+    {
+      "run_id": 32278606437,
+      "name": "OpenWorker Go Runtime CI",
+      "status": "in_progress",
+      "created_at": "2026-08-19T16:54:39Z",
+      "stuck": false,
+      "stuck_age_seconds": 57,
+      "cancel": {
+        "attempted": true,
+        "status_code": 202,
+        "outcome": "success"
+      },
+      "force_cancel": {
+        "attempted": false,
+        "outcome": ""
+      },
+      "delete_stuck_run": {
+        "attempted": false,
+        "outcome": ""
+      }
+    },
+    {
+      "run_id": 32278606681,
+      "name": "CI",
+      "status": "in_progress",
+      "created_at": "2026-08-19T16:54:39Z",
+      "stuck": false,
+      "stuck_age_seconds": 58,
+      "cancel": {
+        "attempted": true,
+        "status_code": 202,
+        "outcome": "success"
+      },
+      "force_cancel": {
+        "attempted": false,
+        "outcome": ""
+      },
+      "delete_stuck_run": {
+        "attempted": false,
+        "outcome": ""
+      }
+    }
+  ],
+  "cancelled_ids": [
+    32278606437,
+    32278606681
+  ],
+  "deleted_ids": null,
+  "remaining_after": [
+    {
+      "id": 32210076404,
+      "name": "Case 0005 PDF Input Locator UL7",
+      "status": "in_progress",
+      "created_at": "2026-08-19T02:51:54Z"
+    },
+    {
+      "id": 32210372689,
+      "name": "Bootstrap OpenWorker Node Service O87",
+      "status": "queued",
+      "created_at": "2026-08-19T02:56:57Z"
+    },
+    {
+      "id": 32210415708,
+      "name": "Diagnose Self Hosted Runners",
+      "status": "queued",
+      "created_at": "2026-08-19T02:57:41Z"
+    },
+    {
+      "id": 32210916495,
+      "name": "Upgrade OpenWorker Nodes V2",
+      "status": "queued",
+      "created_at": "2026-08-19T03:05:53Z"
+    },
+    {
+      "id": 32211109367,
+      "name": "Diagnose Self Hosted Runners",
+      "status": "queued",
+      "created_at": "2026-08-19T03:09:03Z"
+    },
+    {
+      "id": 32211654622,
+      "name": "Case 0005 Local Parallel Bootstrap ODA v2",
+      "status": "queued",
+      "created_at": "2026-08-19T03:18:14Z"
+    },
+    {
+      "id": 32211939334,
+      "name": "Case 0005 Local Parallel Bootstrap ODA",
+      "status": "queued",
+      "created_at": "2026-08-19T03:23:02Z"
+    },
+    {
+      "id": 32212441741,
+      "name": "Upgrade OpenWorker Nodes V3",
+      "status": "queued",
+      "created_at": "2026-08-19T03:31:24Z"
+    },
+    {
+      "id": 32212887240,
+      "name": "Bootstrap OpenWorker Three Node Labels V2",
+      "status": "queued",
+      "created_at": "2026-08-19T03:38:54Z"
+    },
+    {
+      "id": 32212930059,
+      "name": "Case 0005 Local Parallel Bootstrap ODA v3",
+      "status": "queued",
+      "created_at": "2026-08-19T03:39:38Z"
+    },
+    {
+      "id": 32212983378,
+      "name": "CI",
+      "status": "queued",
+      "created_at": "2026-08-19T03:40:31Z"
+    },
+    {
+      "id": 32212992346,
+      "name": "Bootstrap OpenWorker Node Service ODA",
+      "status": "queued",
+      "created_at": "2026-08-19T03:40:40Z"
+    },
+    {
+      "id": 32213239935,
+      "name": "Diagnose Self Hosted Runners",
+      "status": "queued",
+      "created_at": "2026-08-19T03:44:51Z"
+    },
+    {
+      "id": 32213479651,
+      "name": "CI",
+      "status": "queued",
+      "created_at": "2026-08-19T03:48:55Z"
+    },
+    {
+      "id": 32213529275,
+      "name": "OpenWorker Go Runtime P0-P1",
+      "status": "queued",
+      "created_at": "2026-08-19T03:49:46Z"
+    },
+    {
+      "id": 32213841553,
+      "name": "Case 0005 Local Parallel Bootstrap ODA v3",
+      "status": "queued",
+      "created_at": "2026-08-19T03:55:02Z"
+    },
+    {
+      "id": 32213863303,
+      "name": "Case 0005 O87 Probe ODA Authority",
+      "status": "queued",
+      "created_at": "2026-08-19T03:55:22Z"
+    },
+    {
+      "id": 32214580870,
+      "name": "Diagnose Self Hosted Runners",
+      "status": "queued",
+      "created_at": "2026-08-19T04:07:14Z"
+    },
+    {
+      "id": 32214657897,
+      "name": "Upgrade OpenWorker Nodes V3",
+      "status": "pending",
+      "created_at": "2026-08-19T04:08:32Z"
+    },
+    {
+      "id": 32215172315,
+      "name": "Case 0005 O87 Probe ODA Authority",
+      "status": "queued",
+      "created_at": "2026-08-19T04:16:39Z"
+    },
+    {
+      "id": 32215172533,
+      "name": "Case 0005 Local Controller Kick ODA",
+      "status": "queued",
+      "created_at": "2026-08-19T04:16:39Z"
+    },
+    {
+      "id": 32215665554,
+      "name": "Case 0005 ODA Recover And Local Start",
+      "status": "queued",
+      "created_at": "2026-08-19T04:24:47Z"
+    },
+    {
+      "id": 32215665558,
+      "name": "Case 0005 Local Controller Kick ODA",
+      "status": "queued",
+      "created_at": "2026-08-19T04:24:47Z"
+    },
+    {
+      "id": 32216681635,
+      "name": "CI",
+      "status": "queued",
+      "created_at": "2026-08-19T04:41:40Z"
+    },
+    {
+      "id": 32216789206,
+      "name": "OpenWorker Go Runtime CI",
+      "status": "queued",
+      "created_at": "2026-08-19T04:43:31Z"
+    },
+    {
+      "id": 32217954239,
+      "name": "Bootstrap OpenWorker Three Node Labels V2",
+      "status": "queued",
+      "created_at": "2026-08-19T05:02:45Z"
+    },
+    {
+      "id": 32218021940,
+      "name": "Case 0005 O87 Probe ODA Authority",
+      "status": "queued",
+      "created_at": "2026-08-19T05:03:52Z"
+    },
+    {
+      "id": 32218161307,
+      "name": "Bootstrap OpenWorker Node Service UL7",
+      "status": "queued",
+      "created_at": "2026-08-19T05:06:07Z"
+    },
+    {
+      "id": 32219222962,
+      "name": "Diagnose Self Hosted Runners",
+      "status": "queued",
+      "created_at": "2026-08-19T05:23:11Z"
+    },
+    {
+      "id": 32221162177,
+      "name": "Case 0005 Local Parallel Bootstrap ODA v3",
+      "status": "queued",
+      "created_at": "2026-08-19T05:53:42Z"
+    }
+  ],
+  "outcome": "FAIL",
+  "verified_at": "2026-08-19T17:02:39Z"
+}
