@@ -124,6 +124,13 @@ func mapStepInputs(step *Step,w Worklist,workspaceRoot,machine,specPath string)(
         parent:=findStep(w.Steps,"0005-020");if parent==nil||!strings.EqualFold(parent.Status,"SUCCEEDED"){return "",nil,fmt.Errorf("0005-025 requires succeeded 0005-020")}
         raw:=strings.TrimSpace(fmt.Sprint(parent.Evidence["storyboard_request"]));if raw==""{return "",nil,fmt.Errorf("0005-020 evidence missing storyboard_request")};rel,err:=workspaceRelativeExistingFile(workspaceRoot,raw,"storyboard_request");if err!=nil{return "",nil,err}
         return step.AllowedActions[0],map[string]any{"workspace_root":workspaceRoot,"assigned_host":machine,"request_relpath":rel,"output_relpath":filepath.Join("presentation","storyboard-text-only.pptx")},nil
+    case "0005-026":
+        if len(step.AllowedActions)!=1||step.AllowedActions[0]!="openworker.case.publish-artifacts"{return "",nil,fmt.Errorf("0005-026 action contract mismatch: %v",step.AllowedActions)}
+        parent:=findStep(w.Steps,"0005-025");if parent==nil||!strings.EqualFold(parent.Status,"SUCCEEDED"){return "",nil,fmt.Errorf("0005-026 requires succeeded 0005-025")}
+        artifacts:=make([]string,0,3)
+        for _,key:=range []string{"storyboard_pptx","storyboard_manifest","reopen_receipt"}{raw:=strings.TrimSpace(fmt.Sprint(parent.Evidence[key]));if raw==""{return "",nil,fmt.Errorf("0005-025 evidence missing %s",key)};rel,err:=workspaceRelativeExistingFile(workspaceRoot,raw,key);if err!=nil{return "",nil,err};artifacts=append(artifacts,filepath.ToSlash(rel))}
+        revisionID:=fmt.Sprintf("case0005-text-storyboard-r%06d",w.Revision);workCode:=fmt.Sprintf("CASE0005-TEXT-STORYBOARD-R%06d",w.Revision)
+        return step.AllowedActions[0],map[string]any{"workspace_root":workspaceRoot,"assigned_host":machine,"case_id":w.CaseID,"step_id":"0005-026","revision_id":revisionID,"work_code":workCode,"artifacts":artifacts},nil
     default:
         return "",nil,fmt.Errorf("Go continue mapping not implemented for %s",step.StepID)
     }
