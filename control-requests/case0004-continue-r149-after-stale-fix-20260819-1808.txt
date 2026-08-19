@@ -1,0 +1,6 @@
+command: case0004_continue
+requested_by: ChatGPT
+case_id: 0004
+machine: DESKTOP-O87PJNR
+purpose: Reconcile stale revision 148 terminal failure into WorkLedger, close stale fanout state, then advance revision 149 to 0004-0481.
+Boundary: transient command transport only; GitHub Actions does not execute Case business work.
