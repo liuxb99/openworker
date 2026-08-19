@@ -9,6 +9,7 @@ on:
       - 'scripts/openworker-job-started.cmd'
       - 'scripts/install-openworker-runner-hook.ps1'
       - '.github/workflows/smoke-openworker-embedded-control.yml'
+      - 'examples/control-envelope/hook-smoke-marker.txt'
 
 permissions:
   contents: read
@@ -20,6 +21,12 @@ jobs:
     timeout-minutes: 2
     steps:
       - uses: actions/checkout@v4
+      - name: Direct pre-install hook smoke without secret
+        shell: powershell
+        run: |
+          Remove-Item Env:OPENWORKER_CONTROL -ErrorAction SilentlyContinue
+          & .\scripts\openworker-job-started-hook.ps1
+          if($LASTEXITCODE -ne 0){ throw "passthrough hook failed exit=$LASTEXITCODE" }
       - name: Ordinary workflow body
         shell: powershell
         run: |
@@ -34,6 +41,11 @@ jobs:
         {"schema":"openworker.control-envelope.v1","request_id":"case0005-hook-smoke-001","command":"CASE.STATUS","machine":"DESKTOP-ODAQN0D","case_id":"0005","policy":{"max_parallel":4,"join":"case-defined","fail_closed":true}}
     steps:
       - uses: actions/checkout@v4
+      - name: Direct pre-install hook smoke with recognized secret
+        shell: powershell
+        run: |
+          & .\scripts\openworker-job-started-hook.ps1
+          if($LASTEXITCODE -ne 0){ throw "recognized-secret hook failed exit=$LASTEXITCODE" }
       - name: Body reached after hook
         shell: powershell
         run: |
