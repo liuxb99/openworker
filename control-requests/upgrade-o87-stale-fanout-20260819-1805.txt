@@ -1,0 +1,4 @@
+requested_by: ChatGPT
+machine: DESKTOP-O87PJNR
+purpose: Deploy stale terminal fanout reconciliation fix for Case0004 revision 149 retry.
+boundary: deployment only; no Case business execution.
