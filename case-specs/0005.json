@@ -17,12 +17,23 @@
   "approval_artifact_return": {
     "transport": "google-drive-api",
     "capability": "openworker.case.publish-artifacts",
+    "review_consumer": "chatgpt-drive-connector",
+    "default_drive_root_when_unconfigured": "root",
     "text_storyboard_publish_step": "0005-026",
     "illustrated_storyboard_publish_step": "0005-056",
+    "final_review_publish_step": "0005-090",
+    "final_review_required_artifacts": [
+      "final/final.mp4",
+      "immutable WorkLedger revision manifest"
+    ],
     "github_actions_allowed": false,
+    "github_artifact_transport_allowed": false,
     "immutable_manifest_required": true,
     "sha256_required": true,
-    "drive_receipt_required": true
+    "drive_receipt_required": true,
+    "drive_file_ids_required": true,
+    "drive_web_view_links_required": true,
+    "chatgpt_review_ready_required": true
   },
   "execution_policy": {
     "normal_mode": "local_supervisor",
@@ -55,6 +66,7 @@
     "success_requires_real_four_slot_verification": true,
     "success_requires_current_operational_four_plus_four_heartbeats": true,
     "success_requires_queue_owned_fanout": true,
-    "success_requires_local_artifact_return": true
+    "success_requires_local_artifact_return": true,
+    "success_requires_chatgpt_visible_drive_artifacts": true
   }
 }
