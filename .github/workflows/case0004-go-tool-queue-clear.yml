@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/case0004-go-tool-queue-clear.yml'
+      - 'control-triggers/queue-clear-case0005-*.txt'
   workflow_dispatch:
 
 permissions:
