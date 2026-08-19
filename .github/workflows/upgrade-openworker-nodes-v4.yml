@@ -1,4 +1,5 @@
 name: Upgrade OpenWorker Nodes V4
+# Registered from an authenticated user push so workflow_dispatch is available.
 
 on:
   workflow_dispatch:
