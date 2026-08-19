@@ -1,6 +1,6 @@
 param(
   [Parameter(Mandatory=$true)]
-  [ValidateSet('supervisor_status','case_status','case_diagnose','case_continue','queue_clear')]
+  [ValidateSet('supervisor_status','case_status','case_diagnose','case_bootstrap','case_continue','queue_clear')]
   [string]$Command,
   [string]$RequestId = '',
   [string]$ExpectedMachine = 'DESKTOP-ODAQN0D'
@@ -29,12 +29,16 @@ if(Test-Path -LiteralPath $cachePath -PathType Leaf){
   exit 0
 }
 
-$ctl=Join-Path $env:ProgramData 'OpenWorker\bin\openworkerctl.exe'
+$ctl=Join-Path $env:ProgramData 'OpenWorker\bin\openworker.exe'
+if(-not(Test-Path -LiteralPath $ctl -PathType Leaf)){
+  $ctl=Join-Path $env:ProgramData 'OpenWorker\bin\openworkerctl.exe'
+}
 $cliArgs=@()
 switch($Command){
   'supervisor_status' { $cliArgs=@('supervisor','status') }
   'case_status'       { $cliArgs=@('case','status','0005') }
   'case_diagnose'     { $cliArgs=@('case','diagnose','0005') }
+  'case_bootstrap'    { $cliArgs=@('case','bootstrap','0005') }
   'case_continue'     { $cliArgs=@('case','continue','0005') }
   'queue_clear'       { $cliArgs=@('queue','clear','DESKTOP-ODAQN0D') }
   default             { throw "unsupported command: $Command" }
@@ -70,18 +74,18 @@ $started=[DateTimeOffset]::UtcNow
 
 if(-not(Test-Path -LiteralPath $ctl -PathType Leaf)){
   $exitCode=127
-  $errorText="openworkerctl is not installed: $ctl; deploy/install control plane first"
+  $errorText="OpenWorker control executable is not installed: $ctl"
 }else{
   try{
     $raw=& $ctl @cliArgs 2>&1 | Out-String
     $exitCode=$LASTEXITCODE
     if($exitCode -ne 0){
-      $errorText="openworkerctl failed exit=$exitCode output=$raw"
+      $errorText="OpenWorker control command failed exit=$exitCode output=$raw"
     }else{
       try{ $result=$raw | ConvertFrom-Json -ErrorAction Stop }
       catch{
         $exitCode=70
-        $errorText="openworkerctl returned non-JSON output: $raw"
+        $errorText="OpenWorker control command returned non-JSON output: $raw"
       }
     }
   }catch{
@@ -98,13 +102,20 @@ if($accepted -and $Command -eq 'case_continue'){
     $errorText='case_continue did not return accepted=true'
   }
 }
+if($accepted -and $Command -eq 'case_bootstrap'){
+  if($result.controller -ne 'go-native' -or $result.python_required -eq $true -or $result.stage -ne 'go_native_bootstrap_completed'){
+    $accepted=$false
+    $exitCode=73
+    $errorText='case_bootstrap did not return Go-native completed bootstrap evidence'
+  }
+}
 
 $receipt=[ordered]@{
   schema='openworker.command-transport.v1'
   transport='github_actions'
   request_id=$RequestId
   command=$Command
-  case_id=if($Command -in @('case_status','case_diagnose','case_continue')){'0005'}else{$null}
+  case_id=if($Command -in @('case_status','case_diagnose','case_bootstrap','case_continue')){'0005'}else{$null}
   machine='DESKTOP-ODAQN0D'
   accepted=$accepted
   exit_code=$exitCode
