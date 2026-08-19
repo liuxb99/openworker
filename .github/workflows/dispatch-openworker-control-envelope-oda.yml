@@ -23,6 +23,10 @@ on:
         description: Max local parallelism (1-4)
         required: false
         default: '4'
+  push:
+    branches: [main]
+    paths:
+      - 'examples/control-envelope/case0005-continue-batch.json'
 
 permissions:
   contents: read
@@ -39,26 +43,31 @@ jobs:
       - name: Build and dispatch control envelope
         shell: powershell
         env:
+          OW_EVENT: ${{ github.event_name }}
           OW_COMMAND: ${{ inputs.command }}
           OW_CASE_ID: ${{ inputs.case_id }}
           OW_REQUEST_ID: ${{ inputs.request_id }}
           OW_MAX_PARALLEL: ${{ inputs.max_parallel }}
         run: |
           $ErrorActionPreference='Stop'
-          $max=[int]$env:OW_MAX_PARALLEL
-          if($max -lt 1 -or $max -gt 4){ throw "max_parallel must be 1..4" }
-          $envelope=[ordered]@{
-            schema='openworker.control-envelope.v1'
-            request_id=$env:OW_REQUEST_ID
-            command=$env:OW_COMMAND
-            machine='DESKTOP-ODAQN0D'
-            case_id=$env:OW_CASE_ID
-            policy=[ordered]@{
-              max_parallel=$max
-              join='case-defined'
-              fail_closed=$true
+          if($env:OW_EVENT -eq 'push'){
+            $path=Join-Path $env:GITHUB_WORKSPACE 'examples\control-envelope\case0005-continue-batch.json'
+          }else{
+            $max=[int]$env:OW_MAX_PARALLEL
+            if($max -lt 1 -or $max -gt 4){ throw "max_parallel must be 1..4" }
+            $envelope=[ordered]@{
+              schema='openworker.control-envelope.v1'
+              request_id=$env:OW_REQUEST_ID
+              command=$env:OW_COMMAND
+              machine='DESKTOP-ODAQN0D'
+              case_id=$env:OW_CASE_ID
+              policy=[ordered]@{
+                max_parallel=$max
+                join='case-defined'
+                fail_closed=$true
+              }
             }
+            $path=Join-Path $env:RUNNER_TEMP 'openworker-control-envelope.json'
+            $envelope | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $path -Encoding UTF8
           }
-          $path=Join-Path $env:RUNNER_TEMP 'openworker-control-envelope.json'
-          $envelope | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $path -Encoding UTF8
           & .\scripts\invoke-openworker-control-envelope-v1.ps1 -EnvelopePath $path -ExpectedMachine 'DESKTOP-ODAQN0D'
