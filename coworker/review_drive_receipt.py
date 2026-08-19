@@ -1,7 +1,10 @@
 """Bounded read-only Google Drive receipt access for review gates.
 
-This is deliberately not a command-ingress client.  It can only locate one exact
-non-folder file under one already-authoritative parent folder and download its bytes.
+This is deliberately not a command-ingress client. It can only locate one exact
+non-folder file under one already-authoritative parent folder and decode a JSON object.
+The receipt may be a raw JSON/text file or a native Google Doc whose plain-text export
+contains the same strict JSON schema; this lets ChatGPT write the receipt with its
+Drive/Docs connector without introducing an arbitrary binary-upload channel.
 """
 from __future__ import annotations
 
@@ -9,6 +12,8 @@ import json
 from typing import Any, Mapping
 
 from .review_drive import DRIVE_API_BASE, GoogleDriveAPIClient, ReviewDriveError, _required_text
+
+_GOOGLE_DOC = "application/vnd.google-apps.document"
 
 
 class GoogleDriveReviewReceiptClient(GoogleDriveAPIClient):
@@ -26,20 +31,28 @@ class GoogleDriveReviewReceiptClient(GoogleDriveAPIClient):
         file_id = str(identity.get("id") or "").strip()
         if not file_id:
             raise ReviewDriveError("Drive review receipt has no file id")
-        response = self._client.get(
-            f"{DRIVE_API_BASE}/files/{file_id}",
-            params={"alt": "media", "supportsAllDrives": "true"},
-            headers=self._headers(),
-        )
+        mime_type = str(identity.get("mimeType") or "").strip()
+        if mime_type == _GOOGLE_DOC:
+            response = self._client.get(
+                f"{DRIVE_API_BASE}/files/{file_id}/export",
+                params={"mimeType": "text/plain"},
+                headers=self._headers(),
+            )
+        else:
+            response = self._client.get(
+                f"{DRIVE_API_BASE}/files/{file_id}",
+                params={"alt": "media", "supportsAllDrives": "true"},
+                headers=self._headers(),
+            )
         if response.status_code >= 400:
             raise ReviewDriveError(f"Drive review receipt download failed HTTP {response.status_code}: {response.text[:500]}")
         body = response.content
         if not body or len(body) > max_bytes:
             raise ReviewDriveError(f"Drive review receipt size is invalid: {len(body)} bytes")
         try:
-            value = json.loads(body.decode("utf-8-sig"))
+            value = json.loads(body.decode("utf-8-sig").strip())
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise ReviewDriveError("Drive review receipt is not valid UTF-8 JSON") from exc
+            raise ReviewDriveError("Drive review receipt is not valid UTF-8 JSON text") from exc
         if not isinstance(value, dict):
             raise ReviewDriveError("Drive review receipt root must be a JSON object")
         return identity, value
