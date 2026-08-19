@@ -4,7 +4,6 @@ import (
     "context"
     "encoding/json"
     "errors"
-    "fmt"
     "net/http"
     "path/filepath"
     "strings"
@@ -23,7 +22,7 @@ type caseContinueRequest struct { CaseID string `json:"case_id"`; Machine string
 func (s *Server) caseContinue(w http.ResponseWriter,r *http.Request){
     var req caseContinueRequest;dec:=json.NewDecoder(http.MaxBytesReader(w,r.Body,64<<10));dec.DisallowUnknownFields();if err:=dec.Decode(&req);err!=nil{writeErr(w,400,err);return}
     req.CaseID=strings.TrimSpace(req.CaseID);req.Machine=strings.TrimSpace(req.Machine);req.WorkspaceRoot=strings.TrimSpace(req.WorkspaceRoot)
-    if req.CaseID!="0005"{writeErr(w,400,fmt.Errorf("unsupported native Go case %q",req.CaseID));return}
+    if req.CaseID==""{writeErr(w,400,errors.New("case_id is required"));return}
     if req.Machine==""{req.Machine=s.machine};if !strings.EqualFold(req.Machine,s.machine){writeErr(w,409,errors.New("case continue must execute on assigned local machine"));return}
     if req.WorkspaceRoot==""||!filepath.IsAbs(req.WorkspaceRoot){writeErr(w,400,errors.New("absolute workspace_root required"));return}
     ctx,cancel:=context.WithTimeout(r.Context(),15*time.Second);defer cancel()
