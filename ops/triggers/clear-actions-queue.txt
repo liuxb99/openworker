@@ -1,1 +1,1 @@
-2026-08-20T00:30:00+08:00 reliable ubuntu-latest queue-clear trigger
+2026-08-20T06:21:00+08:00 clear GitHub Actions transport queue before OpenWorkerNode install
