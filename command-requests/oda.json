@@ -1,9 +1,9 @@
 {
   "schema": "openworker.command-request.v1",
-  "request_id": "20260819-1240-oda-case0005-status-010",
+  "request_id": "20260819-1245-oda-case0005-status-011",
   "command": "case_status",
   "machine": "DESKTOP-ODAQN0D",
   "case_id": "0005",
   "requested_by": "chatgpt",
-  "requested_at": "2026-08-19T12:40:00+08:00"
+  "requested_at": "2026-08-19T12:45:00+08:00"
 }
