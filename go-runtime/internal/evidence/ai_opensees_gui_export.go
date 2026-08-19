@@ -31,8 +31,8 @@ func (s *AIOpenSeesRuntimeState) UnmarshalJSON(data []byte) error {
 	if strings.TrimSpace(provenance.ActiveSourceExportedAt) == "" {
 		return fmt.Errorf("runtime active source exported_at is empty")
 	}
-	if method == "" || !strings.Contains(upperMethod, "MIDAS") || !strings.Contains(upperMethod, "EXPORT") {
-		return fmt.Errorf("runtime active source export_method is not authoritative MIDAS export: %s", method)
+	if method == "" || !strings.Contains(upperMethod, "MIDAS") || !strings.Contains(upperMethod, "GUI") || !strings.Contains(upperMethod, "EXPORT") {
+		return fmt.Errorf("runtime active source export_method is not authoritative MIDAS GUI export: %s", method)
 	}
 	if !provenance.ActiveSourceExportProvenanceValid {
 		return fmt.Errorf("runtime active source export provenance is not valid")
