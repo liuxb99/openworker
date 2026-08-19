@@ -1,7 +1,7 @@
 # OpenWorker Embedded Control「密語」Runner Hook v1
 
 > 日期時間：2026-08-19 18:46 +08:00（Asia/Taipei）
-> 狀態：DESIGN → IMPLEMENTATION
+> 狀態：IMPLEMENTED — REAL RUNNER HOOK INSTALL/SMOKE PENDING
 > Repo：`liuxb99/openworker`
 > 目標機器：`DESKTOP-ODAQN0D`
 
@@ -222,43 +222,80 @@ workflow C → 自己寫 queue 邏輯
 
 以後新增 OpenWorker 命令主要改 OpenWorker allowlist / dispatcher，不需要把 business logic 複製到每支 workflow。
 
-## 9. 實作範圍
+## 9. 已完成實作
 
-本批開發：
+2026-08-19 18:46 +08:00 後已完成並合併至 `main`：
 
-1. `openworker-job-started-hook.ps1`：讀 `OPENWORKER_CONTROL`；無密語直接 exit 0；有密語則驗證與 dispatch。
-2. `openworker-job-started.cmd`：Windows runner hook 穩定入口。
-3. `install-openworker-runner-hook.ps1`：一次性安裝到 `C:\ProgramData\OpenWorker\hooks`，設定 runner `.env` 的 `ACTIONS_RUNNER_HOOK_JOB_STARTED`。
-4. 使用既有 `invoke-openworker-control-envelope-v1.ps1` 作為固定 dispatcher。
-5. smoke workflow：只夾帶 `OPENWORKER_CONTROL`，不寫 OpenWorker business dispatch step，用來驗證 runner hook 是否真的攔截到密語。
+1. `scripts/openworker-job-started-hook.ps1`
+   - 無 `OPENWORKER_CONTROL`：passthrough / exit 0。
+   - 有密語：解析 JSON、驗證 schema / request_id / command / machine / max_parallel。
+   - allowlist：`CASE.STATUS`、`CASE.CONTINUE_BATCH`、`SUPERVISOR.STATUS`、`QUEUE.CLEAR`。
+   - 未知命令 fail-closed。
+   - 合法後呼叫既有 `invoke-openworker-control-envelope-v1.ps1`。
+2. `scripts/openworker-job-started.cmd`
+   - Windows runner 的固定 Job Hook entrypoint。
+3. `scripts/install-openworker-runner-hook.ps1`
+   - 安裝 hook 到 `C:\ProgramData\OpenWorker\hooks`。
+   - 寫入 runner `.env`：`ACTIONS_RUNNER_HOOK_JOB_STARTED=...`。
+   - 明確回報 `restart_required=true`。
+4. `.github/workflows/smoke-openworker-embedded-control.yml`
+   - 無密語 passthrough smoke。
+   - `CASE.STATUS` 認得密語 smoke。
+5. PR #70 已合併，merge commit：`f33be5819196d7371a87a2942f6a5c2448f19789`。
 
-## 10. 驗收
+## 10. REAL 測試紀錄
 
-### A. 無密語
+### 10.1 安裝前 smoke 設計
 
-普通 workflow 在 ODA runner 上執行，Hook 不應改變結果。
+為避免直接修改 ODA 常駐 runner 後才發現 parser/dispatcher 有問題，先把 smoke workflow 改成直接在 ODA self-hosted job 中呼叫 hook 腳本：
 
-### B. 認得密語
+- Test A：移除 `OPENWORKER_CONTROL`，預期 hook exit 0，普通 workflow body 繼續。
+- Test B：設 `CASE.STATUS` Control Envelope，預期 hook 將密語送入 OpenWorker，成功後 workflow body 繼續。
 
-`CASE.STATUS` 或 `CASE.CONTINUE_BATCH` 被 Hook 捕獲並送到 OpenWorker，log 應在 `Set up runner` 階段看到 hook 執行證據。
+### 10.2 觸發結果
 
-### C. 不認得密語
+建立 PR #71：`test: trigger OpenWorker embedded hook smoke`。
 
-未知 command 必須 fail-closed，workflow 不得繼續假裝成功。
+觸發提交：
 
-### D. Case0005
+- `01ca06c3cb34cc5c8cd90647944f6c0d2afd2317`
+- 再次 synchronize：`015815b2ed8610def3fd3e60def4475aeb42587e`
 
-以 `CASE.CONTINUE_BATCH` 驗證：
+兩次查詢均沒有取得對應的 GitHub workflow run；commit combined status 只有 `CodeRabbit: pending`，沒有 smoke workflow status。
 
-- 若 0005-010 仍 active，不重複 business work；
-- 若已 terminal，OpenWorker reconcile 後只派合法 READY work；
-- fanout 到達時才驗證多 work / 4-slot；
-- 狀態回報需包含 supervisor / queue / blocker 證據。
+因此目前**不能宣稱 ODA smoke 成功，也不能宣稱 Hook 失敗**。能確認的是：測試尚未真正進入 ODA runner，阻塞點仍在 GitHub Actions workflow trigger / scheduling / connector visibility 層。
 
-## 11. 結論
+### 10.3 目前 REAL 狀態
+
+```text
+中文規格                  COMPLETE
+Control Envelope v1        COMPLETE
+Job Hook parser/validator  COMPLETE
+Windows hook entrypoint    COMPLETE
+一次性 installer           COMPLETE
+Smoke workflow             COMPLETE
+合併 main                  COMPLETE
+腳本級 ODA smoke           NOT YET EXECUTED / NO RUN EVIDENCE
+Runner .env 安裝           NOT YET DONE
+Runner restart             NOT YET DONE
+自動密語攔截 REAL 驗證     NOT YET DONE
+Case0005 4-slot REAL 驗證   NOT YET DONE
+```
+
+## 11. 下一個合法驗證步驟
+
+1. 先讓 ODA self-hosted smoke workflow 真正取得 runner execution slot；
+2. 確認直接 hook smoke 的 passthrough / recognized-secret 都成功；
+3. 再執行 `install-openworker-runner-hook.ps1` 寫入 runner `.env`；
+4. 重啟 runner service；
+5. 再跑一個 workflow，這次**不在 steps 裡呼叫 hook**，只夾帶 `OPENWORKER_CONTROL`；
+6. 在 `Set up runner` / hook log 證明 `ACTIONS_RUNNER_HOOK_JOB_STARTED` 自動攔截；
+7. 最後用 `CASE.CONTINUE_BATCH` 驗證 Case0005，不重複 active work，並在合法 fanout 時觀察 4-slot。
+
+## 12. 結論
 
 這個設計正式把使用者提出的概念固定為：
 
 > **GitHub Action 只是正常 Action；`OPENWORKER_CONTROL` 是夾帶密語；self-hosted runner Job Hook 是統一攔截器；OpenWorker 是唯一解讀並執行密語的總控。**
 
-如此可做到「一次安裝 Hook，之後 workflow 只需要夾帶資料，不再各自維護 OpenWorker business logic」。
+目前設計與代碼已完成；REAL runner hook 自動攔截仍需取得 ODA runner 真實執行證據後才算閉環。
