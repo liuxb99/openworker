@@ -12,6 +12,10 @@ on:
           - case_status
           - case_continue
           - queue_clear
+  push:
+    branches: [main]
+    paths:
+      - 'command-requests/oda.json'
 
 permissions:
   contents: read
@@ -25,103 +29,64 @@ jobs:
     runs-on: [self-hosted, Windows, X64, ODA]
     timeout-minutes: 2
     steps:
-      - name: Verify fixed ODA computer
+      - uses: actions/checkout@v4
+
+      - name: Resolve fixed transport request
+        id: request
         shell: powershell
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_COMMAND: ${{ inputs.command }}
         run: |
+          $ErrorActionPreference='Stop'
           if($env:COMPUTERNAME -ine 'DESKTOP-ODAQN0D'){
             throw "wrong host $env:COMPUTERNAME"
           }
 
-      - name: Dispatch fixed command to local supervisor
-        id: dispatch
-        shell: powershell
-        env:
-          COMMAND: ${{ inputs.command }}
-        run: |
-          $ErrorActionPreference='Stop'
-          $ctl=Join-Path $env:ProgramData 'OpenWorker\bin\openworkerctl.exe'
-          if(-not(Test-Path -LiteralPath $ctl -PathType Leaf)){
-            throw "openworkerctl is not installed: $ctl; deploy/install control plane first"
+          if($env:EVENT_NAME -eq 'workflow_dispatch'){
+            $command=$env:INPUT_COMMAND
+            $requestId="manual-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          }elseif($env:EVENT_NAME -eq 'push'){
+            $path=Join-Path $env:GITHUB_WORKSPACE 'command-requests\oda.json'
+            if(-not(Test-Path -LiteralPath $path -PathType Leaf)){throw "request missing: $path"}
+            try{$req=Get-Content -LiteralPath $path -Raw | ConvertFrom-Json -ErrorAction Stop}catch{throw "invalid request JSON: $_"}
+            if($req.schema -ne 'openworker.command-request.v1'){throw "unsupported request schema=$($req.schema)"}
+            if($req.machine -ine 'DESKTOP-ODAQN0D'){throw "unsupported request machine=$($req.machine)"}
+            if($req.case_id -and $req.case_id -ne '0005'){throw "unsupported request case_id=$($req.case_id)"}
+            if(-not $req.request_id){throw 'request_id is required'}
+            $command=[string]$req.command
+            $requestId=[string]$req.request_id
+          }else{
+            throw "unsupported event=$env:EVENT_NAME"
           }
 
           $allowed=@('supervisor_status','case_status','case_continue','queue_clear')
-          if($allowed -notcontains $env:COMMAND){
-            throw "unsupported command: $env:COMMAND"
-          }
+          if($allowed -notcontains $command){throw "unsupported command=$command"}
+          "command=$command" >> $env:GITHUB_OUTPUT
+          "request_id=$requestId" >> $env:GITHUB_OUTPUT
 
-          $args=@()
-          switch($env:COMMAND){
-            'supervisor_status' { $args=@('supervisor','status') }
-            'case_status'       { $args=@('case','status','0005') }
-            'case_continue'     { $args=@('case','continue','0005') }
-            'queue_clear'       { $args=@('queue','clear','DESKTOP-ODAQN0D') }
-            default             { throw "unsupported command: $env:COMMAND" }
-          }
-
-          $raw=& $ctl @args 2>&1 | Out-String
-          if($LASTEXITCODE -ne 0){
-            throw "openworkerctl failed exit=$LASTEXITCODE output=$raw"
-          }
-          try{
-            $result=$raw | ConvertFrom-Json -ErrorAction Stop
-          }catch{
-            throw "openworkerctl returned non-JSON output: $raw"
-          }
-
-          function Test-Accepted($Value){
-            if($null -eq $Value){ return $false }
-            if($Value -is [bool]){ return $Value }
-            if($Value -is [System.Collections.IDictionary]){
-              foreach($k in $Value.Keys){
-                if(([string]$k -ieq 'accepted') -and ($Value[$k] -eq $true)){ return $true }
-                if(Test-Accepted $Value[$k]){ return $true }
-              }
-              return $false
-            }
-            if($Value -is [pscustomobject]){
-              foreach($p in $Value.PSObject.Properties){
-                if(($p.Name -ieq 'accepted') -and ($p.Value -eq $true)){ return $true }
-                if(Test-Accepted $p.Value){ return $true }
-              }
-              return $false
-            }
-            if(($Value -is [System.Collections.IEnumerable]) -and -not($Value -is [string])){
-              foreach($item in $Value){ if(Test-Accepted $item){ return $true } }
-            }
-            return $false
-          }
-
-          if($env:COMMAND -eq 'case_continue' -and -not(Test-Accepted $result)){
-            throw "case_continue did not return accepted=true: $raw"
-          }
-
-          $receipt=[ordered]@{
-            schema='openworker.command-transport.v1'
-            transport='github_actions'
-            command=$env:COMMAND
-            case_id=if($env:COMMAND -in @('case_status','case_continue')){'0005'}else{$null}
-            machine='DESKTOP-ODAQN0D'
-            accepted=$true
-            github_run_id=$env:GITHUB_RUN_ID
-            github_run_attempt=$env:GITHUB_RUN_ATTEMPT
-            github_action_used_for_command_transport=$true
-            github_action_used_for_business_execution=$false
-            dispatched_at=[DateTimeOffset]::UtcNow.ToString('o')
-            result=$result
-          }
-          $json=$receipt | ConvertTo-Json -Depth 30 -Compress
-          Write-Host $json
-          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "### OpenWorker transient command transport"
+      - name: Submit to localhost local supervisor
+        id: dispatch
+        shell: powershell
+        env:
+          COMMAND: ${{ steps.request.outputs.command }}
+          REQUEST_ID: ${{ steps.request.outputs.request_id }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $raw=& "$env:GITHUB_WORKSPACE\scripts\invoke-local-supervisor-command-transport.ps1" -Command $env:COMMAND -RequestId $env:REQUEST_ID -ExpectedMachine 'DESKTOP-ODAQN0D' | Out-String
+          if($LASTEXITCODE -ne 0){throw "transport script failed exit=$LASTEXITCODE output=$raw"}
+          try{$receipt=$raw|ConvertFrom-Json -ErrorAction Stop}catch{throw "non-JSON transport receipt: $raw"}
+          if($receipt.schema -ne 'openworker.command-transport.v1'){throw "unexpected receipt schema=$($receipt.schema)"}
+          if(-not $receipt.accepted){throw "transport not accepted: $raw"}
+          if(-not $receipt.github_action_used_for_command_transport){throw 'command transport flag missing'}
+          if($receipt.github_action_used_for_business_execution){throw 'business execution escaped into GitHub Action'}
+          Write-Host ($receipt|ConvertTo-Json -Depth 30 -Compress)
+          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value '### OpenWorker transient command transport'
           Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value '```json'
-          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value ($receipt | ConvertTo-Json -Depth 30)
+          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value ($receipt|ConvertTo-Json -Depth 30)
           Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value '```'
-
-          "transport_receipt=$json" >> $env:GITHUB_OUTPUT
 
       - name: Assert transport-only boundary
         shell: powershell
         run: |
-          if('${{ inputs.command }}' -notin @('supervisor_status','case_status','case_continue','queue_clear')){
-            throw 'command escaped fixed allowlist'
-          }
           Write-Host 'TRANSPORT_ONLY_VERIFIED github_action_used_for_business_execution=false'
