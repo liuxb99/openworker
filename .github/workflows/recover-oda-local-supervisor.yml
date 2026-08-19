@@ -1,0 +1,22 @@
+name: Recover ODA Local Supervisor
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'command-requests/oda-recover-local-supervisor.txt'
+
+permissions:
+  contents: read
+
+jobs:
+  recover:
+    name: Recover ODA go-tool local supervisor
+    runs-on: [self-hosted, Windows, X64, ODA]
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Activate and REAL verify local supervisor
+        shell: cmd
+        run: >-
+          powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%GITHUB_WORKSPACE%\scripts\activate-case0005-local-supervisor.ps1" -SkipCodeSync
