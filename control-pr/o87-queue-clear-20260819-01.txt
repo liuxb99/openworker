@@ -1,0 +1,5 @@
+requested_by=ChatGPT
+machine=DESKTOP-O87PJNR
+case_id=0004
+purpose=clear stale durable queue before retry with repaired Case dispatch
+business_execution=false
