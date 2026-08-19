@@ -28,7 +28,7 @@ jobs:
           set -euo pipefail
           command=$(printf '%s\n' "$BODY" | sed -nE 's/^[[:space:]]*command:[[:space:]]*([A-Za-z0-9_-]+)[[:space:]]*$/\1/p' | head -n1 | tr '[:upper:]' '[:lower:]')
           case "$command" in
-            drain|reconcile|upgrade|case0004_status|case0004_continue|case0005_clear_continue) ;;
+            drain|reconcile|upgrade|case0004_status|case0004_continue|case0005_clear_continue|case0005_go_drain) ;;
             *) echo "unsupported or missing command: $command" >&2; exit 2 ;;
           esac
           request_id="issue-${{ github.event.issue.number }}-${{ github.run_id }}"
@@ -60,6 +60,9 @@ jobs:
             case0005_clear_continue)
               workflow='dispatch-openworker-control-envelope-oda.yml'
               inputs=$(jq -nc --arg c 'CASE.CLEAR_AND_CONTINUE' --arg r "$REQUEST_ID" --arg case_id '0005' --arg max_parallel '4' '{command:$c,request_id:$r,case_id:$case_id,max_parallel:$max_parallel}')
+              ;;
+            case0005_go_drain)
+              workflow='case0005-go-queue-drain-o87.yml'
               ;;
           esac
           api="https://api.github.com/repos/${REPO}/actions/workflows/${workflow}/dispatches"
