@@ -2,7 +2,7 @@ $ErrorActionPreference='Stop'
 
 $repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $result=[ordered]@{
-  schema='openworker-control-install/v4'
+  schema='openworker-control-install/v5'
   succeeded=$false
   status='FAILED'
   machine=$env:COMPUTERNAME
@@ -50,14 +50,29 @@ try {
 
 $result.observed_at=[DateTimeOffset]::UtcNow.ToString('o')
 $rel="command-results/oda-install/$env:GITHUB_RUN_ID/final.json"
-$resultPath=Join-Path $repoRoot $rel
-New-Item -ItemType Directory -Force -Path (Split-Path $resultPath -Parent)|Out-Null
 $json=$result|ConvertTo-Json -Depth 30
-[IO.File]::WriteAllText($resultPath,$json+[Environment]::NewLine,[Text.UTF8Encoding]::new($false))
+$tempRoot=Join-Path $env:RUNNER_TEMP "openworker-install-publish-$env:GITHUB_RUN_ID"
+Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Force -Path $tempRoot|Out-Null
+$receiptTemp=Join-Path $tempRoot 'final.json'
+[IO.File]::WriteAllText($receiptTemp,$json+[Environment]::NewLine,[Text.UTF8Encoding]::new($false))
+$sumSource=Join-Path $repoRoot 'go-runtime\go.sum'
+$sumTemp=Join-Path $tempRoot 'go.sum'
+if(Test-Path -LiteralPath $sumSource){Copy-Item -LiteralPath $sumSource -Destination $sumTemp -Force}
 Write-Host ($result|ConvertTo-Json -Depth 30 -Compress)
 
 Push-Location $repoRoot
 try {
+  git rebase --abort 2>$null
+  git fetch origin main
+  if($LASTEXITCODE -ne 0){throw 'failed to fetch origin/main before receipt publication'}
+  git reset --hard origin/main
+  if($LASTEXITCODE -ne 0){throw 'failed to reset clean origin/main before receipt publication'}
+  git clean -ffdx
+  $resultPath=Join-Path $repoRoot $rel
+  New-Item -ItemType Directory -Force -Path (Split-Path $resultPath -Parent)|Out-Null
+  Copy-Item -LiteralPath $receiptTemp -Destination $resultPath -Force
+  if(Test-Path -LiteralPath $sumTemp){Copy-Item -LiteralPath $sumTemp -Destination (Join-Path $repoRoot 'go-runtime\go.sum') -Force}
   git config user.name 'openworker-control-plane-installer'
   git config user.email 'openworker-control-plane-installer@users.noreply.github.com'
   git add -- $rel
@@ -66,17 +81,10 @@ try {
   if($LASTEXITCODE -ne 0){
     git commit -m "receipt: unified Go OpenWorker install $env:GITHUB_RUN_ID"
     if($LASTEXITCODE -ne 0){throw 'failed to commit install receipt/module sums'}
-    $pushed=$false
-    for($i=0;$i -lt 3;$i++){
-      git pull --rebase origin main
-      if($LASTEXITCODE -ne 0){git rebase --abort 2>$null; Start-Sleep -Seconds 2; continue}
-      git push origin HEAD:main
-      if($LASTEXITCODE -eq 0){$pushed=$true;break}
-      Start-Sleep -Seconds 2
-    }
-    if(-not $pushed){throw 'failed to push immutable install receipt'}
+    git push origin HEAD:main
+    if($LASTEXITCODE -ne 0){throw 'failed to push clean immutable install receipt'}
   }
-} finally { Pop-Location }
+} finally { Pop-Location; Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue }
 
 if(-not $result.succeeded){Write-Error "ODA_OPENWORKER_INSTALL_FAILED error=$($result.error)";exit 1}
 Write-Host 'ODA_OPENWORKER_UNIFIED_GO_REAL_VERIFIED'
