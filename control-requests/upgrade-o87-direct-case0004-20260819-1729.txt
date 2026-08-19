@@ -1,0 +1,5 @@
+requested_by=ChatGPT
+case_id=0004
+machine=DESKTOP-O87PJNR
+purpose=Deploy latest OpenWorker resident node including fanout retry/stale-state fixes before Case0004 revision 148 retry.
+boundary=deployment only; business execution remains local OpenWorker/go-tool authority.
