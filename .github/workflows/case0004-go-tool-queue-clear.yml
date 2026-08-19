@@ -64,7 +64,6 @@ jobs:
           set -euo pipefail
           current="$GITHUB_RUN_ID"
           out="$RUNNER_TEMP/queue-clear.json"
-          # Preserve this cleaner run itself while cancelling every other active OpenWorker run.
           set +e
           go run ./cmd/gtr-actions-queue \
             --config "$QUEUE_ADMIN_CONFIG" \
@@ -76,7 +75,6 @@ jobs:
           rc=$?
           set -e
           cat "$out"
-          # GitHub cancellation may need a short convergence period. Fresh reads are authoritative.
           clean=false
           for attempt in $(seq 1 12); do
             verify=$(go run ./cmd/gtr-actions-queue \
@@ -109,7 +107,7 @@ jobs:
           final=json.load(open('evidence-queue-clear-final.json',encoding='utf-8'))
           payload={
             'schema_version':'openworker-go-tool-queue-clear-evidence/v1',
-            'case_id':'0004',
+            'case_id':'0005',
             'run_id':os.environ['GITHUB_RUN_ID'],
             'source_commit':os.environ['GITHUB_SHA'],
             'tool':'cmd/gtr-actions-queue',
@@ -129,3 +127,5 @@ jobs:
           git commit -m "evidence(ops): go-tool queue clear ${GITHUB_RUN_ID}"
           git pull --rebase origin main
           git push origin HEAD:main
+
+# case0005 dispatch-gap verification queue clear: 2026-08-19T22:10+08:00
