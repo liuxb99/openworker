@@ -38,13 +38,15 @@ jobs:
           }
           $success=$false
           foreach($root in @($paths|Select-Object -Unique)){
+            $kind='globalroot'
+            if($root -eq 'G:\'){$kind='drive-letter'}
             try {
               $entries=@(Get-ChildItem -LiteralPath $root -Force -ErrorAction Stop|Select-Object -First 20 -ExpandProperty Name)
-              Write-Host ('OPENWORKER_O87_DRIVE_PATH_PASS kind='+(if($root -eq 'G:\'){'drive-letter'}else{'globalroot'})+' entry_count='+$entries.Count)
+              Write-Host ('OPENWORKER_O87_DRIVE_PATH_PASS kind='+$kind+' entry_count='+$entries.Count)
               $success=$true
               break
             } catch {
-              Write-Host ('OPENWORKER_O87_DRIVE_PATH_FAIL kind='+(if($root -eq 'G:\'){'drive-letter'}else{'globalroot'})+' hresult='+$_.Exception.HResult)
+              Write-Host ('OPENWORKER_O87_DRIVE_PATH_FAIL kind='+$kind+' hresult='+$_.Exception.HResult)
             }
           }
           if(-not $success){throw 'DriveFS is not accessible from NetworkService through drive letter or GLOBALROOT device path'}
