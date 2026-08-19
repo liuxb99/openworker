@@ -96,7 +96,7 @@ jobs:
               go test ./internal/api -count=1
               if($LASTEXITCODE -ne 0){throw "resident API tests failed exit=$LASTEXITCODE"}
               $build=[DateTime]::UtcNow.ToString('o')
-              go build -ldflags "-X github.com/liuxb99/openworker/go-runtime/internal/buildinfo.Version=p2-node -X github.com/liuxb99/openworker/go-runtime/internal/buildinfo.Commit=$env:GITHUB_SHA -X github.com/liuxb99/openworker/go-runtime/internal/buildinfo.TargetCommit=$env:GITHUB_SHA -X github.com/liuxb99/openworker/go-runtime/internal/buildinfo.BuildTime=$build" -o openworker-node.exe ./cmd/openworker-node
+              go build -buildvcs=false -ldflags "-X github.com/liuxb99/openworker/go-runtime/internal/buildinfo.Version=p2-node -X github.com/liuxb99/openworker/go-runtime/internal/buildinfo.Commit=$env:GITHUB_SHA -X github.com/liuxb99/openworker/go-runtime/internal/buildinfo.TargetCommit=$env:GITHUB_SHA -X github.com/liuxb99/openworker/go-runtime/internal/buildinfo.BuildTime=$build" -o openworker-node.exe ./cmd/openworker-node
               if($LASTEXITCODE -ne 0){throw "go build failed exit=$LASTEXITCODE"}
             } finally {Pop-Location}
             & "$env:GITHUB_WORKSPACE\scripts\install_openworker_node_service.ps1" -SourceExe "$env:GITHUB_WORKSPACE\go-runtime\openworker-node.exe" -Workers 4 -Capabilities $env:CAPABILITIES -Listen '127.0.0.1:8787'
