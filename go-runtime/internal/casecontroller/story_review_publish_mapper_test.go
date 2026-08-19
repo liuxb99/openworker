@@ -18,11 +18,13 @@ func TestMapStoryViewportReviewPublishCollectsExactArtifacts(t *testing.T) {
 	manifest := mustWrite("evidence/story/render-manifest.json")
 	png := mustWrite("dwg/exports/default/story/1F.png")
 	w := Worklist{CaseID:"0004", Revision:149, Steps:[]Step{
+		{StepID:"0004-010", Status:"PASSED", Evidence:map[string]any{}},
+		{StepID:"0004-020", Status:"PASSED", Evidence:map[string]any{"overview_png":nil}},
 		{StepID:"0004-040", Status:"PASSED", Evidence:map[string]any{"overview_png":overview}},
 		{StepID:"0004-0481", Status:"SUCCEEDED", Evidence:map[string]any{"render_manifest":[]any{manifest},"story_pngs":[]any{png}}},
 		{StepID:"0004-0485", Status:"READY", Dependencies:[]string{"0004-0481"}, AllowedActions:[]string{"openworker.review.publish-story-viewports"}},
 	}}
-	step := &w.Steps[2]
+	step := &w.Steps[4]
 	dispatch, inputs, err := mapActionInputs(step, w, root, "DESKTOP-O87PJNR", "")
 	if err != nil { t.Fatal(err) }
 	if dispatch != "openworker.case.publish-artifacts" { t.Fatalf("dispatch=%s", dispatch) }
