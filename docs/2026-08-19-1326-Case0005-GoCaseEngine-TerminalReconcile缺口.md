@@ -1,6 +1,6 @@
 # Case 0005：Go Case Engine Terminal Reconciliation 實作進度
 
-更新時間：2026-08-19 14:00 +08:00
+更新時間：2026-08-19 14:04 +08:00
 
 ## 1. 現況
 
@@ -78,74 +78,71 @@ Go Case Engine 已加入：
 - step：`0005-026`
 - capability：`openworker.case.publish-artifacts`
 - parent：必須 `0005-025 = SUCCEEDED`
-- artifact inputs：
-  - `storyboard_pptx`
-  - `storyboard_manifest`
-  - `reopen_receipt`
-- 每個 artifact 都必須是真實 workspace 內檔案；轉成 bounded relative path 後才交給 publisher。
+- artifact inputs：`storyboard_pptx`、`storyboard_manifest`、`reopen_receipt`
+- 每個 artifact 都必須是真實 workspace 內檔案；轉 bounded relative path 後才交給 publisher
 - deterministic revision identity：`case0005-text-storyboard-r000014`
 - deterministic work code：`CASE0005-TEXT-STORYBOARD-R000014`
-- GitHub Action 不允許作 artifact transport。
-- artifact publication 必須 ODA 本機經 Google Drive API 完成。
+- GitHub Action 不作 artifact transport
+- publication 必須 ODA 本機經 Google Drive API 完成
 
 ### Drive publisher evidence alias 修復
 
 go-tool-runtime commit：`ec8fbaa7ca053b768a20ad8add18d8b994a8261e`
 
-`openworker.case.publish-artifacts` 原本提供 `published_artifacts` 與 `drive_files`，但 Case worklist acceptance 另要求：
+正式補齊：
 
 - `published_artifact_sha256`
 - `drive_file_ids`
 - `drive_file_links`
 
-現在 leaf capability 已正式輸出這三個穩定 alias，保留原始結構化欄位，不再靠 Case controller 猜測／重算。
+保留既有 `published_artifacts` / `drive_files` 結構化 evidence，不再由 Case controller 猜測。
 
-因此 `0005-026` acceptance contract 已可與 leaf capability 對齊：
+## 7. 0005-027 text-only storyboard approval gate 已 SOURCE IMPLEMENTED
 
-- `review_bundle`
-- `manifest_sha256`
-- `published_artifacts`
-- `published_artifact_sha256`
-- `drive_receipt`
-- `drive_folder_id`
-- `drive_revision_web_view_link`
-- `drive_file_ids`
-- `drive_file_links`
-- `transport`
-- `chatgpt_review_ready`
-- `github_action_used_for_artifact_transport`
+OpenWorker commit：`6166f18c4f798425778d654a96d2bf5b086a1e36`
 
-## 7. ODA claim runtime 自癒已 REAL 部署
+Go Case Engine 已加入：
 
-`gtr-work-agent` resident mode 原本可能因單一 slot non-retryable error 讓整個 4-slot agent process 結束。
+- step：`0005-027`
+- capability：`openworker.review.await-drive`
+- parent：必須 `0005-026 = SUCCEEDED`
+- publish evidence 必須至少有 `drive_folder_id` + `manifest_sha256`
+- fixed evidence path：`evidence/0005-027-drive-gate.json`
+- bounded timeout：43200 秒
+- deterministic work_id 繼續由 case + step + capability + revision 生成
+
+Leaf gate contract 已確認：
+
+- 只接受固定 `step_id=0005-027`
+- 只等待精確 Drive receipt：`case0005-0005-027-receipt.json`
+- receipt schema：`openworker-case0005-drive-gate-receipt/v1`
+- receipt 不得含 command / commands / tool 欄位
+- reviewed_files 必須與本機 0005-026 publish evidence 的 path/SHA/Drive ID 完全一致
+- decision 只允許 `APPROVE` 或 `REJECT`
+- `REJECT` → fail-closed，後續插圖生成保持 blocked
+- `APPROVE` → evidence：
+  - `approved_storyboard_pptx_sha256`
+  - `approval_decision=APPROVE`
+  - `approval_receipt`
+
+因此「先產生無配圖 storyboard PPTX → 使用者 / ChatGPT 確認 → 才開始插圖」已正式進入 Go Case 主控流程。
+
+注意：`openworker.review.await-drive` 目前 leaf capability 仍以 Python script 實作 Drive polling / receipt validation；這符合目前架構原則：**Python 只留 leaf tool，不參與 Case orchestration / queue / state machine**。
+
+## 8. ODA claim runtime 自癒已 REAL 部署
 
 修復 commit：`55e0204ec1f5762c2e664feb166fd5fc175cf4f1`
 
-現在 resident mode：
-
-- slot error 不殺整個 agent；
-- individual slot 自動重啟；
-- backoff：1 → 2 → 4 → 5 秒；
-- `--once` 仍 fail-fast。
+- slot error 不殺整個 agent
+- individual slot 自動重啟
+- backoff：1 → 2 → 4 → 5 秒
+- `--once` 仍 fail-fast
 
 ODA deployment run：`32218984221`，REAL four-slot verifier success。
 
-## 8. Upgrade workflow 六槽搶機缺口已修
-
-舊 Upgrade V3 的 6 個 generic `[self-hosted, Windows, X64]` jobs 已退休；目前固定：
-
-- ODA 一個 label job
-- O87 一個 label job
-- UL7 一個 label job
-
-相關 commits：
-
-- `68bcfa0e0bf3eb831617852828c4b4b6f6be8476`
-- `f579d7010073e5cdaac77475be3031b26225d9f4`
-
 ## 9. Current durable work 可觀測性正在收斂到 resident-node authority
 
-獨立 probe / transient status 曾出現 push-trigger 不穩定，因此 latest resident-node workflow 已直接增加：
+resident-node workflow 已直接增加：
 
 - exact `.openworker/case-controller-last.json` work_id 讀取
 - `GET :8848/api/execution/local-work/<work_id>`
@@ -155,7 +152,7 @@ ODA deployment run：`32218984221`，REAL four-slot verifier success。
 
 workflow commit：`dff9159f9c16cfe94597747952b956bd1a3693a8`
 
-觸發 commit：`898c2c6bf03e19b774ef28245224002dd9a59073`
+最新 full-Go validation trigger：`e63378d8f712e13a1cfa6261c8de8c8ed319b22d`
 
 這條 workflow 在 publish current-work receipt 前會先：
 
@@ -176,6 +173,7 @@ SOURCE contract 已接到：
 → `0005-020 storyboard request + visual requirements`
 → `0005-025 text-only storyboard PPTX`
 → `0005-026 Google Drive review publish`
+→ `0005-027 bounded APPROVE / REJECT gate`
 
 全程：
 
@@ -185,14 +183,15 @@ SOURCE contract 已接到：
 - workspace path safety
 - acceptance fail-closed
 - Google Drive artifact transport only at leaf publisher
+- APPROVE 前禁止進入 image generation
 
 ## 11. 下一個合法動作
 
-1. 等 resident current-work immutable receipt 寫回。
-2. 若 0005-010 pending：只修 claim/runtime，不重提。
+1. 讀回 `case0005-0005-010-r000014-17b8b780` exact durable status。
+2. 若 pending：只修 claim/runtime，不重提。
 3. 若 claimed/running：只追 status。
 4. 若 failed：修 Director leaf capability。
-5. 若 completed：使用 Go reconciliation 驗收六項 evidence，立即進 `0005-020`。
+5. 若 completed：Go reconciliation 驗收六項 evidence，立即進 `0005-020`。
 6. 020 completed → 0005-025 text-only PPTX。
 7. 025 completed → 0005-026 ODA → Google Drive publish。
-8. 026 完成後才進 `0005-027` approval gate，不提前生成插圖。
+8. 026 completed → 0005-027 等待 APPROVE；APPROVE 前不生成任何插圖。
