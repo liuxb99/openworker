@@ -51,23 +51,53 @@ func reconcileFanout(ctx context.Context,client *http.Client,queueURL,workspaceR
     if w==nil{return false,nil,fmt.Errorf("worklist is required")}
     if s.CaseID!=w.CaseID{return false,nil,fmt.Errorf("fanout case authority mismatch")}
     if s.Revision!=w.Revision{
-        // A newer Case definition may introduce an explicit retry step after a
-        // terminal failure. A stale fanout state may be closed only when every
-        // referenced parent is already durably marked FAILED in the current
-        // runtime worklist. This never treats pending/running/unknown fanout as
-        // retryable and never permits a newer fanout state to be discarded.
         if s.Revision<w.Revision{
+            summary:=map[string]any{}
             allParentsFailed:=len(s.ParentStepIDs)>0
             for _,parentID:=range s.ParentStepIDs{
                 parent:=findStep(w.Steps,parentID)
                 if parent==nil||!strings.EqualFold(strings.TrimSpace(parent.Status),"FAILED"){allParentsFailed=false;break}
             }
+            if !allParentsFailed {
+                // The Case definition may advance before the final status poll that
+                // reconciles a terminal child. Query the old durable child now. We
+                // only promote terminal FAILED into the current runtime; any active,
+                // completed-but-unreconciled, unknown, or unreadable state remains
+                // fail-closed and the stale fanout file is retained.
+                terminalFailedParents:=map[string]string{}
+                for _,child:=range s.Children{
+                    item,err:=getQueueWork(ctx,client,queueURL,child.WorkID);if err!=nil{return false,summary,fmt.Errorf("read stale fanout child %s: %w",child.WorkID,err)}
+                    summary[child.WorkID]=item
+                    status:=strings.ToLower(strings.TrimSpace(fmt.Sprint(item["status"])))
+                    switch status{
+                    case "failed":
+                        blocker:=strings.TrimSpace(fmt.Sprint(item["error"]));if blocker==""{blocker="fanout child failed without error detail"}
+                        terminalFailedParents[child.ParentStepID]=fmt.Sprintf("child %s: %s",child.WorkID,blocker)
+                    case "pending","claimed","running":
+                        return false,summary,fmt.Errorf("fanout authority mismatch state_revision=%d worklist_revision=%d; stale child %s still %s",s.Revision,w.Revision,child.WorkID,status)
+                    case "completed":
+                        return false,summary,fmt.Errorf("fanout authority mismatch state_revision=%d worklist_revision=%d; stale child %s completed but requires same-revision evidence reconciliation",s.Revision,w.Revision,child.WorkID)
+                    default:
+                        return false,summary,fmt.Errorf("fanout authority mismatch state_revision=%d worklist_revision=%d; stale child %s unsupported status %q",s.Revision,w.Revision,child.WorkID,status)
+                    }
+                }
+                allParentsFailed=len(s.ParentStepIDs)>0
+                for _,parentID:=range s.ParentStepIDs{
+                    blocker,ok:=terminalFailedParents[parentID]
+                    parent:=findStep(w.Steps,parentID)
+                    if !ok||parent==nil{allParentsFailed=false;break}
+                    parent.Status="FAILED";parent.Blocker=blocker
+                    _=appendLedger(ledgerPath,ledgerEvent{Schema:"openworker.case-supervisor-ledger/v1",Timestamp:time.Now().UTC(),CaseID:w.CaseID,Machine:w.AssignedHost,EventType:"go_stale_fanout_child_failed_reconciled",WorkspaceRoot:workspaceRoot,Revision:w.Revision,StepID:parentID,Detail:fmt.Sprintf("reconciled terminal failed fanout from revision %d: %s",s.Revision,blocker)})
+                }
+                if allParentsFailed{if err:=persistWorklist(worklistPath,*w);err!=nil{return false,summary,err}}
+            }
             if allParentsFailed{
                 fanoutPath:=filepath.Join(workspaceRoot,".openworker","case-fanout-last.json")
-                if removeErr:=os.Remove(fanoutPath);removeErr!=nil&&!os.IsNotExist(removeErr){return false,nil,fmt.Errorf("close stale failed fanout state: %w",removeErr)}
+                if removeErr:=os.Remove(fanoutPath);removeErr!=nil&&!os.IsNotExist(removeErr){return false,summary,fmt.Errorf("close stale failed fanout state: %w",removeErr)}
                 detail:=fmt.Sprintf("closed stale terminal-failed fanout state revision %d after Case definition advanced to revision %d",s.Revision,w.Revision)
                 _=appendLedger(ledgerPath,ledgerEvent{Schema:"openworker.case-supervisor-ledger/v1",Timestamp:time.Now().UTC(),CaseID:w.CaseID,Machine:w.AssignedHost,EventType:"go_fanout_state_closed_stale_failed",WorkspaceRoot:workspaceRoot,Revision:w.Revision,ReadyStepIDs:s.ParentStepIDs,Detail:detail})
-                return true,map[string]any{"stale_failed_fanout_closed":true,"fanout_revision":s.Revision,"current_revision":w.Revision},nil
+                summary["stale_failed_fanout_closed"]=true;summary["fanout_revision"]=s.Revision;summary["current_revision"]=w.Revision
+                return true,summary,nil
             }
         }
         return false,nil,fmt.Errorf("fanout authority mismatch state_revision=%d worklist_revision=%d",s.Revision,w.Revision)
@@ -91,11 +121,6 @@ func reconcileFanout(ctx context.Context,client *http.Client,queueURL,workspaceR
             parent.Status="FAILED";parent.Blocker=fmt.Sprintf("child %s: %s",child.WorkID,blocker)
             if err:=persistWorklist(worklistPath,*w);err!=nil{return false,nil,err}
             _=appendLedger(ledgerPath,ledgerEvent{Schema:"openworker.case-supervisor-ledger/v1",Timestamp:time.Now().UTC(),CaseID:w.CaseID,Machine:w.AssignedHost,EventType:"go_fanout_child_failed",WorkspaceRoot:workspaceRoot,Revision:w.Revision,StepID:parent.StepID,ActionID:child.CapabilityID,WorkID:child.WorkID,Detail:parent.Blocker})
-            // A terminal child failure is authoritative and must not remain as an
-            // active fanout forever. Close only this persisted fanout state so a
-            // later, explicitly versioned retry step can proceed. Transport/read
-            // errors and non-terminal states never reach this branch and remain
-            // fail-closed with their state intact.
             fanoutPath:=filepath.Join(workspaceRoot,".openworker","case-fanout-last.json")
             if removeErr:=os.Remove(fanoutPath);removeErr!=nil&&!os.IsNotExist(removeErr){return false,summary,fmt.Errorf("fanout child %s failed and terminal fanout state could not be closed: %v; child error: %s",child.WorkID,removeErr,blocker)}
             _=appendLedger(ledgerPath,ledgerEvent{Schema:"openworker.case-supervisor-ledger/v1",Timestamp:time.Now().UTC(),CaseID:w.CaseID,Machine:w.AssignedHost,EventType:"go_fanout_state_closed_failed",WorkspaceRoot:workspaceRoot,Revision:w.Revision,StepID:parent.StepID,ActionID:child.CapabilityID,WorkID:child.WorkID,Detail:"terminal child failure preserved; active fanout state closed for explicit retry"})
@@ -110,11 +135,7 @@ func reconcileFanout(ctx context.Context,client *http.Client,queueURL,workspaceR
         evs:=childEvidence[parentID];if len(evs)==0{return false,summary,fmt.Errorf("fanout parent %s has no completed child evidence",parentID)}
         var evidence map[string]any
         var err error
-        if strings.TrimSpace(parent.EvidenceProfile)=="dwg_story_viewports"{
-            evidence,err=aggregateDWGStoryFanoutEvidence(evs)
-        }else{
-            evidence,err=aggregateVisualFanoutEvidence(parent,workspaceRoot,evs)
-        }
+        if strings.TrimSpace(parent.EvidenceProfile)=="dwg_story_viewports"{evidence,err=aggregateDWGStoryFanoutEvidence(evs)}else{evidence,err=aggregateVisualFanoutEvidence(parent,workspaceRoot,evs)}
         if err!=nil{return false,summary,fmt.Errorf("fanout parent %s evidence: %w",parentID,err)}
         if err:=validateAcceptance(*parent,evidence);err!=nil{return false,summary,fmt.Errorf("fanout parent %s acceptance: %w",parentID,err)}
         parent.Status="SUCCEEDED";parent.Evidence=evidence;parent.Blocker=""
@@ -154,13 +175,5 @@ func aggregateDWGStoryFanoutEvidence(evs []map[string]any)(map[string]any,error)
         }
     }
     if rendered==0{return nil,fmt.Errorf("no rendered stories")}
-    return map[string]any{
-        "source_sha256":sourceHash,
-        "render_manifest":manifests,
-        "story_job_ids":workIDs,
-        "rendered_story_count":rendered,
-        "story_pngs":pngs,
-        "story_png_sha256s":hashes,
-        "all_required_stories_terminal_succeeded":true,
-    },nil
+    return map[string]any{"source_sha256":sourceHash,"render_manifest":manifests,"story_job_ids":workIDs,"rendered_story_count":rendered,"story_pngs":pngs,"story_png_sha256s":hashes,"all_required_stories_terminal_succeeded":true},nil
 }
