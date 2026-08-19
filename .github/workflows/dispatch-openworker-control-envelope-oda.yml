@@ -10,6 +10,7 @@ on:
         options:
           - CASE.STATUS
           - CASE.CONTINUE_BATCH
+          - CASE.CLEAR_AND_CONTINUE
           - SUPERVISOR.STATUS
           - QUEUE.CLEAR
       case_id:
@@ -41,7 +42,7 @@ jobs:
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.merged == true }}
     name: ODA control envelope
     runs-on: [self-hosted, Windows, X64, ODA]
-    timeout-minutes: 2
+    timeout-minutes: 3
     steps:
       - name: Checkout transport code
         uses: actions/checkout@v4
@@ -84,7 +85,11 @@ jobs:
           $result=$null
           $errorText=''
           try {
-            $raw=& .\scripts\invoke-openworker-control-envelope-v1.ps1 -EnvelopePath $path -ExpectedMachine 'DESKTOP-ODAQN0D' 2>&1 | Out-String
+            if([string]$envl.command -eq 'CASE.CLEAR_AND_CONTINUE'){
+              $raw=& .\scripts\invoke-openworker-clear-and-continue-v1.ps1 -EnvelopePath $path -ExpectedMachine 'DESKTOP-ODAQN0D' 2>&1 | Out-String
+            }else{
+              $raw=& .\scripts\invoke-openworker-control-envelope-v1.ps1 -EnvelopePath $path -ExpectedMachine 'DESKTOP-ODAQN0D' 2>&1 | Out-String
+            }
             $result=$raw | ConvertFrom-Json -ErrorAction Stop
             $accepted=($result.accepted -eq $true)
             if(-not $accepted){ $errorText='control envelope returned accepted=false' }
@@ -107,7 +112,7 @@ jobs:
           $dir=Join-Path $env:GITHUB_WORKSPACE 'control-results\smoke'
           New-Item -ItemType Directory -Force -Path $dir | Out-Null
           $receiptPath=Join-Path $dir (([string]$envl.request_id)+'.json')
-          $receipt | ConvertTo-Json -Depth 50 | Set-Content -LiteralPath $receiptPath -Encoding UTF8
+          $receipt | ConvertTo-Json -Depth 80 | Set-Content -LiteralPath $receiptPath -Encoding UTF8
 
           git config user.name 'openworker-smoke-bot'
           git config user.email 'openworker-smoke-bot@users.noreply.github.com'
