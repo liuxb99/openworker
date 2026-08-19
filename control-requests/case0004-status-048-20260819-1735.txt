@@ -1,0 +1,6 @@
+command=case0004_status
+requested_by=ChatGPT
+case_id=0004
+machine=DESKTOP-O87PJNR
+purpose=Read-only inspect canonical retry child case0004-0004-048-1F-r000148-d9b0f2ff and collect terminal render evidence. Do not retry, clear, or duplicate business work.
+boundary=transient read-only control transport; business authority remains OpenWorker/go-tool local supervisor.
