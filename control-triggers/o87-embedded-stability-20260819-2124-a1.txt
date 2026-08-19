@@ -1,5 +1,6 @@
-O87 Embedded Control stability trigger
+trigger=o87-embedded-control-stability
 machine=DESKTOP-O87PJNR
 case_id=0004
-intent=run-proven-9-round-stability
-source=successful-embedded-control-pattern
+mode=read_only_9_round
+business_execution=false
+rerun=2026-08-19T21:42:00+08:00
