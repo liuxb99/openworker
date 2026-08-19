@@ -30,6 +30,9 @@ type ContinueResult struct {
     Controller string `json:"controller"`
     PythonControllerUsed bool `json:"python_controller_used"`
     ReconciledStepIDs []string `json:"reconciled_step_ids,omitempty"`
+    Fanout bool `json:"fanout,omitempty"`
+    FanoutStepIDs []string `json:"fanout_step_ids,omitempty"`
+    FanoutWorkIDs []string `json:"fanout_work_ids,omitempty"`
     SubmittedAt time.Time `json:"submitted_at"`
 }
 
@@ -43,12 +46,23 @@ func Continue(ctx context.Context, caseID, machine, workspaceRoot, queueURL stri
     worklistPath:=filepath.Join(marker,"case-worklist.json")
     specPath:=filepath.Join(marker,"case-spec.json")
     controllerPath:=filepath.Join(marker,"case-controller-last.json")
+    fanoutPath:=filepath.Join(marker,"case-fanout-last.json")
     ledgerPath:=filepath.Join(marker,"case-supervisor-ledger.jsonl")
 
     w,err:=readWorklistSnapshot(worklistPath);if err!=nil{return ContinueResult{},err}
     if w.CaseID!=caseID || !strings.EqualFold(w.AssignedHost,machine) || !samePath(w.WorkspaceRoot,workspaceRoot){return ContinueResult{},fmt.Errorf("case authority mismatch")}
 
     reconciled:=[]string{}
+    if state,ok,readErr:=readFanoutState(fanoutPath);readErr!=nil{return ContinueResult{},readErr}else if ok{
+        completed,summary,err:=reconcileFanout(ctx,client,queueURL,workspaceRoot,worklistPath,ledgerPath,&w,state);if err!=nil{return ContinueResult{},err}
+        workIDs:=make([]string,0,len(state.Children));for _,child:=range state.Children{workIDs=append(workIDs,child.WorkID)}
+        if !completed{
+            return ContinueResult{Schema:"openworker.go-case-continue/v3",CaseID:caseID,Machine:machine,WorkspaceRoot:workspaceRoot,Revision:w.Revision,StepID:strings.Join(state.ParentStepIDs,","),ActionID:"fanout",QueueStatus:"fanout_active",QueueItem:summary,Controller:"go-native",PythonControllerUsed:false,Fanout:true,FanoutStepIDs:state.ParentStepIDs,FanoutWorkIDs:workIDs},nil
+        }
+        reconciled=append(reconciled,state.ParentStepIDs...)
+        if err:=os.Remove(fanoutPath);err!=nil&&!os.IsNotExist(err){return ContinueResult{},fmt.Errorf("remove completed fanout state: %w",err)}
+    }
+
     if ref,ok:=readControllerWorkRef(controllerPath);ok && strings.TrimSpace(ref.WorkID)!="" {
         item,err:=getQueueWork(ctx,client,queueURL,ref.WorkID);if err!=nil{return ContinueResult{},fmt.Errorf("read current durable work %s: %w",ref.WorkID,err)}
         status:=strings.ToLower(strings.TrimSpace(fmt.Sprint(item["status"])))
@@ -57,12 +71,14 @@ func Continue(ctx context.Context, caseID, machine, workspaceRoot, queueURL stri
             return existingWorkResult(caseID,machine,workspaceRoot,w.Revision,ref,item),nil
         case "completed":
             step:=findStep(w.Steps,ref.StepID);if step==nil{return ContinueResult{},fmt.Errorf("current work step %s missing from worklist",ref.StepID)}
-            evidence,err:=completedEvidence(item);if err!=nil{return ContinueResult{},fmt.Errorf("reconcile %s: %w",ref.StepID,err)}
-            if err:=validateAcceptance(*step,evidence);err!=nil{return ContinueResult{},fmt.Errorf("reconcile %s acceptance: %w",ref.StepID,err)}
-            step.Status="SUCCEEDED";step.Evidence=evidence;step.Blocker=""
-            if err:=persistWorklist(worklistPath,w);err!=nil{return ContinueResult{},err}
-            if err:=appendLedger(ledgerPath,ledgerEvent{Schema:"openworker.case-supervisor-ledger/v1",Timestamp:time.Now().UTC(),CaseID:caseID,Machine:machine,EventType:"go_step_reconciled_completed",WorkspaceRoot:workspaceRoot,Revision:w.Revision,StepID:step.StepID,ActionID:ref.ActionID,WorkID:ref.WorkID,Detail:"durable work completed and acceptance evidence verified"});err!=nil{return ContinueResult{},err}
-            reconciled=append(reconciled,step.StepID)
+            if !strings.EqualFold(step.Status,"SUCCEEDED")&&!strings.EqualFold(step.Status,"PASSED")&&!strings.EqualFold(step.Status,"COMPLETED"){
+                evidence,err:=completedEvidence(item);if err!=nil{return ContinueResult{},fmt.Errorf("reconcile %s: %w",ref.StepID,err)}
+                if err:=validateAcceptance(*step,evidence);err!=nil{return ContinueResult{},fmt.Errorf("reconcile %s acceptance: %w",ref.StepID,err)}
+                step.Status="SUCCEEDED";step.Evidence=evidence;step.Blocker=""
+                if err:=persistWorklist(worklistPath,w);err!=nil{return ContinueResult{},err}
+                if err:=appendLedger(ledgerPath,ledgerEvent{Schema:"openworker.case-supervisor-ledger/v1",Timestamp:time.Now().UTC(),CaseID:caseID,Machine:machine,EventType:"go_step_reconciled_completed",WorkspaceRoot:workspaceRoot,Revision:w.Revision,StepID:step.StepID,ActionID:ref.ActionID,WorkID:ref.WorkID,Detail:"durable work completed and acceptance evidence verified"});err!=nil{return ContinueResult{},err}
+                reconciled=append(reconciled,step.StepID)
+            }
         case "failed":
             step:=findStep(w.Steps,ref.StepID);if step==nil{return ContinueResult{},fmt.Errorf("current work step %s missing from worklist",ref.StepID)}
             blocker:=strings.TrimSpace(fmt.Sprint(item["error"]));if blocker==""{blocker="durable work failed without error detail"}
@@ -76,7 +92,16 @@ func Continue(ctx context.Context, caseID, machine, workspaceRoot, queueURL stri
     }
 
     ready:=readySteps(w.Steps);if len(ready)==0{return ContinueResult{},fmt.Errorf("no ready steps")}
-    if len(ready)>1{return ContinueResult{},fmt.Errorf("multiple ready steps require queue-owned fanout coordinator: %v",ready)}
+    if len(ready)>1{
+        plan,err:=buildVisualFanoutPlan(w,ready,workspaceRoot,machine);if err!=nil{return ContinueResult{},fmt.Errorf("multiple ready steps are not handled by a registered fanout mapper: %v: %w",ready,err)}
+        state,summary,err:=submitFanoutPlan(ctx,client,queueURL,plan);if err!=nil{return ContinueResult{},err}
+        if err:=persistFanoutState(fanoutPath,state);err!=nil{return ContinueResult{},err}
+        workIDs:=make([]string,0,len(state.Children));for _,child:=range state.Children{workIDs=append(workIDs,child.WorkID)}
+        result:=ContinueResult{Schema:"openworker.go-case-continue/v3",CaseID:caseID,Machine:machine,WorkspaceRoot:workspaceRoot,Revision:w.Revision,StepID:strings.Join(state.ParentStepIDs,","),ActionID:"fanout",QueueStatus:"fanout_active",QueueItem:summary,Controller:"go-native",PythonControllerUsed:false,ReconciledStepIDs:reconciled,Fanout:true,FanoutStepIDs:state.ParentStepIDs,FanoutWorkIDs:workIDs,SubmittedAt:time.Now().UTC()}
+        rb,_:=json.MarshalIndent(result,"","  ");if err:=atomicWrite(controllerPath,append(rb,'\n'));err!=nil{return ContinueResult{},err}
+        if err:=appendLedger(ledgerPath,ledgerEvent{Schema:"openworker.case-supervisor-ledger/v1",Timestamp:time.Now().UTC(),CaseID:caseID,Machine:machine,EventType:"go_fanout_durable_accepted",WorkspaceRoot:workspaceRoot,Revision:w.Revision,ReadyStepIDs:state.ParentStepIDs,Detail:fmt.Sprintf("submitted %d deterministic fanout children to durable local-work",len(state.Children))});err!=nil{return ContinueResult{},err}
+        return result,nil
+    }
     step:=findStep(w.Steps,ready[0]);if step==nil{return ContinueResult{},fmt.Errorf("ready step missing")}
     action,inputs,err:=mapActionInputs(step,w,workspaceRoot,machine,specPath);if err!=nil{return ContinueResult{},err}
     workID:=executionID(caseID,step.StepID,action,w.Revision)
@@ -88,7 +113,7 @@ func Continue(ctx context.Context, caseID, machine, workspaceRoot, queueURL stri
     var item map[string]any;if err:=json.Unmarshal(raw,&item);err!=nil{return ContinueResult{},fmt.Errorf("decode local work ACK: %w",err)}
     if strings.TrimSpace(fmt.Sprint(item["work_id"]))!=workID || !strings.EqualFold(strings.TrimSpace(fmt.Sprint(item["assigned_host"])),machine){return ContinueResult{},fmt.Errorf("local work ACK identity mismatch")}
     status:=strings.TrimSpace(fmt.Sprint(item["status"]));if status==""{return ContinueResult{},fmt.Errorf("local work ACK missing status")}
-    result:=ContinueResult{Schema:"openworker.go-case-continue/v2",CaseID:caseID,Machine:machine,WorkspaceRoot:workspaceRoot,Revision:w.Revision,StepID:step.StepID,ActionID:action,WorkID:workID,QueueStatus:status,QueueItem:item,Controller:"go-native",PythonControllerUsed:false,ReconciledStepIDs:reconciled,SubmittedAt:time.Now().UTC()}
+    result:=ContinueResult{Schema:"openworker.go-case-continue/v3",CaseID:caseID,Machine:machine,WorkspaceRoot:workspaceRoot,Revision:w.Revision,StepID:step.StepID,ActionID:action,WorkID:workID,QueueStatus:status,QueueItem:item,Controller:"go-native",PythonControllerUsed:false,ReconciledStepIDs:reconciled,SubmittedAt:time.Now().UTC()}
     rb,_:=json.MarshalIndent(result,"","  ");if err:=atomicWrite(controllerPath,append(rb,'\n'));err!=nil{return ContinueResult{},err}
     if err:=appendLedger(ledgerPath,ledgerEvent{Schema:"openworker.case-supervisor-ledger/v1",Timestamp:time.Now().UTC(),CaseID:caseID,Machine:machine,EventType:"go_step_durable_accepted",WorkspaceRoot:workspaceRoot,Revision:w.Revision,StepID:step.StepID,ActionID:action,WorkID:workID,Detail:"go-tool durable local-work accepted with idempotent work_id"});err!=nil{return ContinueResult{},err}
     return result,nil
@@ -98,7 +123,7 @@ func readWorklistSnapshot(path string)(Worklist,error){b,err:=os.ReadFile(path);
 func persistWorklist(path string,w Worklist)error{b,err:=json.MarshalIndent(w,"","  ");if err!=nil{return err};return atomicWrite(path,append(b,'\n'))}
 func readControllerWorkRef(path string)(controllerWorkRef,bool){b,err:=os.ReadFile(path);if err!=nil{return controllerWorkRef{},false};var ref controllerWorkRef;if json.Unmarshal(b,&ref)!=nil{return controllerWorkRef{},false};return ref,strings.TrimSpace(ref.WorkID)!=""}
 func getQueueWork(ctx context.Context,client *http.Client,queueURL,workID string)(map[string]any,error){u:=strings.TrimRight(queueURL,"/")+"/api/execution/local-work/"+url.PathEscape(workID);req,err:=http.NewRequestWithContext(ctx,http.MethodGet,u,nil);if err!=nil{return nil,err};resp,err:=client.Do(req);if err!=nil{return nil,err};defer resp.Body.Close();raw,err:=io.ReadAll(io.LimitReader(resp.Body,4<<20));if err!=nil{return nil,err};if resp.StatusCode!=http.StatusOK{return nil,fmt.Errorf("HTTP %d: %s",resp.StatusCode,strings.TrimSpace(string(raw)))};var item map[string]any;if err:=json.Unmarshal(raw,&item);err!=nil{return nil,err};return item,nil}
-func existingWorkResult(caseID,machine,workspace string,revision int,ref controllerWorkRef,item map[string]any)ContinueResult{return ContinueResult{Schema:"openworker.go-case-continue/v2",CaseID:caseID,Machine:machine,WorkspaceRoot:workspace,Revision:revision,StepID:ref.StepID,ActionID:ref.ActionID,WorkID:ref.WorkID,QueueStatus:strings.TrimSpace(fmt.Sprint(item["status"])),QueueItem:item,Controller:"go-native",PythonControllerUsed:false}}
+func existingWorkResult(caseID,machine,workspace string,revision int,ref controllerWorkRef,item map[string]any)ContinueResult{return ContinueResult{Schema:"openworker.go-case-continue/v3",CaseID:caseID,Machine:machine,WorkspaceRoot:workspace,Revision:revision,StepID:ref.StepID,ActionID:ref.ActionID,WorkID:ref.WorkID,QueueStatus:strings.TrimSpace(fmt.Sprint(item["status"])),QueueItem:item,Controller:"go-native",PythonControllerUsed:false}}
 func completedEvidence(item map[string]any)(map[string]any,error){raw,ok:=item["result"];if !ok||raw==nil{return nil,fmt.Errorf("completed work missing result")};m,ok:=raw.(map[string]any);if !ok{return nil,fmt.Errorf("completed work result is not an object")};if ev,ok:=m["evidence"].(map[string]any);ok{return ev,nil};return m,nil}
 func validateAcceptance(step Step,evidence map[string]any)error{for _,key:=range step.Acceptance{v,ok:=evidence[key];if !ok||v==nil||strings.TrimSpace(fmt.Sprint(v))==""{return fmt.Errorf("missing acceptance evidence %q",key)}};return nil}
 
