@@ -78,7 +78,7 @@ func Continue(ctx context.Context, caseID, machine, workspaceRoot, queueURL stri
     ready:=readySteps(w.Steps);if len(ready)==0{return ContinueResult{},fmt.Errorf("no ready steps")}
     if len(ready)>1{return ContinueResult{},fmt.Errorf("multiple ready steps require queue-owned fanout coordinator: %v",ready)}
     step:=findStep(w.Steps,ready[0]);if step==nil{return ContinueResult{},fmt.Errorf("ready step missing")}
-    action,inputs,err:=mapStepInputs(step,w,workspaceRoot,machine,specPath);if err!=nil{return ContinueResult{},err}
+    action,inputs,err:=mapActionInputs(step,w,workspaceRoot,machine,specPath);if err!=nil{return ContinueResult{},err}
     workID:=executionID(caseID,step.StepID,action,w.Revision)
     submit:=map[string]any{"work_id":workID,"assigned_host":machine,"capability_id":action,"inputs":inputs}
     body,_:=json.Marshal(submit)
@@ -101,45 +101,6 @@ func getQueueWork(ctx context.Context,client *http.Client,queueURL,workID string
 func existingWorkResult(caseID,machine,workspace string,revision int,ref controllerWorkRef,item map[string]any)ContinueResult{return ContinueResult{Schema:"openworker.go-case-continue/v2",CaseID:caseID,Machine:machine,WorkspaceRoot:workspace,Revision:revision,StepID:ref.StepID,ActionID:ref.ActionID,WorkID:ref.WorkID,QueueStatus:strings.TrimSpace(fmt.Sprint(item["status"])),QueueItem:item,Controller:"go-native",PythonControllerUsed:false}}
 func completedEvidence(item map[string]any)(map[string]any,error){raw,ok:=item["result"];if !ok||raw==nil{return nil,fmt.Errorf("completed work missing result")};m,ok:=raw.(map[string]any);if !ok{return nil,fmt.Errorf("completed work result is not an object")};if ev,ok:=m["evidence"].(map[string]any);ok{return ev,nil};return m,nil}
 func validateAcceptance(step Step,evidence map[string]any)error{for _,key:=range step.Acceptance{v,ok:=evidence[key];if !ok||v==nil||strings.TrimSpace(fmt.Sprint(v))==""{return fmt.Errorf("missing acceptance evidence %q",key)}};return nil}
-
-func mapStepInputs(step *Step,w Worklist,workspaceRoot,machine,specPath string)(string,map[string]any,error){
-    switch step.StepID {
-    case "0004-045":
-        if len(step.AllowedActions)!=1||step.AllowedActions[0]!="cad.build_story_index"{return "",nil,fmt.Errorf("0004-045 action contract mismatch: %v",step.AllowedActions)}
-        spec,err:=readCaseSpec(specPath,w.CaseID);if err!=nil{return "",nil,err}
-        raw,ok:=spec["story_index_build_params"];if !ok{return "",nil,fmt.Errorf("case spec missing story_index_build_params")}
-        params,err:=json.Marshal(raw);if err!=nil{return "",nil,fmt.Errorf("encode story_index_build_params: %w",err)}
-        return "dwg.story_index.execute.case-worklist",map[string]any{"method":"cad.build_story_index","params_json":string(params),"workspace_root":workspaceRoot,"assigned_host":machine,"case_step":"0004-045"},nil
-    case "0005-010":
-        if len(step.AllowedActions)!=1||step.AllowedActions[0]!="comfyx-studio.director.preproduction"{return "",nil,fmt.Errorf("0005-010 action contract mismatch: %v",step.AllowedActions)}
-        spec,err:=readCaseSpec(specPath,w.CaseID);if err!=nil{return "",nil,err}
-        inputs:=map[string]any{"workspace_root":workspaceRoot,"assigned_host":machine,"case_id":w.CaseID,"source_title":strings.TrimSpace(fmt.Sprint(spec["title"])),"source_story":strings.TrimSpace(fmt.Sprint(spec["source_story"]))};if inputs["source_title"]==""||inputs["source_story"]==""{return "",nil,fmt.Errorf("director inputs require source_title and source_story")};return step.AllowedActions[0],inputs,nil
-    case "0005-020":
-        if len(step.AllowedActions)!=1||step.AllowedActions[0]!="comfyx-studio.storyboard.plan"{return "",nil,fmt.Errorf("0005-020 action contract mismatch: %v",step.AllowedActions)}
-        parent:=findStep(w.Steps,"0005-010");if parent==nil||!strings.EqualFold(parent.Status,"SUCCEEDED"){return "",nil,fmt.Errorf("0005-020 requires succeeded 0005-010")}
-        raw:=strings.TrimSpace(fmt.Sprint(parent.Evidence["director_plan"]));if raw==""{return "",nil,fmt.Errorf("0005-010 evidence missing director_plan")};rel,err:=workspaceRelativeExistingFile(workspaceRoot,raw,"director_plan");if err!=nil{return "",nil,err}
-        return step.AllowedActions[0],map[string]any{"workspace_root":workspaceRoot,"assigned_host":machine,"director_plan_relpath":rel},nil
-    case "0005-025":
-        if len(step.AllowedActions)!=1||step.AllowedActions[0]!="presentation.openmaic"{return "",nil,fmt.Errorf("0005-025 action contract mismatch: %v",step.AllowedActions)}
-        parent:=findStep(w.Steps,"0005-020");if parent==nil||!strings.EqualFold(parent.Status,"SUCCEEDED"){return "",nil,fmt.Errorf("0005-025 requires succeeded 0005-020")}
-        raw:=strings.TrimSpace(fmt.Sprint(parent.Evidence["storyboard_request"]));if raw==""{return "",nil,fmt.Errorf("0005-020 evidence missing storyboard_request")};rel,err:=workspaceRelativeExistingFile(workspaceRoot,raw,"storyboard_request");if err!=nil{return "",nil,err}
-        return step.AllowedActions[0],map[string]any{"workspace_root":workspaceRoot,"assigned_host":machine,"request_relpath":rel,"output_relpath":filepath.Join("presentation","storyboard-text-only.pptx")},nil
-    case "0005-026":
-        if len(step.AllowedActions)!=1||step.AllowedActions[0]!="openworker.case.publish-artifacts"{return "",nil,fmt.Errorf("0005-026 action contract mismatch: %v",step.AllowedActions)}
-        parent:=findStep(w.Steps,"0005-025");if parent==nil||!strings.EqualFold(parent.Status,"SUCCEEDED"){return "",nil,fmt.Errorf("0005-026 requires succeeded 0005-025")}
-        artifacts:=make([]string,0,3)
-        for _,key:=range []string{"storyboard_pptx","storyboard_manifest","reopen_receipt"}{raw:=strings.TrimSpace(fmt.Sprint(parent.Evidence[key]));if raw==""{return "",nil,fmt.Errorf("0005-025 evidence missing %s",key)};rel,err:=workspaceRelativeExistingFile(workspaceRoot,raw,key);if err!=nil{return "",nil,err};artifacts=append(artifacts,filepath.ToSlash(rel))}
-        revisionID:=fmt.Sprintf("case0005-text-storyboard-r%06d",w.Revision);workCode:=fmt.Sprintf("CASE0005-TEXT-STORYBOARD-R%06d",w.Revision)
-        return step.AllowedActions[0],map[string]any{"workspace_root":workspaceRoot,"assigned_host":machine,"case_id":w.CaseID,"step_id":"0005-026","revision_id":revisionID,"work_code":workCode,"artifacts":artifacts},nil
-    case "0005-027":
-        if len(step.AllowedActions)!=1||step.AllowedActions[0]!="openworker.review.await-drive"{return "",nil,fmt.Errorf("0005-027 action contract mismatch: %v",step.AllowedActions)}
-        parent:=findStep(w.Steps,"0005-026");if parent==nil||!strings.EqualFold(parent.Status,"SUCCEEDED"){return "",nil,fmt.Errorf("0005-027 requires succeeded 0005-026")}
-        if strings.TrimSpace(fmt.Sprint(parent.Evidence["drive_folder_id"]))==""||strings.TrimSpace(fmt.Sprint(parent.Evidence["manifest_sha256"]))==""{return "",nil,fmt.Errorf("0005-026 publish evidence incomplete")}
-        return step.AllowedActions[0],map[string]any{"workspace_root":workspaceRoot,"assigned_host":machine,"step_id":"0005-027","evidence_relpath":filepath.ToSlash(filepath.Join("evidence","0005-027-drive-gate.json")),"timeout_seconds":43200},nil
-    default:
-        return "",nil,fmt.Errorf("Go continue mapping not implemented for %s",step.StepID)
-    }
-}
 
 func readCaseSpec(path,caseID string)(map[string]any,error){b,err:=os.ReadFile(path);if err!=nil{return nil,fmt.Errorf("read case spec snapshot: %w",err)};var spec map[string]any;if err:=json.Unmarshal(b,&spec);err!=nil{return nil,fmt.Errorf("decode case spec: %w",err)};if strings.TrimSpace(fmt.Sprint(spec["case_id"]))!=caseID{return nil,fmt.Errorf("case spec case_id mismatch")};return spec,nil}
 func workspaceRelativeExistingFile(workspaceRoot,raw,label string)(string,error){abs,err:=filepath.Abs(strings.TrimSpace(raw));if err!=nil{return "",err};root,err:=filepath.Abs(workspaceRoot);if err!=nil{return "",err};rel,err:=filepath.Rel(root,abs);if err!=nil{return "",err};if rel==".."||strings.HasPrefix(rel,".."+string(filepath.Separator))||filepath.IsAbs(rel){return "",fmt.Errorf("%s escapes workspace",label)};if st,err:=os.Stat(abs);err!=nil||st.IsDir(){return "",fmt.Errorf("%s missing: %s",label,abs)};return rel,nil}
