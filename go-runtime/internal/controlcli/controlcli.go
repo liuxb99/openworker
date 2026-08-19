@@ -10,8 +10,11 @@ import (
     "net/url"
     "os"
     "path/filepath"
+    "strconv"
     "strings"
     "time"
+
+    "github.com/liuxb99/openworker/go-runtime/internal/actionsqueue"
 )
 
 const DefaultServer = "http://127.0.0.1:8848"
@@ -39,9 +42,14 @@ func Run(program string, args []string, stdout, stderr io.Writer) int {
         if len(a)!=3{return usageCode(stderr,program)};var cfg caseCfg;cfg,err=caseConfig(a[2]);if err!=nil{break};if err=requireLocalMachine(cfg.Machine);err!=nil{break};if err=c.requireOperational(cfg.Machine);err!=nil{break};out,err=c.post("/api/openworker/case/dispatch",cfg.payload())
     case "queue clear":
         m,e:=localMachine();if e!=nil{err=e;break};if len(a)==3{m=strings.TrimSpace(a[2])}else if len(a)!=2{return usageCode(stderr,program)};if err=requireLocalMachine(m);err!=nil{break};out,err=c.post("/api/execution/local-work/clear",map[string]any{"assigned_host":m})
+    case "actions queue-clear":
+        if len(a)>3{return usageCode(stderr,program)}
+        repo:=actionsqueue.DefaultRepository();if len(a)==3{repo=strings.TrimSpace(a[2])}
+        var exclude int64;if v:=strings.TrimSpace(os.Getenv("GITHUB_RUN_ID"));v!=""{exclude,_=strconv.ParseInt(v,10,64)}
+        out,err=actionsqueue.Clear(actionsqueue.Options{Repository:repo,Token:actionsqueue.DefaultToken(),ExcludeRunID:exclude,RunID:os.Getenv("GITHUB_RUN_ID"),SourceSHA:os.Getenv("GITHUB_SHA")})
     default:return usageCode(stderr,program)
     }
-    if err!=nil{fmt.Fprintln(stderr,"OPENWORKER_FAIL:",err);return 1};enc:=json.NewEncoder(stdout);enc.SetEscapeHTML(false);enc.SetIndent("","  ");if err:=enc.Encode(out);err!=nil{fmt.Fprintln(stderr,"OPENWORKER_FAIL:",err);return 1};return 0
+    if err!=nil{fmt.Fprintln(stderr,"OPENWORKER_FAIL:",err);if out!=nil{enc:=json.NewEncoder(stdout);enc.SetEscapeHTML(false);enc.SetIndent("","  ");_ = enc.Encode(out)};return 1};enc:=json.NewEncoder(stdout);enc.SetEscapeHTML(false);enc.SetIndent("","  ");if err:=enc.Encode(out);err!=nil{fmt.Fprintln(stderr,"OPENWORKER_FAIL:",err);return 1};return 0
 }
 
 func(c client)caseStatus(cfg caseCfg)(any,error){
@@ -69,4 +77,4 @@ func localMachine()(string,error){h,e:=os.Hostname();return strings.TrimSpace(h)
 func requireLocalMachine(w string)error{a,e:=localMachine();if e!=nil{return e};if !strings.EqualFold(a,strings.TrimSpace(w)){return fmt.Errorf("machine mismatch local=%q expected=%q",a,w)};return nil}
 func discoverRoot()string{for _,p:=range[]string{`C:\github-runners\openworker\_work\openworker\openworker`,`D:\AI\openworker`,`D:\AIWork\openworker`,`D:\PyWork\openworker`}{if st,e:=os.Stat(filepath.Join(p,"case-worklists"));e==nil&&st.IsDir(){if st2,e2:=os.Stat(filepath.Join(p,"go-runtime","go.mod"));e2==nil&&!st2.IsDir(){return p}}};return ""}
 func usageCode(w io.Writer,p string)int{usage(w,p);return 2}
-func usage(w io.Writer,p string){fmt.Fprintf(w,"usage: %s supervisor status | case bootstrap <CASE_ID> | case status <CASE_ID> | case continue <CASE_ID> | queue clear [MACHINE]\n",p)}
+func usage(w io.Writer,p string){fmt.Fprintf(w,"usage: %s supervisor status | case bootstrap <CASE_ID> | case status <CASE_ID> | case continue <CASE_ID> | queue clear [MACHINE] | actions queue-clear [OWNER/REPO]\n",p)}
