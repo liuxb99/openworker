@@ -25,6 +25,19 @@ jobs:
         run: |
           if ($env:COMPUTERNAME -ine 'DESKTOP-ODAQN0D') { throw "wrong host: $env:COMPUTERNAME" }
 
+      - name: Ensure resident OpenWorkerNode service is running
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $svc=Get-Service OpenWorkerNode -ErrorAction Stop
+          if($svc.Status -ne 'Running'){
+            Start-Service OpenWorkerNode
+            $svc.WaitForStatus('Running',[TimeSpan]::FromSeconds(20))
+          }
+          $status=Invoke-RestMethod 'http://127.0.0.1:8787/v1/node/status' -TimeoutSec 10
+          if($status.machine -ine 'DESKTOP-ODAQN0D'){throw "resident node machine=$($status.machine)"}
+          Write-Host "OPENWORKER_RESIDENT_READY machine=$($status.machine)"
+
       - name: Submit Case 0005 through OpenWorker cluster to ODA
         shell: powershell
         run: |
