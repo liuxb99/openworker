@@ -30,7 +30,7 @@ ai-opensees/analysis-result/v0.5
 - `analysis-result.json`
 - `analysis-geometry.json`
 - `analysis-deformed.obj`
-- `analysis-review.svg`
+- `analysis-deformation.svg`
 - `analysis.tcl`
 - `node_displacements.csv`
 - `node_reactions.csv`
@@ -42,12 +42,18 @@ ai-opensees/analysis-result/v0.5
 
 ## SVG 特殊验收
 
-`analysis-review.svg` 必须同时满足：
+`analysis-deformation.svg` 必须同时满足：
 
 ```text
 receipt sha256
 = workspace file sha256
-= analysis-result.review_svg_sha256
+= analysis-result.deformation_svg_sha256
+```
+
+路径字段固定为：
+
+```text
+deformation_svg_path
 ```
 
 任意篡改必须使 `accepted=false`。
