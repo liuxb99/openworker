@@ -1,1 +1,2 @@
-Merge this branch to main to guarantee a real push affecting command-requests/oda.json and trigger the ODA transient case_status workflow.
+Case0005 transport recovery marker.
+Reconcile UL7/O87/ODA runner labels before retrying embedded control.
