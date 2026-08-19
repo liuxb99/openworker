@@ -33,14 +33,10 @@ type ContinueResult struct {
     SubmittedAt time.Time `json:"submitted_at"`
 }
 
-type controllerWorkRef struct {
-    WorkID string `json:"work_id"`
-    StepID string `json:"step_id"`
-    ActionID string `json:"action_id"`
-}
+type controllerWorkRef struct { WorkID string `json:"work_id"`; StepID string `json:"step_id"`; ActionID string `json:"action_id"` }
 
 func Continue(ctx context.Context, caseID, machine, workspaceRoot, queueURL string, client *http.Client) (ContinueResult, error) {
-    if strings.TrimSpace(caseID)!="0005" { return ContinueResult{}, fmt.Errorf("unsupported case %q",caseID) }
+    if !supportedCaseID(caseID) { return ContinueResult{}, fmt.Errorf("unsupported case %q",caseID) }
     if err:=validateQueueURL(queueURL);err!=nil{return ContinueResult{},err}
     if client==nil{client=&http.Client{Timeout:10*time.Second}}
     marker:=filepath.Join(workspaceRoot,".openworker")
@@ -80,7 +76,7 @@ func Continue(ctx context.Context, caseID, machine, workspaceRoot, queueURL stri
     }
 
     ready:=readySteps(w.Steps);if len(ready)==0{return ContinueResult{},fmt.Errorf("no ready steps")}
-    if len(ready)>1{return ContinueResult{},fmt.Errorf("multiple ready steps require G3 fanout coordinator: %v",ready)}
+    if len(ready)>1{return ContinueResult{},fmt.Errorf("multiple ready steps require queue-owned fanout coordinator: %v",ready)}
     step:=findStep(w.Steps,ready[0]);if step==nil{return ContinueResult{},fmt.Errorf("ready step missing")}
     action,inputs,err:=mapStepInputs(step,w,workspaceRoot,machine,specPath);if err!=nil{return ContinueResult{},err}
     workID:=executionID(caseID,step.StepID,action,w.Revision)
@@ -107,34 +103,34 @@ func completedEvidence(item map[string]any)(map[string]any,error){raw,ok:=item["
 func validateAcceptance(step Step,evidence map[string]any)error{for _,key:=range step.Acceptance{v,ok:=evidence[key];if !ok||v==nil||strings.TrimSpace(fmt.Sprint(v))==""{return fmt.Errorf("missing acceptance evidence %q",key)}};return nil}
 
 func mapStepInputs(step *Step,w Worklist,workspaceRoot,machine,specPath string)(string,map[string]any,error){
-    if len(step.AllowedActions)!=1{return "",nil,fmt.Errorf("step %s requires exactly one action",step.StepID)}
-    action:=step.AllowedActions[0]
     switch step.StepID {
+    case "0004-045":
+        if len(step.AllowedActions)!=1||step.AllowedActions[0]!="cad.build_story_index"{return "",nil,fmt.Errorf("0004-045 action contract mismatch: %v",step.AllowedActions)}
+        spec,err:=readCaseSpec(specPath,w.CaseID);if err!=nil{return "",nil,err}
+        raw,ok:=spec["story_index_build_params"];if !ok{return "",nil,fmt.Errorf("case spec missing story_index_build_params")}
+        params,err:=json.Marshal(raw);if err!=nil{return "",nil,fmt.Errorf("encode story_index_build_params: %w",err)}
+        return "dwg.story_index.execute.case-worklist",map[string]any{"method":"cad.build_story_index","params_json":string(params),"workspace_root":workspaceRoot,"assigned_host":machine,"case_step":"0004-045"},nil
     case "0005-010":
-        if action!="comfyx-studio.director.preproduction"{return "",nil,fmt.Errorf("0005-010 action contract mismatch: %v",step.AllowedActions)}
-        sb,err:=os.ReadFile(specPath);if err!=nil{return "",nil,fmt.Errorf("read case spec snapshot: %w",err)};var spec map[string]any;if err:=json.Unmarshal(sb,&spec);err!=nil{return "",nil,fmt.Errorf("decode case spec: %w",err)};if strings.TrimSpace(fmt.Sprint(spec["case_id"]))!=w.CaseID{return "",nil,fmt.Errorf("case spec case_id mismatch")}
-        inputs:=map[string]any{"workspace_root":workspaceRoot,"assigned_host":machine,"case_id":w.CaseID,"source_title":strings.TrimSpace(fmt.Sprint(spec["title"])),"source_story":strings.TrimSpace(fmt.Sprint(spec["source_story"]))};if inputs["source_title"]==""||inputs["source_story"]==""{return "",nil,fmt.Errorf("director inputs require source_title and source_story")};return action,inputs,nil
+        if len(step.AllowedActions)!=1||step.AllowedActions[0]!="comfyx-studio.director.preproduction"{return "",nil,fmt.Errorf("0005-010 action contract mismatch: %v",step.AllowedActions)}
+        spec,err:=readCaseSpec(specPath,w.CaseID);if err!=nil{return "",nil,err}
+        inputs:=map[string]any{"workspace_root":workspaceRoot,"assigned_host":machine,"case_id":w.CaseID,"source_title":strings.TrimSpace(fmt.Sprint(spec["title"])),"source_story":strings.TrimSpace(fmt.Sprint(spec["source_story"]))};if inputs["source_title"]==""||inputs["source_story"]==""{return "",nil,fmt.Errorf("director inputs require source_title and source_story")};return step.AllowedActions[0],inputs,nil
     case "0005-020":
-        if action!="comfyx-studio.storyboard.plan"{return "",nil,fmt.Errorf("0005-020 action contract mismatch: %v",step.AllowedActions)}
+        if len(step.AllowedActions)!=1||step.AllowedActions[0]!="comfyx-studio.storyboard.plan"{return "",nil,fmt.Errorf("0005-020 action contract mismatch: %v",step.AllowedActions)}
         parent:=findStep(w.Steps,"0005-010");if parent==nil||!strings.EqualFold(parent.Status,"SUCCEEDED"){return "",nil,fmt.Errorf("0005-020 requires succeeded 0005-010")}
-        raw:=strings.TrimSpace(fmt.Sprint(parent.Evidence["director_plan"]));if raw==""{return "",nil,fmt.Errorf("0005-010 evidence missing director_plan")}
-        rel,err:=workspaceRelativeExistingFile(workspaceRoot,raw,"director_plan");if err!=nil{return "",nil,err}
-        return action,map[string]any{"workspace_root":workspaceRoot,"assigned_host":machine,"director_plan_relpath":rel},nil
+        raw:=strings.TrimSpace(fmt.Sprint(parent.Evidence["director_plan"]));if raw==""{return "",nil,fmt.Errorf("0005-010 evidence missing director_plan")};rel,err:=workspaceRelativeExistingFile(workspaceRoot,raw,"director_plan");if err!=nil{return "",nil,err}
+        return step.AllowedActions[0],map[string]any{"workspace_root":workspaceRoot,"assigned_host":machine,"director_plan_relpath":rel},nil
     case "0005-025":
-        if action!="presentation.openmaic"{return "",nil,fmt.Errorf("0005-025 action contract mismatch: %v",step.AllowedActions)}
+        if len(step.AllowedActions)!=1||step.AllowedActions[0]!="presentation.openmaic"{return "",nil,fmt.Errorf("0005-025 action contract mismatch: %v",step.AllowedActions)}
         parent:=findStep(w.Steps,"0005-020");if parent==nil||!strings.EqualFold(parent.Status,"SUCCEEDED"){return "",nil,fmt.Errorf("0005-025 requires succeeded 0005-020")}
-        raw:=strings.TrimSpace(fmt.Sprint(parent.Evidence["storyboard_request"]));if raw==""{return "",nil,fmt.Errorf("0005-020 evidence missing storyboard_request")}
-        rel,err:=workspaceRelativeExistingFile(workspaceRoot,raw,"storyboard_request");if err!=nil{return "",nil,err}
-        return action,map[string]any{"workspace_root":workspaceRoot,"assigned_host":machine,"request_relpath":rel,"output_relpath":filepath.Join("presentation","storyboard-text-only.pptx")},nil
+        raw:=strings.TrimSpace(fmt.Sprint(parent.Evidence["storyboard_request"]));if raw==""{return "",nil,fmt.Errorf("0005-020 evidence missing storyboard_request")};rel,err:=workspaceRelativeExistingFile(workspaceRoot,raw,"storyboard_request");if err!=nil{return "",nil,err}
+        return step.AllowedActions[0],map[string]any{"workspace_root":workspaceRoot,"assigned_host":machine,"request_relpath":rel,"output_relpath":filepath.Join("presentation","storyboard-text-only.pptx")},nil
     default:
         return "",nil,fmt.Errorf("Go continue mapping not implemented for %s",step.StepID)
     }
 }
 
-func workspaceRelativeExistingFile(workspaceRoot,raw,label string)(string,error){
-    abs,err:=filepath.Abs(strings.TrimSpace(raw));if err!=nil{return "",err};root,err:=filepath.Abs(workspaceRoot);if err!=nil{return "",err};rel,err:=filepath.Rel(root,abs);if err!=nil{return "",err};if rel==".."||strings.HasPrefix(rel,".."+string(filepath.Separator))||filepath.IsAbs(rel){return "",fmt.Errorf("%s escapes workspace",label)};if st,err:=os.Stat(abs);err!=nil||st.IsDir(){return "",fmt.Errorf("%s missing: %s",label,abs)};return rel,nil
-}
-
+func readCaseSpec(path,caseID string)(map[string]any,error){b,err:=os.ReadFile(path);if err!=nil{return nil,fmt.Errorf("read case spec snapshot: %w",err)};var spec map[string]any;if err:=json.Unmarshal(b,&spec);err!=nil{return nil,fmt.Errorf("decode case spec: %w",err)};if strings.TrimSpace(fmt.Sprint(spec["case_id"]))!=caseID{return nil,fmt.Errorf("case spec case_id mismatch")};return spec,nil}
+func workspaceRelativeExistingFile(workspaceRoot,raw,label string)(string,error){abs,err:=filepath.Abs(strings.TrimSpace(raw));if err!=nil{return "",err};root,err:=filepath.Abs(workspaceRoot);if err!=nil{return "",err};rel,err:=filepath.Rel(root,abs);if err!=nil{return "",err};if rel==".."||strings.HasPrefix(rel,".."+string(filepath.Separator))||filepath.IsAbs(rel){return "",fmt.Errorf("%s escapes workspace",label)};if st,err:=os.Stat(abs);err!=nil||st.IsDir(){return "",fmt.Errorf("%s missing: %s",label,abs)};return rel,nil}
 func executionID(caseID,stepID,action string,revision int)string{sum:=sha256.Sum256([]byte(fmt.Sprintf("%s|%s|%s|%d",caseID,stepID,action,revision)));return fmt.Sprintf("case%s-%s-r%06d-%s",safeID(caseID),safeID(stepID),revision,hex.EncodeToString(sum[:4]))}
 func safeID(v string)string{var b strings.Builder;for _,r:=range v{if (r>='a'&&r<='z')||(r>='A'&&r<='Z')||(r>='0'&&r<='9')||r=='-'||r=='_'{b.WriteRune(r)}};return b.String()}
 func findStep(steps []Step,id string)*Step{for i:=range steps{if steps[i].StepID==id{return &steps[i]}};return nil}
