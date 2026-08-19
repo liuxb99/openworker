@@ -23,4 +23,11 @@ func TestAIOpenSeesRuntimeRequiresMIDASGUIExport(t *testing.T) {
 	if err := json.Unmarshal(data, &runtime); err == nil || !strings.Contains(err.Error(), "MIDAS GUI export") {
 		t.Fatalf("expected CLI export rejection, got %v", err)
 	}
+
+	base["active_source_export_method"] = "MIDAS Civil GUI Export MCT"
+	base["active_source_exported_at"] = "not-a-timestamp"
+	data, _ = json.Marshal(base)
+	if err := json.Unmarshal(data, &runtime); err == nil || !strings.Contains(err.Error(), "not RFC3339") {
+		t.Fatalf("expected malformed exported_at rejection, got %v", err)
+	}
 }
