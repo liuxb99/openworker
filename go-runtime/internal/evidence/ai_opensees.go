@@ -5,16 +5,17 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
 const (
-	AIOpenSeesCapabilityID = "structural.ai_opensees.authority.analyze"
-	AIOpenSeesRepository   = "liuxb99/AI-OpenSees"
-	AIOpenSeesHost         = "O87"
-	AIOpenSeesResultSchema = "ai-opensees/analysis-result/v0.4"
+	AIOpenSeesCapabilityID  = "structural.ai_opensees.authority.analyze"
+	AIOpenSeesRepository    = "liuxb99/AI-OpenSees"
+	AIOpenSeesHost          = "O87"
+	AIOpenSeesResultSchema  = "ai-opensees/analysis-result/v0.4"
 	AIOpenSeesReceiptSchema = "ai-opensees/operator-evidence/v0.1"
 )
 
@@ -26,21 +27,21 @@ type AIOpenSeesArtifact struct {
 }
 
 type AIOpenSeesOperatorEvidence struct {
-	SchemaVersion       string                 `json:"schema_version"`
-	CapabilityID        string                 `json:"capability_id,omitempty"`
-	Repository          string                 `json:"repository"`
-	CommitSHA           string                 `json:"commit_sha"`
-	RunID               string                 `json:"run_id"`
-	RunAttempt          string                 `json:"run_attempt"`
-	AssignedHostname    string                 `json:"assigned_hostname"`
-	MCTPath             string                 `json:"mct_path"`
-	MCTSHA256           string                 `json:"mct_sha256"`
-	RuntimeConfig       string                 `json:"runtime_config"`
-	AuthorityGeneration int64                  `json:"authority_generation"`
-	OpenSeesExecutable  string                 `json:"opensees_executable"`
-	Workspace           string                 `json:"workspace"`
-	Status              string                 `json:"status"`
-	Artifacts           []AIOpenSeesArtifact   `json:"artifacts"`
+	SchemaVersion       string               `json:"schema_version"`
+	CapabilityID        string               `json:"capability_id,omitempty"`
+	Repository          string               `json:"repository"`
+	CommitSHA           string               `json:"commit_sha"`
+	RunID               string               `json:"run_id"`
+	RunAttempt          string               `json:"run_attempt"`
+	AssignedHostname    string               `json:"assigned_hostname"`
+	MCTPath             string               `json:"mct_path"`
+	MCTSHA256           string               `json:"mct_sha256"`
+	RuntimeConfig       string               `json:"runtime_config"`
+	AuthorityGeneration int64                `json:"authority_generation"`
+	OpenSeesExecutable  string               `json:"opensees_executable"`
+	Workspace           string               `json:"workspace"`
+	Status              string               `json:"status"`
+	Artifacts           []AIOpenSeesArtifact `json:"artifacts"`
 }
 
 type AIOpenSeesAnalysisResult struct {
@@ -81,18 +82,8 @@ func sha256File(path string) (string, int64, error) {
 		return "", 0, err
 	}
 	h := sha256.New()
-	buf := make([]byte, 128*1024)
-	for {
-		n, readErr := f.Read(buf)
-		if n > 0 {
-			_, _ = h.Write(buf[:n])
-		}
-		if readErr != nil {
-			if readErr.Error() == "EOF" {
-				break
-			}
-			return "", 0, readErr
-		}
+	if _, err := io.Copy(h, f); err != nil {
+		return "", 0, err
 	}
 	return hex.EncodeToString(h.Sum(nil)), stat.Size(), nil
 }
@@ -161,20 +152,46 @@ func ValidateAIOpenSeesWorkspace(workspace string) AIOpenSeesEvidenceReport {
 	report.RunID = receipt.RunID
 	report.AuthorityGeneration = receipt.AuthorityGeneration
 
-	if receipt.SchemaVersion != AIOpenSeesReceiptSchema { add("OPERATOR_EVIDENCE_SCHEMA_MISMATCH") }
-	if receipt.CapabilityID != "" && receipt.CapabilityID != AIOpenSeesCapabilityID { add("CAPABILITY_ID_MISMATCH") }
-	if receipt.Repository != AIOpenSeesRepository { add("REPOSITORY_MISMATCH") }
-	if !strings.EqualFold(receipt.AssignedHostname, AIOpenSeesHost) { add("ASSIGNED_HOST_MISMATCH") }
-	if receipt.Status != "complete" { add("OPERATOR_STATUS_NOT_COMPLETE") }
-	if receipt.AuthorityGeneration < 1 { add("AUTHORITY_GENERATION_INVALID") }
-	if !isSHA256(receipt.MCTSHA256) { add("MCT_SHA256_INVALID") }
-	if !samePath(receipt.Workspace, workspace) { add("WORKSPACE_RECEIPT_MISMATCH") }
+	if receipt.SchemaVersion != AIOpenSeesReceiptSchema {
+		add("OPERATOR_EVIDENCE_SCHEMA_MISMATCH")
+	}
+	if receipt.CapabilityID != "" && receipt.CapabilityID != AIOpenSeesCapabilityID {
+		add("CAPABILITY_ID_MISMATCH")
+	}
+	if receipt.Repository != AIOpenSeesRepository {
+		add("REPOSITORY_MISMATCH")
+	}
+	if !strings.EqualFold(receipt.AssignedHostname, AIOpenSeesHost) {
+		add("ASSIGNED_HOST_MISMATCH")
+	}
+	if receipt.Status != "complete" {
+		add("OPERATOR_STATUS_NOT_COMPLETE")
+	}
+	if receipt.AuthorityGeneration < 1 {
+		add("AUTHORITY_GENERATION_INVALID")
+	}
+	if !isSHA256(receipt.MCTSHA256) {
+		add("MCT_SHA256_INVALID")
+	}
+	if !samePath(receipt.Workspace, workspace) {
+		add("WORKSPACE_RECEIPT_MISMATCH")
+	}
 
-	if result.SchemaVersion != AIOpenSeesResultSchema { add("ANALYSIS_RESULT_SCHEMA_MISMATCH") }
-	if result.Status != "complete" { add("ANALYSIS_STATUS_NOT_COMPLETE") }
-	if !result.AuthorityRuntimeUsed { add("ANALYSIS_AUTHORITY_RUNTIME_NOT_USED") }
-	if result.AuthorityGeneration != receipt.AuthorityGeneration { add("AUTHORITY_GENERATION_MISMATCH") }
-	if result.SourceSHA256 != receipt.MCTSHA256 { add("SOURCE_SHA256_MISMATCH") }
+	if result.SchemaVersion != AIOpenSeesResultSchema {
+		add("ANALYSIS_RESULT_SCHEMA_MISMATCH")
+	}
+	if result.Status != "complete" {
+		add("ANALYSIS_STATUS_NOT_COMPLETE")
+	}
+	if !result.AuthorityRuntimeUsed {
+		add("ANALYSIS_AUTHORITY_RUNTIME_NOT_USED")
+	}
+	if result.AuthorityGeneration != receipt.AuthorityGeneration {
+		add("AUTHORITY_GENERATION_MISMATCH")
+	}
+	if result.SourceSHA256 != receipt.MCTSHA256 {
+		add("SOURCE_SHA256_MISMATCH")
+	}
 
 	artifactByName := map[string]AIOpenSeesArtifact{}
 	for _, artifact := range receipt.Artifacts {
@@ -216,9 +233,18 @@ func ValidateAIOpenSeesWorkspace(workspace string) AIOpenSeesEvidenceReport {
 			add("ARTIFACT_READ_FAILED:" + name)
 			continue
 		}
-		if hash != strings.ToLower(artifact.SHA256) { add("ARTIFACT_SHA256_MISMATCH:" + name); continue }
-		if bytes != artifact.Bytes { add("ARTIFACT_SIZE_MISMATCH:" + name); continue }
-		if bytes == 0 && name != "opensees.stdout.log" && name != "opensees.stderr.log" { add("ARTIFACT_EMPTY:" + name); continue }
+		if hash != strings.ToLower(artifact.SHA256) {
+			add("ARTIFACT_SHA256_MISMATCH:" + name)
+			continue
+		}
+		if bytes != artifact.Bytes {
+			add("ARTIFACT_SIZE_MISMATCH:" + name)
+			continue
+		}
+		if bytes == 0 && name != "opensees.stdout.log" && name != "opensees.stderr.log" {
+			add("ARTIFACT_EMPTY:" + name)
+			continue
+		}
 		report.VerifiedArtifacts++
 	}
 
@@ -234,9 +260,15 @@ func ValidateAIOpenSeesWorkspace(workspace string) AIOpenSeesEvidenceReport {
 	}
 	for _, check := range checks {
 		artifact, ok := artifactByName[check.name]
-		if !ok { continue }
-		if !samePath(check.path, filepath.Join(workspace, check.name)) { add("ANALYSIS_ARTIFACT_PATH_MISMATCH:" + check.name) }
-		if !isSHA256(check.hash) || strings.ToLower(check.hash) != strings.ToLower(artifact.SHA256) { add("ANALYSIS_ARTIFACT_SHA256_MISMATCH:" + check.name) }
+		if !ok {
+			continue
+		}
+		if !samePath(check.path, filepath.Join(workspace, check.name)) {
+			add("ANALYSIS_ARTIFACT_PATH_MISMATCH:" + check.name)
+		}
+		if !isSHA256(check.hash) || strings.ToLower(check.hash) != strings.ToLower(artifact.SHA256) {
+			add("ANALYSIS_ARTIFACT_SHA256_MISMATCH:" + check.name)
+		}
 	}
 
 	report.Accepted = len(report.Blockers) == 0 && report.VerifiedArtifacts == len(required)
