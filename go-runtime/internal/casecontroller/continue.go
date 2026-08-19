@@ -6,6 +6,7 @@ import (
     "crypto/sha256"
     "encoding/hex"
     "encoding/json"
+    "errors"
     "fmt"
     "io"
     "net/http"
@@ -64,30 +65,41 @@ func Continue(ctx context.Context, caseID, machine, workspaceRoot, queueURL stri
     }
 
     if ref,ok:=readControllerWorkRef(controllerPath);ok && strings.TrimSpace(ref.WorkID)!="" {
-        item,err:=getQueueWork(ctx,client,queueURL,ref.WorkID);if err!=nil{return ContinueResult{},fmt.Errorf("read current durable work %s: %w",ref.WorkID,err)}
-        status:=strings.ToLower(strings.TrimSpace(fmt.Sprint(item["status"])))
-        switch status {
-        case "pending","claimed","running":
-            return existingWorkResult(caseID,machine,workspaceRoot,w.Revision,ref,item),nil
-        case "completed":
-            step:=findStep(w.Steps,ref.StepID);if step==nil{return ContinueResult{},fmt.Errorf("current work step %s missing from worklist",ref.StepID)}
-            if !strings.EqualFold(step.Status,"SUCCEEDED")&&!strings.EqualFold(step.Status,"PASSED")&&!strings.EqualFold(step.Status,"COMPLETED"){
-                evidence,err:=completedEvidence(item);if err!=nil{return ContinueResult{},fmt.Errorf("reconcile %s: %w",ref.StepID,err)}
-                if err:=validateAcceptance(*step,evidence);err!=nil{return ContinueResult{},fmt.Errorf("reconcile %s acceptance: %w",ref.StepID,err)}
-                step.Status="SUCCEEDED";step.Evidence=evidence;step.Blocker=""
-                if err:=persistWorklist(worklistPath,w);err!=nil{return ContinueResult{},err}
-                if err:=appendLedger(ledgerPath,ledgerEvent{Schema:"openworker.case-supervisor-ledger/v1",Timestamp:time.Now().UTC(),CaseID:caseID,Machine:machine,EventType:"go_step_reconciled_completed",WorkspaceRoot:workspaceRoot,Revision:w.Revision,StepID:step.StepID,ActionID:ref.ActionID,WorkID:ref.WorkID,Detail:"durable work completed and acceptance evidence verified"});err!=nil{return ContinueResult{},err}
-                reconciled=append(reconciled,step.StepID)
+        item,err:=getQueueWork(ctx,client,queueURL,ref.WorkID)
+        if err!=nil{
+            if !errors.Is(err,errQueueWorkNotFound){return ContinueResult{},fmt.Errorf("read current durable work %s: %w",ref.WorkID,err)}
+            step:=findStep(w.Steps,ref.StepID);if step==nil{return ContinueResult{},fmt.Errorf("stale current work step %s missing from worklist",ref.StepID)}
+            terminal:=strings.EqualFold(step.Status,"SUCCEEDED")||strings.EqualFold(step.Status,"PASSED")||strings.EqualFold(step.Status,"COMPLETED")
+            if !terminal && !strings.EqualFold(step.Status,"PENDING") && !strings.EqualFold(step.Status,"READY"){
+                return ContinueResult{},fmt.Errorf("current durable work %s disappeared while step %s status=%s; explicit repair required",ref.WorkID,ref.StepID,step.Status)
             }
-        case "failed":
-            step:=findStep(w.Steps,ref.StepID);if step==nil{return ContinueResult{},fmt.Errorf("current work step %s missing from worklist",ref.StepID)}
-            blocker:=strings.TrimSpace(fmt.Sprint(item["error"]));if blocker==""{blocker="durable work failed without error detail"}
-            step.Status="FAILED";step.Blocker=blocker
-            if err:=persistWorklist(worklistPath,w);err!=nil{return ContinueResult{},err}
-            _=appendLedger(ledgerPath,ledgerEvent{Schema:"openworker.case-supervisor-ledger/v1",Timestamp:time.Now().UTC(),CaseID:caseID,Machine:machine,EventType:"go_step_reconciled_failed",WorkspaceRoot:workspaceRoot,Revision:w.Revision,StepID:step.StepID,ActionID:ref.ActionID,WorkID:ref.WorkID,Detail:blocker})
-            return ContinueResult{},fmt.Errorf("step %s durable work failed: %s",step.StepID,blocker)
-        default:
-            return ContinueResult{},fmt.Errorf("current durable work %s has unsupported status %q",ref.WorkID,status)
+            if err:=appendLedger(ledgerPath,ledgerEvent{Schema:"openworker.case-supervisor-ledger/v1",Timestamp:time.Now().UTC(),CaseID:caseID,Machine:machine,EventType:"go_stale_controller_work_ref_cleared",WorkspaceRoot:workspaceRoot,Revision:w.Revision,StepID:ref.StepID,ActionID:ref.ActionID,WorkID:ref.WorkID,Detail:"durable work no longer exists after queue maintenance; stale controller reference cleared so deterministic dispatch may resume"});err!=nil{return ContinueResult{},err}
+            if err:=os.Remove(controllerPath);err!=nil&&!os.IsNotExist(err){return ContinueResult{},fmt.Errorf("clear stale controller work reference: %w",err)}
+        } else {
+            status:=strings.ToLower(strings.TrimSpace(fmt.Sprint(item["status"])))
+            switch status {
+            case "pending","claimed","running":
+                return existingWorkResult(caseID,machine,workspaceRoot,w.Revision,ref,item),nil
+            case "completed":
+                step:=findStep(w.Steps,ref.StepID);if step==nil{return ContinueResult{},fmt.Errorf("current work step %s missing from worklist",ref.StepID)}
+                if !strings.EqualFold(step.Status,"SUCCEEDED")&&!strings.EqualFold(step.Status,"PASSED")&&!strings.EqualFold(step.Status,"COMPLETED"){
+                    evidence,err:=completedEvidence(item);if err!=nil{return ContinueResult{},fmt.Errorf("reconcile %s: %w",ref.StepID,err)}
+                    if err:=validateAcceptance(*step,evidence);err!=nil{return ContinueResult{},fmt.Errorf("reconcile %s acceptance: %w",ref.StepID,err)}
+                    step.Status="SUCCEEDED";step.Evidence=evidence;step.Blocker=""
+                    if err:=persistWorklist(worklistPath,w);err!=nil{return ContinueResult{},err}
+                    if err:=appendLedger(ledgerPath,ledgerEvent{Schema:"openworker.case-supervisor-ledger/v1",Timestamp:time.Now().UTC(),CaseID:caseID,Machine:machine,EventType:"go_step_reconciled_completed",WorkspaceRoot:workspaceRoot,Revision:w.Revision,StepID:step.StepID,ActionID:ref.ActionID,WorkID:ref.WorkID,Detail:"durable work completed and acceptance evidence verified"});err!=nil{return ContinueResult{},err}
+                    reconciled=append(reconciled,step.StepID)
+                }
+            case "failed":
+                step:=findStep(w.Steps,ref.StepID);if step==nil{return ContinueResult{},fmt.Errorf("current work step %s missing from worklist",ref.StepID)}
+                blocker:=strings.TrimSpace(fmt.Sprint(item["error"]));if blocker==""{blocker="durable work failed without error detail"}
+                step.Status="FAILED";step.Blocker=blocker
+                if err:=persistWorklist(worklistPath,w);err!=nil{return ContinueResult{},err}
+                _=appendLedger(ledgerPath,ledgerEvent{Schema:"openworker.case-supervisor-ledger/v1",Timestamp:time.Now().UTC(),CaseID:caseID,Machine:machine,EventType:"go_step_reconciled_failed",WorkspaceRoot:workspaceRoot,Revision:w.Revision,StepID:step.StepID,ActionID:ref.ActionID,WorkID:ref.WorkID,Detail:blocker})
+                return ContinueResult{},fmt.Errorf("step %s durable work failed: %s",step.StepID,blocker)
+            default:
+                return ContinueResult{},fmt.Errorf("current durable work %s has unsupported status %q",ref.WorkID,status)
+            }
         }
     }
 
@@ -132,7 +144,8 @@ func Continue(ctx context.Context, caseID, machine, workspaceRoot, queueURL stri
 func readWorklistSnapshot(path string)(Worklist,error){b,err:=os.ReadFile(path);if err!=nil{return Worklist{},fmt.Errorf("read worklist snapshot: %w",err)};var w Worklist;if err:=json.Unmarshal(b,&w);err!=nil{return Worklist{},fmt.Errorf("decode worklist snapshot: %w",err)};return w,nil}
 func persistWorklist(path string,w Worklist)error{b,err:=json.MarshalIndent(w,"","  ");if err!=nil{return err};return atomicWrite(path,append(b,'\n'))}
 func readControllerWorkRef(path string)(controllerWorkRef,bool){b,err:=os.ReadFile(path);if err!=nil{return controllerWorkRef{},false};var ref controllerWorkRef;if json.Unmarshal(b,&ref)!=nil{return controllerWorkRef{},false};return ref,strings.TrimSpace(ref.WorkID)!=""}
-func getQueueWork(ctx context.Context,client *http.Client,queueURL,workID string)(map[string]any,error){u:=strings.TrimRight(queueURL,"/")+"/api/execution/local-work/"+url.PathEscape(workID);req,err:=http.NewRequestWithContext(ctx,http.MethodGet,u,nil);if err!=nil{return nil,err};resp,err:=client.Do(req);if err!=nil{return nil,err};defer resp.Body.Close();raw,err:=io.ReadAll(io.LimitReader(resp.Body,4<<20));if err!=nil{return nil,err};if resp.StatusCode!=http.StatusOK{return nil,fmt.Errorf("HTTP %d: %s",resp.StatusCode,strings.TrimSpace(string(raw)))};var item map[string]any;if err:=json.Unmarshal(raw,&item);err!=nil{return nil,err};return item,nil}
+var errQueueWorkNotFound=errors.New("durable work not found")
+func getQueueWork(ctx context.Context,client *http.Client,queueURL,workID string)(map[string]any,error){u:=strings.TrimRight(queueURL,"/")+"/api/execution/local-work/"+url.PathEscape(workID);req,err:=http.NewRequestWithContext(ctx,http.MethodGet,u,nil);if err!=nil{return nil,err};resp,err:=client.Do(req);if err!=nil{return nil,err};defer resp.Body.Close();raw,err:=io.ReadAll(io.LimitReader(resp.Body,4<<20));if err!=nil{return nil,err};if resp.StatusCode==http.StatusNotFound{return nil,fmt.Errorf("%w: %s",errQueueWorkNotFound,strings.TrimSpace(string(raw)))};if resp.StatusCode!=http.StatusOK{return nil,fmt.Errorf("HTTP %d: %s",resp.StatusCode,strings.TrimSpace(string(raw)))};var item map[string]any;if err:=json.Unmarshal(raw,&item);err!=nil{return nil,err};return item,nil}
 func existingWorkResult(caseID,machine,workspace string,revision int,ref controllerWorkRef,item map[string]any)ContinueResult{return ContinueResult{Schema:"openworker.go-case-continue/v3",CaseID:caseID,Machine:machine,WorkspaceRoot:workspace,Revision:revision,StepID:ref.StepID,ActionID:ref.ActionID,WorkID:ref.WorkID,QueueStatus:strings.TrimSpace(fmt.Sprint(item["status"])),QueueItem:item,Controller:"go-native",PythonControllerUsed:false}}
 func completedEvidence(item map[string]any)(map[string]any,error){raw,ok:=item["result"];if !ok||raw==nil{return nil,fmt.Errorf("completed work missing result")};m,ok:=raw.(map[string]any);if !ok{return nil,fmt.Errorf("completed work result is not an object")};if ev,ok:=m["evidence"].(map[string]any);ok{return ev,nil};return m,nil}
 func validateAcceptance(step Step,evidence map[string]any)error{for _,key:=range step.Acceptance{v,ok:=evidence[key];if !ok||v==nil||strings.TrimSpace(fmt.Sprint(v))==""{return fmt.Errorf("missing acceptance evidence %q",key)}};return nil}
