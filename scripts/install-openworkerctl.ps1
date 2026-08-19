@@ -10,8 +10,8 @@ $openworkerTarget=Join-Path $InstallRoot 'openworker.exe'
 $ctlTarget=Join-Path $InstallRoot 'openworkerctl.exe'
 Push-Location $goRoot
 try{
- & go test ./internal/casecontroller ./internal/controlcli ./cmd/openworker ./cmd/openworkerctl -count=1
- if($LASTEXITCODE-ne 0){throw "openworker Go control tests failed: $LASTEXITCODE"}
+ & go test ./... -count=1
+ if($LASTEXITCODE-ne 0){throw "openworker full Go test suite failed: $LASTEXITCODE"}
  & go build -trimpath -o $openworkerTarget ./cmd/openworker
  if($LASTEXITCODE-ne 0){throw "openworker build failed: $LASTEXITCODE"}
  & go build -trimpath -o $ctlTarget ./cmd/openworkerctl
