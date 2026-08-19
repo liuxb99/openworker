@@ -22,10 +22,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Activate and REAL verify local supervisor
+      - name: Sync go-tool main, activate and REAL verify local supervisor
         shell: cmd
         run: >-
-          powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%GITHUB_WORKSPACE%\scripts\activate-case0005-local-supervisor.ps1" -SkipCodeSync
+          powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%GITHUB_WORKSPACE%\scripts\recover-case0005-local-supervisor.ps1"
       - name: Persist recovery receipt
         if: github.event_name == 'push'
         shell: cmd
