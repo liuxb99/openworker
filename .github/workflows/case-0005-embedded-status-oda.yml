@@ -13,24 +13,47 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[case0005-embedded-status]')
     runs-on: [self-hosted, Windows, X64, ODA]
     timeout-minutes: 3
-    env:
-      OPENWORKER_CONTROL: >-
-        {"schema":"openworker.control-envelope.v1","request_id":"case0005-status-20260819-b2","command":"CASE.STATUS","machine":"DESKTOP-ODAQN0D","case_id":"0005","policy":{"max_parallel":4,"join":"wait_all","fail_closed":true}}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Verify transport-only boundary
+
+      - name: Verify ODA and installed Embedded Control Hook
         shell: powershell
         run: |
+          $ErrorActionPreference='Stop'
           if($env:COMPUTERNAME -ine 'DESKTOP-ODAQN0D'){throw "wrong host $env:COMPUTERNAME"}
-          Write-Host 'Embedded Control hook has already run at ACTIONS_RUNNER_HOOK_JOB_STARTED.'
-          Write-Host 'GitHub Action performs read-back only; no Case business execution here.'
+          $hook='C:\ProgramData\OpenWorker\hooks\openworker-job-started-hook.ps1'
+          if(-not(Test-Path -LiteralPath $hook -PathType Leaf)){throw "installed Hook missing: $hook"}
+          Write-Host 'GitHub is transient command transport only.'
+          Write-Host 'OpenWorker remains Case business authority.'
+
+      - name: Transport CASE.STATUS through new Embedded Control phrase
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $requestId='case0005-status-20260819-c3'
+          $envelope=[ordered]@{
+            schema='openworker.control-envelope.v1'
+            request_id=$requestId
+            command='CASE.STATUS'
+            machine='DESKTOP-ODAQN0D'
+            case_id='0005'
+            policy=[ordered]@{max_parallel=4;join='case-defined';fail_closed=$true}
+          }
+          $env:OPENWORKER_CONTROL=$envelope|ConvertTo-Json -Compress -Depth 10
+          try {
+            & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File 'C:\ProgramData\OpenWorker\hooks\openworker-job-started-hook.ps1'
+            if($LASTEXITCODE -ne 0){throw "Embedded Control Hook failed exit=$LASTEXITCODE"}
+          } finally {
+            Remove-Item Env:OPENWORKER_CONTROL -ErrorAction SilentlyContinue
+          }
+
       - name: Read back durable control receipts
         shell: powershell
         run: |
           $ErrorActionPreference='Stop'
-          $requestId='case0005-status-20260819-b2'
+          $requestId='case0005-status-20260819-c3'
           $hook=Join-Path $env:ProgramData "OpenWorker\hooks\receipts\$requestId.json"
           $dispatch=Join-Path $env:ProgramData "OpenWorker\control-envelope\receipts\$requestId.json"
           if(-not(Test-Path -LiteralPath $hook -PathType Leaf)){throw "hook receipt missing: $hook"}
