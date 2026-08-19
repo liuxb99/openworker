@@ -16,6 +16,10 @@ on:
         description: Comma-separated reachable OpenWorker node URLs
         required: false
         type: string
+      target_sha:
+        description: Exact OpenWorker source commit to install
+        required: false
+        type: string
   push:
     branches: [main]
 
@@ -27,29 +31,32 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[bootstrap-oda-node]') || contains(github.event.head_commit.message, '[upgrade-openworker-nodes]')
     runs-on: [self-hosted, Windows, X64, ODA]
     timeout-minutes: 15
+    env:
+      TARGET_COMMIT: ${{ inputs.target_sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ inputs.target_sha || github.sha }}
       - name: Verify fixed ODA computer
-        shell: powershell
+        shell: powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ". '{0}'"
         run: if($env:COMPUTERNAME -ine 'DESKTOP-ODAQN0D'){throw "wrong host $env:COMPUTERNAME"}
       - uses: actions/setup-go@v5
         with:
           go-version: '1.23.x'
           cache-dependency-path: go-runtime/go.sum
       - name: Build native Windows service binary
-        shell: powershell
+        shell: powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ". '{0}'"
         working-directory: go-runtime
         run: |
           go mod tidy
           go test ./... -count=1
           if($LASTEXITCODE -ne 0){throw "full Go regression tests failed: $LASTEXITCODE"}
-          $commit=$env:GITHUB_SHA
+          $commit=$env:TARGET_COMMIT
           $build=[DateTime]::UtcNow.ToString('o')
           go build -ldflags "-X github.com/liuxb99/openworker/go-runtime/internal/buildinfo.Version=p2-node -X github.com/liuxb99/openworker/go-runtime/internal/buildinfo.Commit=$commit -X github.com/liuxb99/openworker/go-runtime/internal/buildinfo.TargetCommit=$commit -X github.com/liuxb99/openworker/go-runtime/internal/buildinfo.BuildTime=$build" -o openworker-node.exe ./cmd/openworker-node
       - name: Install or upgrade OpenWorkerNode service
-        shell: powershell
+        shell: powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ". '{0}'"
         env:
           LISTEN: ${{ inputs.listen || '127.0.0.1:8787' }}
           ADVERTISE: ${{ inputs.advertise }}
@@ -58,15 +65,15 @@ jobs:
           & "$env:GITHUB_WORKSPACE\scripts\install_openworker_node_service.ps1" -SourceExe "$env:GITHUB_WORKSPACE\go-runtime\openworker-node.exe" -Workers 4 -Capabilities 'case0002,case0005,comfyx,minimax-h3,video,storyboard,presentation,local-supervisor' -Listen $env:LISTEN -Advertise $env:ADVERTISE -Peers $env:PEERS
       - name: Verify installed service and Go Case continue route
         id: verify
-        shell: powershell
+        shell: powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
           $svc=Get-Service OpenWorkerNode
           if($svc.Status -ne 'Running'){throw "service status=$($svc.Status)"}
           $s=Invoke-RestMethod 'http://127.0.0.1:8787/v1/node/status'
           if($s.machine -ine 'DESKTOP-ODAQN0D'){throw "node machine=$($s.machine)"}
-          if($s.build.commit -ne $env:GITHUB_SHA){throw "node commit=$($s.build.commit) expected=$env:GITHUB_SHA"}
-          if($s.service.running_commit -ne $env:GITHUB_SHA){throw "running_commit=$($s.service.running_commit) expected=$env:GITHUB_SHA"}
-          if($s.service.target_commit -ne $env:GITHUB_SHA){throw "target_commit=$($s.service.target_commit) expected=$env:GITHUB_SHA"}
+          if($s.build.commit -ne $env:TARGET_COMMIT){throw "node commit=$($s.build.commit) expected=$env:TARGET_COMMIT"}
+          if($s.service.running_commit -ne $env:TARGET_COMMIT){throw "running_commit=$($s.service.running_commit) expected=$env:TARGET_COMMIT"}
+          if($s.service.target_commit -ne $env:TARGET_COMMIT){throw "target_commit=$($s.service.target_commit) expected=$env:TARGET_COMMIT"}
           if($s.service.upgrade_status -ne 'VERIFIED' -or -not $s.service.upgrade_verified){throw "upgrade not verified: $($s.service | ConvertTo-Json -Compress)"}
           if(-not $s.service.service_started_at){throw 'missing service_started_at'}
           if($s.service.supervisor_api_version -ne 'v1'){throw "unexpected supervisor_api_version=$($s.service.supervisor_api_version)"}
@@ -85,7 +92,7 @@ jobs:
           "route_status=$routeStatus" >> $env:GITHUB_OUTPUT
           $s|ConvertTo-Json -Depth 20
       - name: Publish immutable resident node deployment receipt
-        shell: powershell
+        shell: powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ". '{0}'"
         env:
           ROUTE_STATUS: ${{ steps.verify.outputs.route_status }}
         run: |
@@ -96,7 +103,7 @@ jobs:
             machine=$env:COMPUTERNAME
             github_run_id=$env:GITHUB_RUN_ID
             github_run_attempt=$env:GITHUB_RUN_ATTEMPT
-            requested_commit=$env:GITHUB_SHA
+            requested_commit=$env:TARGET_COMMIT
             running_commit=$status.service.running_commit
             target_commit=$status.service.target_commit
             upgrade_status=$status.service.upgrade_status
@@ -130,7 +137,7 @@ jobs:
           }
           if(-not $pushed){throw 'failed to push node receipt'}
       - name: Publish Case 0005 current durable work receipt
-        shell: powershell
+        shell: powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
           $ErrorActionPreference='Stop'
           $workspace='D:\AI-Work\jobs\0005-SNOW-WHITE'
@@ -176,7 +183,7 @@ jobs:
           if(-not $pushed){throw 'failed to push Case0005 current durable work receipt'}
       - name: Bootstrap Case 0005 through Go-native Case Engine
         if: github.event_name == 'push' && contains(github.event.head_commit.message, '[case0005-local-bootstrap]')
-        shell: powershell
+        shell: powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
           $workspace='D:\AI-Work\jobs\0005-SNOW-WHITE'
           $body=@{
