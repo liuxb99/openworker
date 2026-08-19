@@ -15,54 +15,15 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-
-      - name: Verify fixed ODA computer
-        shell: powershell
-        run: |
-          if($env:COMPUTERNAME -ine 'DESKTOP-ODAQN0D'){
-            throw "wrong host $env:COMPUTERNAME"
-          }
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-go@v5
         with:
           go-version: '1.23.x'
           cache-dependency-path: go-runtime/go.sum
 
-      - name: Install tested openworkerctl
-        shell: powershell
-        run: |
-          & "$env:GITHUB_WORKSPACE\scripts\install-openworkerctl.ps1" -InstallRoot "$env:ProgramData\OpenWorker\bin"
-          if($LASTEXITCODE -ne 0){ throw "install-openworkerctl failed exit=$LASTEXITCODE" }
-
-      - name: Verify installed transport entry against localhost supervisor
-        shell: powershell
-        run: |
-          $ctl=Join-Path $env:ProgramData 'OpenWorker\bin\openworkerctl.exe'
-          if(-not(Test-Path -LiteralPath $ctl -PathType Leaf)){
-            throw "openworkerctl missing after install: $ctl"
-          }
-          $raw=& $ctl supervisor status 2>&1 | Out-String
-          if($LASTEXITCODE -ne 0){
-            throw "openworkerctl supervisor status failed exit=$LASTEXITCODE output=$raw"
-          }
-          try{$status=$raw|ConvertFrom-Json -ErrorAction Stop}catch{throw "non-JSON supervisor status: $raw"}
-          if($status.status -ne 'OPERATIONAL'){
-            throw "local supervisor is not OPERATIONAL: $raw"
-          }
-          if($status.route_label -ne 'LOCAL_SUPERVISOR'){
-            throw "unexpected route_label=$($status.route_label)"
-          }
-          if($status.github_action_used_for_business_execution -eq $true){
-            throw 'local supervisor reports GitHub business execution=true'
-          }
-          [ordered]@{
-            schema='openworkerctl-oda-install/v1'
-            status='REAL_VERIFIED'
-            machine=$env:COMPUTERNAME
-            executable=$ctl
-            supervisor_status=$status.status
-            route_label=$status.route_label
-            github_action_used_for_command_transport=$true
-            github_action_used_for_business_execution=$false
-            verified_at=[DateTimeOffset]::UtcNow.ToString('o')
-          } | ConvertTo-Json -Depth 20
+      - name: Install and verify openworkerctl with PowerShell ExecutionPolicy bypass
+        shell: cmd
+        run: >-
+          powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%GITHUB_WORKSPACE%\scripts\install-openworkerctl-oda-action.ps1"
