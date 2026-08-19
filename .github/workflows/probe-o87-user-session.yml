@@ -37,26 +37,9 @@ jobs:
           }
           '@
           $user=[WtsQuery]::Read($driveSession,5).Trim()
+          $domain=[WtsQuery]::Read($driveSession,7).Trim()
           if([string]::IsNullOrWhiteSpace($user)){throw "WTS returned no user for Drive session $driveSession"}
-          $loadedSids=@(Get-ChildItem Registry::HKEY_USERS -ErrorAction Stop|Where-Object{$_.PSChildName -match '^S-1-5-21-(?:\d+-){3}\d+$'}|Select-Object -ExpandProperty PSChildName -Unique)
-          $candidateSids=@()
-          foreach($sid in $loadedSids){
-            $ve="Registry::HKEY_USERS\$sid\Volatile Environment"
-            if(-not(Test-Path -LiteralPath $ve)){continue}
-            $names=@()
-            try{$names += [string](Get-ItemProperty -LiteralPath $ve -Name USERNAME -ErrorAction SilentlyContinue).USERNAME}catch{}
-            try {
-              foreach($sub in Get-ChildItem -LiteralPath $ve -ErrorAction SilentlyContinue){
-                try{$names += [string](Get-ItemProperty -LiteralPath $sub.PSPath -Name USERNAME -ErrorAction SilentlyContinue).USERNAME}catch{}
-              }
-            } catch {}
-            if(@($names|Where-Object{$_ -eq $user}).Count -gt 0){$candidateSids += $sid}
-          }
-          $candidateSids=@($candidateSids|Select-Object -Unique)
-          if($candidateSids.Count -eq 0 -and $loadedSids.Count -eq 1){$candidateSids=@($loadedSids[0])}
-          if($candidateSids.Count -ne 1){throw "expected exactly one loaded interactive user SID, got $($candidateSids.Count)"}
-          $sid=$candidateSids[0]
-          Write-Host ('OPENWORKER_O87_DRIVE_SESSION_RESOLVED session_id='+$driveSession+' loaded_sid_resolved=true')
+          Write-Host ('OPENWORKER_O87_DRIVE_SESSION_RESOLVED session_id='+$driveSession+' wts_user_present=true')
           $script='C:\ProgramData\OpenWorker\user-session-drive-probe.ps1'
           $receipt='C:\ProgramData\OpenWorker\user-session-drive-probe.json'
           New-Item -ItemType Directory -Force -Path (Split-Path $script)|Out-Null
@@ -64,15 +47,32 @@ jobs:
           `$ErrorActionPreference='Stop'
           `$ok=`$false; `$entries=@(); `$err=''
           try{`$entries=@(Get-ChildItem -LiteralPath 'G:\' -Force -ErrorAction Stop|Select-Object -First 20 -ExpandProperty Name); `$ok=`$true}catch{`$err=`$_.Exception.Message}
-          `$r=[ordered]@{schema='openworker.user-session-drive-probe/v6';machine=`$env:COMPUTERNAME;g_accessible=`$ok;entry_count=`$entries.Count;error=`$err;observed_at=[DateTimeOffset]::UtcNow.ToString('o')}
+          `$r=[ordered]@{schema='openworker.user-session-drive-probe/v7';machine=`$env:COMPUTERNAME;g_accessible=`$ok;entry_count=`$entries.Count;error=`$err;observed_at=[DateTimeOffset]::UtcNow.ToString('o')}
           [IO.File]::WriteAllText('$receipt',(`$r|ConvertTo-Json -Depth 6)+[Environment]::NewLine,[Text.UTF8Encoding]::new(`$false))
           "@|Set-Content -LiteralPath $script -Encoding utf8
           Remove-Item -LiteralPath $receipt -Force -ErrorAction SilentlyContinue
           $task='OpenWorker-O87-UserSessionDriveProbe'
-          Unregister-ScheduledTask -TaskName $task -Confirm:$false -ErrorAction SilentlyContinue
           $action=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "'+$script+'"')
-          $principal=New-ScheduledTaskPrincipal -UserId $sid -LogonType Interactive -RunLevel Highest
-          Register-ScheduledTask -TaskName $task -Action $action -Principal $principal -Force|Out-Null
+          $candidates=@()
+          if(-not [string]::IsNullOrWhiteSpace($domain)){$candidates += ($domain+'\'+$user)}
+          $candidates += ($env:COMPUTERNAME+'\'+$user)
+          $candidates += $user
+          if($user -match '@'){
+            $candidates += ('MicrosoftAccount\'+$user)
+            $candidates += ('AzureAD\'+$user)
+          }
+          $registered=$false
+          foreach($candidate in @($candidates|Select-Object -Unique)){
+            Unregister-ScheduledTask -TaskName $task -Confirm:$false -ErrorAction SilentlyContinue
+            try {
+              $principal=New-ScheduledTaskPrincipal -UserId $candidate -LogonType Interactive -RunLevel Highest
+              Register-ScheduledTask -TaskName $task -Action $action -Principal $principal -Force -ErrorAction Stop|Out-Null
+              $registered=$true
+              break
+            } catch {}
+          }
+          if(-not $registered){throw 'no canonical Drive session account form registered as Interactive task principal'}
+          Write-Host 'OPENWORKER_O87_INTERACTIVE_PRINCIPAL_REGISTERED=true'
           try {
             Start-ScheduledTask -TaskName $task
             $deadline=[DateTime]::UtcNow.AddSeconds(45)
@@ -80,7 +80,7 @@ jobs:
             if(-not(Test-Path -LiteralPath $receipt -PathType Leaf)){throw 'interactive probe receipt timeout'}
             $r=Get-Content -LiteralPath $receipt -Raw|ConvertFrom-Json
             Write-Host "OPENWORKER_O87_USER_SESSION_BRIDGE g_accessible=$($r.g_accessible) entry_count=$($r.entry_count) error=$($r.error)"
-            if(-not [bool]$r.g_accessible){throw 'Drive loaded-user SID cannot access G drive'}
+            if(-not [bool]$r.g_accessible){throw 'Drive interactive principal cannot access G drive'}
           } finally {
             Unregister-ScheduledTask -TaskName $task -Confirm:$false -ErrorAction SilentlyContinue
           }
