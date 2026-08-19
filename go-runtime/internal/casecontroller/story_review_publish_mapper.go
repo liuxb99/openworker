@@ -11,6 +11,30 @@ func init() {
 	actionDispatchAliases["openworker.review.publish-story-viewports"] = "openworker.case.publish-artifacts"
 }
 
+func singleEvidencePath(raw any, stepID, key string) (string, error) {
+	var value string
+	switch v := raw.(type) {
+	case string:
+		value = strings.TrimSpace(v)
+	case []string:
+		if len(v) != 1 {
+			return "", fmt.Errorf("dependency %s evidence %s must contain exactly one path, got %d", stepID, key, len(v))
+		}
+		value = strings.TrimSpace(v[0])
+	case []any:
+		if len(v) != 1 {
+			return "", fmt.Errorf("dependency %s evidence %s must contain exactly one path, got %d", stepID, key, len(v))
+		}
+		value = strings.TrimSpace(fmt.Sprint(v[0]))
+	default:
+		return "", fmt.Errorf("dependency %s evidence %s must be a path or single-path array, got %T", stepID, key, raw)
+	}
+	if value == "" {
+		return "", fmt.Errorf("dependency %s evidence missing %s", stepID, key)
+	}
+	return value, nil
+}
+
 // mapStoryViewportReviewPublish closes the Case review-visibility gap:
 // a terminal-success Story viewport fanout is converted into an immutable,
 // bounded artifact list and dispatched through the existing
@@ -42,7 +66,11 @@ func mapStoryViewportReviewPublish(ctx actionMapContext) (map[string]any, error)
 		return nil
 	}
 
-	if err := add(fmt.Sprint(parent.Evidence["render_manifest"]), "render_manifest"); err != nil {
+	manifest, err := singleEvidencePath(parent.Evidence["render_manifest"], parent.StepID, "render_manifest")
+	if err != nil {
+		return nil, err
+	}
+	if err := add(manifest, "render_manifest"); err != nil {
 		return nil, err
 	}
 
