@@ -22,6 +22,10 @@ type Step struct {
     Acceptance []string `json:"acceptance,omitempty"`
     FanoutRole string `json:"fanout_role,omitempty"`
     FanoutEvidencePrefix string `json:"fanout_evidence_prefix,omitempty"`
+    InputEvidenceKey string `json:"input_evidence_key,omitempty"`
+    OutputRelpath string `json:"output_relpath,omitempty"`
+    EvidenceProfile string `json:"evidence_profile,omitempty"`
+    ArtifactEvidenceKeys []string `json:"artifact_evidence_keys,omitempty"`
     Status string `json:"status"`
     Evidence map[string]any `json:"evidence"`
     Blocker string `json:"blocker,omitempty"`
