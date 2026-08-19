@@ -48,14 +48,14 @@ jobs:
           $max=[int]$env:OW_MAX_PARALLEL
           if($max -lt 1 -or $max -gt 4){ throw "max_parallel must be 1..4" }
           $envelope=[ordered]@{
-            schema='openworker.control-envelope/v1'
+            schema='openworker.control-envelope.v1'
             request_id=$env:OW_REQUEST_ID
             command=$env:OW_COMMAND
             machine='DESKTOP-ODAQN0D'
             case_id=$env:OW_CASE_ID
             policy=[ordered]@{
               max_parallel=$max
-              join='all'
+              join='case-defined'
               fail_closed=$true
             }
           }
