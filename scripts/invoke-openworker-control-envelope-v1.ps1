@@ -17,6 +17,21 @@ function Write-ControlReceipt {
   Move-Item -LiteralPath $tmp -Destination $Path -Force
 }
 function Quote-Arg([string]$s){ if($null-eq$s){return '""'}; return '"'+$s.Replace('"','\"')+'"' }
+function Get-EnvelopeFingerprint($Envelope){
+  $canonical=[ordered]@{
+    schema=[string]$Envelope.schema
+    request_id=[string]$Envelope.request_id
+    command=[string]$Envelope.command
+    machine=[string]$Envelope.machine
+    case_id=[string]$Envelope.case_id
+    max_parallel=if($null-ne$Envelope.policy-and$null-ne$Envelope.policy.max_parallel){[int]$Envelope.policy.max_parallel}else{4}
+    join=if($null-ne$Envelope.policy){[string]$Envelope.policy.join}else{''}
+    fail_closed=if($null-ne$Envelope.policy-and$null-ne$Envelope.policy.fail_closed){[bool]$Envelope.policy.fail_closed}else{$true}
+  } | ConvertTo-Json -Compress -Depth 10
+  $sha=[Security.Cryptography.SHA256]::Create()
+  try{return ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($canonical)))).Replace('-','').ToLowerInvariant()}
+  finally{$sha.Dispose()}
+}
 
 if($env:COMPUTERNAME -ine $ExpectedMachine){ throw "wrong host $env:COMPUTERNAME expected=$ExpectedMachine" }
 if(-not(Test-Path -LiteralPath $EnvelopePath -PathType Leaf)){ throw "control envelope not found: $EnvelopePath" }
@@ -32,6 +47,7 @@ if($needsCase -and [string]::IsNullOrWhiteSpace([string]$envl.case_id)){ throw '
 $maxParallel=4
 if($null-ne$envl.policy-and$null-ne$envl.policy.max_parallel){$maxParallel=[int]$envl.policy.max_parallel}
 if($maxParallel-lt1-or$maxParallel-gt4){ throw "max_parallel must be 1..4, got $maxParallel" }
+$fingerprint=Get-EnvelopeFingerprint $envl
 
 $receiptRoot=Join-Path $env:ProgramData 'OpenWorker\control-envelope\receipts'
 $receiptPath=Join-Path $receiptRoot ($requestId+'.json')
@@ -39,8 +55,21 @@ if(Test-Path -LiteralPath $receiptPath -PathType Leaf){
   $cached=Get-Content -LiteralPath $receiptPath -Raw
   try{$cachedObj=$cached|ConvertFrom-Json -ErrorAction Stop}catch{$cachedObj=$null}
   if(($null -ne $cachedObj) -and ([string]$cachedObj.request_id -eq $requestId)){
-    Write-Host "OPENWORKER_CONTROL_IDEMPOTENT_HIT request_id=$requestId"
-    $cached
+    if((-not [string]::IsNullOrWhiteSpace([string]$cachedObj.request_fingerprint)) -and ([string]$cachedObj.request_fingerprint -ne $fingerprint)){
+      $conflict=[ordered]@{
+        schema='openworker.control-result.v2';request_id=$requestId;command=$command;case_id=if($needsCase){[string]$envl.case_id}else{$null};machine=$ExpectedMachine
+        accepted=$false;exit_code=73;error_class='request_id_conflict';error='request_id already exists with a different control envelope';max_parallel=$maxParallel
+        request_fingerprint=$fingerprint;cached_request_fingerprint=[string]$cachedObj.request_fingerprint;idempotent_hit=$false
+        business_authority='openworker-go-native-case-controller';execution_authority='go-tool-runtime-local-supervisor'
+        github_action_used_for_command_transport=$true;github_action_used_for_business_execution=$false
+        started_at=[DateTimeOffset]::UtcNow.ToString('o');completed_at=[DateTimeOffset]::UtcNow.ToString('o');result=$null
+      }
+      $conflict|ConvertTo-Json -Depth 50
+      exit 73
+    }
+    # Backward-compatible cache hits are accepted when legacy receipts have no fingerprint.
+    $cachedObj | Add-Member -NotePropertyName idempotent_hit -NotePropertyValue $true -Force
+    $cachedObj|ConvertTo-Json -Depth 50
     exit ([int]$cachedObj.exit_code)
   }
 }
@@ -83,13 +112,11 @@ try{
   Remove-Item -LiteralPath $outFile,$errFile -Force -ErrorAction SilentlyContinue
 }
 
-# Acceptance means the native OpenWorker command completed successfully and its
-# stdout passed JSON validation. Valid control responses may be an empty JSON
-# object, so response content must not be used as an additional truthiness gate.
 $accepted = ($exitCode -eq 0)
 $response=[ordered]@{
   schema='openworker.control-result.v2';request_id=$requestId;command=$command;case_id=if($needsCase){[string]$envl.case_id}else{$null};machine=$ExpectedMachine
   accepted=$accepted;exit_code=$exitCode;error_class=$errorClass;error=$errorText;max_parallel=$maxParallel
+  request_fingerprint=$fingerprint;idempotent_hit=$false
   dispatch_semantics=if($command-eq'CASE.CONTINUE_BATCH'){'reconcile_ready_fanout'}else{'single_control_operation'}
   business_authority='openworker-go-native-case-controller';execution_authority='go-tool-runtime-local-supervisor'
   github_action_used_for_command_transport=$true;github_action_used_for_business_execution=$false;timeout_seconds=$TimeoutSeconds
