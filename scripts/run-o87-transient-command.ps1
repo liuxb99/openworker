@@ -68,10 +68,18 @@ $accepted=($exitCode -eq 0)
 if($accepted -and $Command -eq 'case_continue'){
   $hasDurableIdentity=$false
   if($null -ne $result){
-    if($result.work_id){$hasDurableIdentity=$true}
-    if($result.fanout_work_ids -and @($result.fanout_work_ids).Count -gt 0){$hasDurableIdentity=$true}
-    if($result.accepted -eq $true){$hasDurableIdentity=$true}
-    if($result.queue_status -and @('accepted','fanout_active','already_submitted') -contains [string]$result.queue_status){$hasDurableIdentity=$true}
+    $candidates=@($result)
+    if($null -ne $result.controller_result){$candidates+=@($result.controller_result)}
+    if($null -ne $result.result){$candidates+=@($result.result)}
+    if($null -ne $result.controller_result -and $null -ne $result.controller_result.result){$candidates+=@($result.controller_result.result)}
+    foreach($candidate in $candidates){
+      if($null -eq $candidate){continue}
+      if($candidate.work_id){$hasDurableIdentity=$true}
+      if($candidate.queue_item -and $candidate.queue_item.work_id){$hasDurableIdentity=$true}
+      if($candidate.fanout_work_ids -and @($candidate.fanout_work_ids).Count -gt 0){$hasDurableIdentity=$true}
+      if($candidate.accepted -eq $true){$hasDurableIdentity=$true}
+      if($candidate.queue_status -and @('accepted','pending','claimed','fanout_active','already_submitted') -contains [string]$candidate.queue_status){$hasDurableIdentity=$true}
+    }
   }
   if(-not $hasDurableIdentity){$accepted=$false;$exitCode=72;$errorText='case_continue returned no durable work identity/accepted evidence'}
 }
