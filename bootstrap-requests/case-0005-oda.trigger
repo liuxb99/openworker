@@ -1,7 +1,9 @@
 case_id=0005
 machine=DESKTOP-ODAQN0D
-requested_at=2026-08-18T23:06:30+08:00
+requested_at=2026-08-19T16:42:00+08:00
 transport=github-one-shot-bootstrap-only
 business_execution=openworker-local-supervisor
 publish_bootstrap_ack=true
-reason=kick_controller_with_deployed_gtr_local_exec_exe_authority
+controller=go-native
+python_required=false
+reason=retry_after_removing_legacy_python_controller_from_resident_bootstrap
