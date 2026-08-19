@@ -1,0 +1,23 @@
+name: Diagnose Case0005 ODA
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'diagnostic-requests/case0005.json'
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: [self-hosted, Windows, X64, ODA]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Read latest Case0005 failure logs with bounded fixed command
+        shell: cmd
+        run: >-
+          powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%GITHUB_WORKSPACE%\scripts\run-case0005-diagnose-oda.ps1"
