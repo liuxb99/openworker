@@ -91,6 +91,7 @@ class VerifiedLocalCase0005Controller(
                 )
                 artifacts = [
                     "final/final.mp4",
+                    "final/review-contact-sheet.jpg",
                     f".openworker/revisions/{revision}/manifest.json",
                 ]
                 label = "final-review"
