@@ -16,8 +16,11 @@ def test_dispatch_is_fixed_oda_transport_only_contract():
     assert "DESKTOP-ODAQN0D" in workflow
     assert "timeout-minutes: 2" in workflow
     assert "command-requests/oda.json" in workflow
+    assert "command-results/oda.json" in workflow
     assert "openworker.command-request.v1" in workflow
+    assert "openworker.command-result.v1" in workflow
     assert "invoke-local-supervisor-command-transport.ps1" in workflow
+    assert "contents: write" in workflow
 
     for command in ("supervisor_status", "case_status", "case_continue", "queue_clear"):
         assert f"- {command}" in workflow
@@ -30,6 +33,7 @@ def test_dispatch_is_fixed_oda_transport_only_contract():
     assert "github_action_used_for_business_execution=$false" in transport
     assert "Test-Accepted" in transport
     assert "case_continue did not return accepted=true" in transport
+    assert "git push origin HEAD:main" in workflow
 
     combined = workflow + "\n" + transport
     forbidden = (
@@ -44,6 +48,15 @@ def test_dispatch_is_fixed_oda_transport_only_contract():
     )
     for token in forbidden:
         assert token.lower() not in combined.lower()
+
+
+def test_result_writeback_cannot_retrigger_transport_workflow():
+    text = DISPATCH.read_text(encoding="utf-8")
+    trigger_block = text.split("permissions:", 1)[0]
+
+    assert "'command-requests/oda.json'" in trigger_block
+    assert "command-results/oda.json" not in trigger_block
+    assert "github_action_used_for_business_execution=$false" in text
 
 
 def test_dispatch_has_no_free_form_case_machine_url_or_shell_inputs():
