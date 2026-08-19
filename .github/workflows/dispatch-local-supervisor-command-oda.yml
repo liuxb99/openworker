@@ -19,6 +19,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   ingress:
@@ -38,13 +39,14 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           INPUT_COMMAND: ${{ inputs.command }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference='Stop'
           if($env:EVENT_NAME -eq 'workflow_dispatch'){
             $command=$env:INPUT_COMMAND
             $requestId="manual-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
           }elseif($env:EVENT_NAME -eq 'push'){
-            $path=Join-Path $env:GITHUB_WORKSPACE 'command-requests/oda.json'
+            $path=Join-Path $env:GITHUB_WORKSPACE 'command-requests\oda.json'
             if(-not(Test-Path -LiteralPath $path -PathType Leaf)){throw "request missing: $path"}
             try{$req=Get-Content -LiteralPath $path -Raw | ConvertFrom-Json -ErrorAction Stop}catch{throw "invalid request JSON: $_"}
             if($req.schema -ne 'openworker.command-request.v1'){throw "unsupported request schema=$($req.schema)"}
@@ -61,6 +63,23 @@ jobs:
           if($allowed -notcontains $command){throw "unsupported command=$command"}
           "command=$command" >> $env:GITHUB_OUTPUT
           "request_id=$requestId" >> $env:GITHUB_OUTPUT
+
+          $headers=@{Authorization="Bearer $env:GH_TOKEN";Accept='application/vnd.github+json';'X-GitHub-Api-Version'='2022-11-28'}
+          $runnerPayload=Invoke-RestMethod -Uri "https://api.github.com/repos/$env:GITHUB_REPOSITORY/actions/runners?per_page=100" -Headers $headers
+          $odaMatches=@($runnerPayload.runners | Where-Object { $_.name -like 'DESKTOP-ODAQN0D*' })
+          $odaRunnerState=@()
+          foreach($runner in $odaMatches){
+            $odaRunnerState += [ordered]@{
+              name=$runner.name
+              runner_id=$runner.id
+              status=$runner.status
+              busy=[bool]$runner.busy
+              labels=@($runner.labels | ForEach-Object {[string]$_.name})
+            }
+          }
+          $odaRegistered=($odaMatches.Count -gt 0)
+          $odaOnline=(@($odaMatches | Where-Object {$_.status -eq 'online'}).Count -gt 0)
+          $odaBusy=(@($odaMatches | Where-Object {$_.busy -eq $true}).Count -gt 0)
 
           $queued=[ordered]@{
             schema='openworker.command-result.v1'
@@ -79,6 +98,10 @@ jobs:
             business_completion_claimed=$false
             authoritative_business_state='openworker'
             queued_for_oda_at=[DateTimeOffset]::UtcNow.ToString('o')
+            oda_runner_registered=$odaRegistered
+            oda_runner_online=$odaOnline
+            oda_runner_busy=$odaBusy
+            oda_runners=$odaRunnerState
             note='GitHub ingress validated; waiting for ODA self-hosted runner. This is not local acceptance.'
           }
           $resultDir=Join-Path $env:GITHUB_WORKSPACE 'command-results'
