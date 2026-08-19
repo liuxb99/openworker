@@ -57,6 +57,14 @@ class Case0005LifecycleMixin:
     def _claim_inputs(self, worklist, step, action: str, spec):
         common = {"workspace_root": str(self.workspace), "assigned_host": worklist.assigned_host}
 
+        if action == "openworker.review.await-drive" and step.step_id in {"0005-027", "0005-057", "0005-100"}:
+            return {
+                **common,
+                "step_id": step.step_id,
+                "evidence_relpath": f"evidence/{step.step_id}-drive-gate.json",
+                "timeout_seconds": 43200,
+            }
+
         if action == "openworker.workledger.revision" and step.step_id == "0005-080":
             final_sha = str(self._required_evidence(worklist, "0005-070", "final_mp4_sha256"))
             if len(final_sha.strip()) != 64:
@@ -156,6 +164,31 @@ class Case0005LifecycleMixin:
         evidence = local_result.get("evidence")
         if not isinstance(evidence, Mapping):
             return super()._acceptance_evidence(step, local_result)
+
+        if action == "openworker.review.await-drive":
+            if bool(evidence.get("github_action_used_for_business_execution")) or bool(evidence.get("cloud_command_ingress_used")):
+                raise CaseWorklistError("Drive review gate must not use GitHub business execution or cloud command ingress")
+            if step.step_id == "0005-027":
+                mapped = {
+                    "approved_storyboard_pptx_sha256": evidence.get("approved_storyboard_pptx_sha256"),
+                    "approval_decision": evidence.get("approval_decision"),
+                    "approval_receipt": evidence.get("approval_receipt"),
+                }
+            elif step.step_id == "0005-057":
+                mapped = {
+                    "approved_illustrated_storyboard_sha256": evidence.get("approved_illustrated_storyboard_sha256"),
+                    "approval_decision": evidence.get("approval_decision"),
+                    "approval_receipt": evidence.get("approval_receipt"),
+                }
+            elif step.step_id == "0005-100":
+                mapped = {
+                    "review_receipt": evidence.get("review_receipt"),
+                    "review_decision": evidence.get("review_decision"),
+                    "accepted_revision_id": evidence.get("accepted_revision_id"),
+                }
+            else:
+                raise CaseWorklistError(f"Drive review gate acceptance is not mapped for {step.step_id}")
+            return self._require_keys(mapped, step.acceptance)
 
         if action == "openworker.workledger.revision":
             return self._require_keys({
