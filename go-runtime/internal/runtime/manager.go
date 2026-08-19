@@ -10,42 +10,11 @@ func(m *Manager)recoverStartup()error{jobs,err:=m.store.ActiveJobs();if err!=nil
 func(m *Manager)Start()error{if err:=os.MkdirAll(m.logsDir,0755);err!=nil{return err};if err:=m.recoverStartup();err!=nil{return err};for i:=0;i<m.maxWorkers;i++{m.wg.Add(1);go m.worker(i+1)};return nil}
 func(m *Manager)Stop(){close(m.stop);m.mu.Lock();for _,c:=range m.cancel{c()};m.mu.Unlock();m.wg.Wait()}
 func(m *Manager)worker(slot int){defer m.wg.Done();t:=time.NewTicker(300*time.Millisecond);defer t.Stop();for{select{case<-m.stop:return;case<-t.C:j,e:=m.store.ClaimNext();if e!=nil||j==nil{continue};if !m.locks.TryAcquire(j.JobID,j.Locks){_=m.store.Requeue(j.JobID,"resource lock busy");continue};m.run(slot,*j)}}}
-func commandForShell(ctx context.Context,c string)*exec.Cmd{
- if gort.GOOS=="windows"{
-  wrapped:=c
-  if strings.HasPrefix(strings.TrimSpace(c),"\""){wrapped="\""+c+"\""}
-  return exec.CommandContext(ctx,"cmd.exe","/D","/S","/C",wrapped)
- }
- return exec.CommandContext(ctx,"/bin/sh","-c",c)
-}
-
+func commandForShell(ctx context.Context,c string)*exec.Cmd{return platformCommandForShell(ctx,c)}
 func statusSucceeded(status model.Status) bool { return status == model.StatusSucceeded }
-func nextActionFor(status model.Status,detail string) string {
- if status==model.StatusSucceeded{return "continue to the next accepted workflow step"}
- if status==model.StatusTimedOut{return "inspect stderr/stdout and timeout requirements, then retry only after correcting the cause"}
- if status==model.StatusCancelled{return "confirm whether cancellation was intentional before retrying"}
- if strings.Contains(strings.ToLower(detail),"machine mismatch"){return "route the job to the requested COMPUTERNAME and retry"}
- if strings.Contains(strings.ToLower(detail),"worktree"){return "repair the worktree/repository state and retry"}
- if strings.Contains(strings.ToLower(detail),"start failed"){return "repair executable/path/environment prerequisites and retry"}
- return "inspect stderr_tail and the failing tool receipt, repair the root cause, then retry"
-}
+func nextActionFor(status model.Status,detail string) string {if status==model.StatusSucceeded{return "continue to the next accepted workflow step"};if status==model.StatusTimedOut{return "inspect stderr/stdout and timeout requirements, then retry only after correcting the cause"};if status==model.StatusCancelled{return "confirm whether cancellation was intentional before retrying"};if strings.Contains(strings.ToLower(detail),"machine mismatch"){return "route the job to the requested COMPUTERNAME and retry"};if strings.Contains(strings.ToLower(detail),"worktree"){return "repair the worktree/repository state and retry"};if strings.Contains(strings.ToLower(detail),"start failed"){return "repair executable/path/environment prerequisites and retry"};return "inspect stderr_tail and the failing tool receipt, repair the root cause, then retry"}
 func readTail(path string,n int)[]string{if path==""{return nil};v,e:=ReadLastLines(path,n);if e!=nil{return nil};return v}
-func(m *Manager)finish(j model.Job,status model.Status,exit int,detail string){
- _=m.store.Finish(j.JobID,status,exit)
- m.store.RecordEvent(j.JobID,string(status),detail)
- cur,_:=m.store.Get(j.JobID)
- stderrTail:=readTail(cur.StderrPath,40)
- stdoutTail:=readTail(cur.StdoutPath,20)
- summary:=map[string]any{
-  "schema":"openworker.execution-summary/v1",
-  "job_id":j.JobID,"dispatch_id":j.DispatchID,"machine":m.machine,"status":status,"succeeded":statusSucceeded(status),
-  "attempted_action":j.Command,"cwd":j.CWD,"workspace_root":j.WorkspaceRoot,"exit_code":exit,"reason":detail,
-  "stdout_path":cur.StdoutPath,"stderr_path":cur.StderrPath,"stdout_tail":stdoutTail,"stderr_tail":stderrTail,
-  "started_at":cur.StartedAt,"finished_at":cur.FinishedAt,"next_action":nextActionFor(status,detail),"recorded_at":time.Now().UTC(),
- }
- b,_:=json.Marshal(summary)
- m.store.RecordEvent(j.JobID,"execution_summary",string(b))
-}
+func(m *Manager)finish(j model.Job,status model.Status,exit int,detail string){_=m.store.Finish(j.JobID,status,exit);m.store.RecordEvent(j.JobID,string(status),detail);cur,_:=m.store.Get(j.JobID);stderrTail:=readTail(cur.StderrPath,40);stdoutTail:=readTail(cur.StdoutPath,20);summary:=map[string]any{"schema":"openworker.execution-summary/v1","job_id":j.JobID,"dispatch_id":j.DispatchID,"machine":m.machine,"status":status,"succeeded":statusSucceeded(status),"attempted_action":j.Command,"cwd":j.CWD,"workspace_root":j.WorkspaceRoot,"exit_code":exit,"reason":detail,"stdout_path":cur.StdoutPath,"stderr_path":cur.StderrPath,"stdout_tail":stdoutTail,"stderr_tail":stderrTail,"started_at":cur.StartedAt,"finished_at":cur.FinishedAt,"next_action":nextActionFor(status,detail),"recorded_at":time.Now().UTC()};b,_:=json.Marshal(summary);m.store.RecordEvent(j.JobID,"execution_summary",string(b))}
 func(m *Manager)run(slot int,j model.Job){defer m.locks.Release(j.JobID);m.store.RecordEvent(j.JobID,"attempt",fmt.Sprintf("machine=%s cwd=%s workspace=%s command=%s",m.machine,j.CWD,j.WorkspaceRoot,j.Command));if j.Machine!=""&&j.Machine!="any"&&!strings.EqualFold(j.Machine,m.machine){m.finish(j,model.StatusFailed,-1,"machine mismatch at execution");return};cwd:=j.CWD;if j.UseWorktree{p,e:=worktree.New(j.CWD).Ensure(slot,j.WorktreeRef);if e!=nil{m.finish(j,model.StatusFailed,-1,"worktree setup failed: "+e.Error());return};cwd=p};ctx,cancel:=context.WithTimeout(context.Background(),time.Duration(j.TimeoutSec)*time.Second);m.mu.Lock();m.cancel[j.JobID]=cancel;m.mu.Unlock();defer func(){cancel();m.mu.Lock();delete(m.cancel,j.JobID);m.mu.Unlock()}();outp:=filepath.Join(m.logsDir,j.JobID+".stdout.log");errp:=filepath.Join(m.logsDir,j.JobID+".stderr.log");out,e:=os.Create(outp);if e!=nil{m.finish(j,model.StatusFailed,-1,"stdout create failed: "+e.Error());return};defer out.Close();erf,e:=os.Create(errp);if e!=nil{m.finish(j,model.StatusFailed,-1,"stderr create failed: "+e.Error());return};defer erf.Close();cmd:=commandForShell(ctx,j.Command);cmd.Dir=cwd;cmd.Stdout=out;cmd.Stderr=erf;cmd.Env=os.Environ();for k,v:=range j.Env{cmd.Env=append(cmd.Env,k+"="+v)};cmd.Env=append(cmd.Env,"OPENWORKER_JOB_ID="+j.JobID,"OPENWORKER_AGENT_SLOT="+strconv.Itoa(slot),"OPENWORKER_MACHINE="+m.machine,"GITHUB_WORKSPACE="+cwd);if j.WorkspaceRoot!=""{cmd.Env=append(cmd.Env,"OPENWORKER_WORKSPACE="+j.WorkspaceRoot)};if e:=cmd.Start();e!=nil{m.finish(j,model.StatusFailed,-1,"process start failed: "+e.Error());return};_=m.store.MarkRunning(j.JobID,slot,cmd.Process.Pid,outp,errp);m.store.RecordEvent(j.JobID,"running",fmt.Sprintf("slot=%d pid=%d cwd=%s",slot,cmd.Process.Pid,cwd));done:=make(chan error,1);go func(){done<-cmd.Wait()}();hb:=time.NewTicker(2*time.Second);defer hb.Stop();for{select{case e:=<-done:exit:=0;status:=model.StatusSucceeded;detail:="process exited successfully";if e!=nil{status=model.StatusFailed;detail=e.Error();if ee:=new(exec.ExitError);errors.As(e,&ee){exit=ee.ExitCode()}else{exit=-1}};if ctx.Err()==context.DeadlineExceeded{status=model.StatusTimedOut;exit=-1;detail="timeout exceeded"};if ctx.Err()==context.Canceled{cur,_:=m.store.Get(j.JobID);if cur.Status==model.StatusCancelled{status=model.StatusCancelled;detail="cancelled by operator"}};m.finish(j,status,exit,detail);return;case<-hb.C:_=m.store.Heartbeat(j.JobID);case<-ctx.Done():killProcessTree(cmd.Process.Pid)}}}
 func killProcessTree(pid int){if pid<=0{return};if gort.GOOS=="windows"{_=exec.Command("taskkill","/PID",strconv.Itoa(pid),"/T","/F").Run();return};if p,e:=os.FindProcess(pid);e==nil{_=p.Kill()}}
 func(m *Manager)Cancel(id string)error{j,e:=m.store.Get(id);if e!=nil{return e};if j.Status==model.StatusSucceeded||j.Status==model.StatusFailed||j.Status==model.StatusTimedOut||j.Status==model.StatusCancelled{return nil};_=m.store.MarkCancelled(id);m.store.RecordEvent(id,"cancel_requested","operator cancel");m.mu.Lock();c:=m.cancel[id];m.mu.Unlock();if c!=nil{c();if j.PID>0{killProcessTree(j.PID)}};m.locks.Release(id);return nil}
