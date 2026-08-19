@@ -6,4 +6,6 @@ business_execution=openworker-local-supervisor
 publish_bootstrap_ack=true
 controller=go-native
 python_required=false
-reason=retry_after_removing_legacy_python_controller_from_resident_bootstrap
+resident_node_bootstrap_required=true
+case_bootstrap_required=true
+reason=co_trigger_oda_resident_node_verify_and_case0005_go_native_bootstrap
