@@ -21,6 +21,7 @@ type bootstrapDiagnostic struct { OK bool `json:"ok"`; CaseID string `json:"case
 func (s *Server) bootstrapFail(w http.ResponseWriter,status int,req caseBootstrapRequest,stage,attempted string,err error,next string,checks map[string]any){machine:=strings.TrimSpace(req.Machine);if machine==""{machine=s.machine};d:=bootstrapDiagnostic{OK:false,CaseID:strings.TrimSpace(req.CaseID),Machine:machine,Stage:stage,AttemptedAction:attempted,Reason:err.Error(),NextAction:next,Checks:checks,ObservedAt:time.Now().UTC()};detail,_:=json.Marshal(d);_=s.store.RecordClusterControl("","case_bootstrap_failed",machine,string(detail));writeJSON(w,status,d)}
 
 func (s *Server) caseBootstrap(w http.ResponseWriter,r *http.Request){
+    ensureNativeCaseContinueRoute(s)
     var req caseBootstrapRequest;d:=json.NewDecoder(http.MaxBytesReader(w,r.Body,1<<20));d.DisallowUnknownFields();if err:=d.Decode(&req);err!=nil{s.bootstrapFail(w,400,req,"decode_request","decode case bootstrap request",err,"fix request JSON and retry",nil);return}
     req.CaseID=strings.TrimSpace(req.CaseID);req.Machine=strings.TrimSpace(req.Machine);req.WorkspaceRoot=strings.TrimSpace(req.WorkspaceRoot);req.OpenWorkerRoot=strings.TrimSpace(req.OpenWorkerRoot);req.ManifestPath=strings.TrimSpace(req.ManifestPath);req.SpecPath=strings.TrimSpace(req.SpecPath)
     checks:=map[string]any{"workspace_root":req.WorkspaceRoot,"openworker_root":req.OpenWorkerRoot,"manifest_path":req.ManifestPath,"spec_path":req.SpecPath,"controller":"go-native"}
@@ -34,7 +35,7 @@ func (s *Server) caseBootstrap(w http.ResponseWriter,r *http.Request){
     manifest,err:=requireBootstrapFile(root,req.ManifestPath);if err!=nil{s.bootstrapFail(w,400,req,"validate_manifest","verify worklist",err,"sync/fix worklist and retry",checks);return}
     spec,err:=requireBootstrapFile(root,req.SpecPath);if err!=nil{s.bootstrapFail(w,400,req,"validate_spec","verify case spec",err,"sync/fix case spec and retry",checks);return}
     result,err:=casecontroller.Bootstrap(req.CaseID,s.machine,workspace,manifest,spec);if err!=nil{s.bootstrapFail(w,409,req,"go_native_bootstrap","run native Go case bootstrap",err,"repair native Go controller inputs and retry",checks);return}
-    checks["python_required"]=false;checks["durable_submit"]=false;checks["revision"]=result.Revision;checks["ready_step_ids"]=result.ReadyStepIDs
+    checks["python_required"]=false;checks["durable_submit"]=false;checks["revision"]=result.Revision;checks["ready_step_ids"]=result.ReadyStepIDs;checks["continue_endpoint"]="/v1/cases/continue"
     detail,_:=json.Marshal(result);_=s.store.RecordClusterControl("","go_case_bootstrap",s.machine,string(detail))
     writeJSON(w,202,map[string]any{"ok":true,"case_id":req.CaseID,"machine":s.machine,"workspace_root":workspace,"stage":"go_native_bootstrap_completed","controller":"go-native","python_required":false,"result":result,"checks":checks,"authority":"openworker-go-native-case-controller","github_action_used":false})
 }
