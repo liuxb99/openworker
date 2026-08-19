@@ -13,10 +13,10 @@ func TestMapStepInputs025UsesBoundedStoryboardRequest(t *testing.T){
     if err:=os.WriteFile(request,[]byte("{}\n"),0o644);err!=nil{t.Fatal(err)}
     w:=Worklist{CaseID:"0005",WorkspaceRoot:workspace,AssignedHost:"DESKTOP-ODAQN0D",Revision:14,Steps:[]Step{
         {StepID:"0005-020",Status:"SUCCEEDED",Evidence:map[string]any{"storyboard_request":request}},
-        {StepID:"0005-025",AllowedActions:[]string{"presentation.openmaic"},Status:"PENDING"},
+        {StepID:"0005-025",Dependencies:[]string{"0005-020"},AllowedActions:[]string{"presentation.openmaic"},InputEvidenceKey:"storyboard_request",OutputRelpath:"presentation/storyboard-text-only.pptx",EvidenceProfile:"storyboard-text",Status:"PENDING"},
     }}
     step:=findStep(w.Steps,"0005-025")
-    action,inputs,err:=mapStepInputs(step,w,workspace,"DESKTOP-ODAQN0D","")
+    action,inputs,err:=mapActionInputs(step,w,workspace,"DESKTOP-ODAQN0D","")
     if err!=nil{t.Fatal(err)}
     if action!="presentation.openmaic"{t.Fatalf("action=%s",action)}
     if filepath.Clean(inputs["request_relpath"].(string))!=filepath.Clean(filepath.Join("presentation","storyboard-request.json")){t.Fatalf("request_relpath=%v",inputs["request_relpath"])}
@@ -28,8 +28,8 @@ func TestMapStepInputs025RejectsStoryboardRequestOutsideWorkspace(t *testing.T){
     if err:=os.WriteFile(outside,[]byte("{}\n"),0o644);err!=nil{t.Fatal(err)}
     w:=Worklist{CaseID:"0005",WorkspaceRoot:workspace,AssignedHost:"DESKTOP-ODAQN0D",Revision:14,Steps:[]Step{
         {StepID:"0005-020",Status:"SUCCEEDED",Evidence:map[string]any{"storyboard_request":outside}},
-        {StepID:"0005-025",AllowedActions:[]string{"presentation.openmaic"},Status:"PENDING"},
+        {StepID:"0005-025",Dependencies:[]string{"0005-020"},AllowedActions:[]string{"presentation.openmaic"},InputEvidenceKey:"storyboard_request",OutputRelpath:"presentation/storyboard-text-only.pptx",EvidenceProfile:"storyboard-text",Status:"PENDING"},
     }}
-    _,_,err:=mapStepInputs(findStep(w.Steps,"0005-025"),w,workspace,"DESKTOP-ODAQN0D","")
+    _,_,err:=mapActionInputs(findStep(w.Steps,"0005-025"),w,workspace,"DESKTOP-ODAQN0D","")
     if err==nil{t.Fatal("expected workspace escape rejection")}
 }

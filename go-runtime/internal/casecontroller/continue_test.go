@@ -75,3 +75,23 @@ func TestContinueReconcilesFailedDirectorWithoutResubmit(t *testing.T){
     _,err:=Continue(context.Background(),"0005","DESKTOP-ODAQN0D",workspace,"http://127.0.0.1:8848",client);if err==nil||!strings.Contains(err.Error(),"director boom"){t.Fatalf("expected durable failure, got %v",err)}
     wb,_:=os.ReadFile(filepath.Join(marker,"case-worklist.json"));var w Worklist;_ = json.Unmarshal(wb,&w);s:=findStep(w.Steps,"0005-010");if s==nil||s.Status!="FAILED"||s.Blocker!="director boom"{t.Fatalf("failed step not persisted %#v",s)}
 }
+
+func TestContinueRedispatchesFailedWorkFromOlderRevision(t *testing.T){
+    workspace,marker:=setupCase(t)
+    wb,err:=os.ReadFile(filepath.Join(marker,"case-worklist.json"));if err!=nil{t.Fatal(err)}
+    var w Worklist;if err:=json.Unmarshal(wb,&w);err!=nil{t.Fatal(err)};w.Revision=15
+    if err:=persistWorklist(filepath.Join(marker,"case-worklist.json"),w);err!=nil{t.Fatal(err)}
+    ref:=controllerWorkRef{WorkID:"case0005-0005-010-r000014-failed",StepID:"0005-010",ActionID:"comfyx-studio.director.preproduction",Revision:14}
+    rb,_:=json.Marshal(ref);if err:=os.WriteFile(filepath.Join(marker,"case-controller-last.json"),rb,0o644);err!=nil{t.Fatal(err)}
+    posts:=0
+    client:=&http.Client{Transport:roundTripFunc(func(r *http.Request)(*http.Response,error){
+        if r.Method==http.MethodGet{return responseJSON(http.StatusOK,map[string]any{"work_id":ref.WorkID,"status":"failed","error":"old revision failed"}),nil}
+        posts++;var submitted map[string]any;if err:=json.NewDecoder(r.Body).Decode(&submitted);err!=nil{t.Fatal(err)}
+        id:=strings.TrimSpace(submitted["work_id"].(string));if !strings.Contains(id,"r000015"){t.Fatalf("expected revision 15 work id, got %s",id)}
+        return responseJSON(http.StatusCreated,map[string]any{"work_id":id,"assigned_host":"DESKTOP-ODAQN0D","capability_id":ref.ActionID,"status":"pending","attempts":0}),nil
+    })}
+    got,err:=Continue(context.Background(),"0005","DESKTOP-ODAQN0D",workspace,"http://127.0.0.1:8848",client);if err!=nil{t.Fatal(err)}
+    if posts!=1||got.WorkID==ref.WorkID||got.Revision!=15{t.Fatalf("unexpected redispatch result %#v posts=%d",got,posts)}
+    ledger,err:=os.ReadFile(filepath.Join(marker,"case-supervisor-ledger.jsonl"));if err!=nil{t.Fatal(err)}
+    if !strings.Contains(string(ledger),"go_failed_controller_work_ref_cleared"){t.Fatalf("missing failed-ref recovery ledger: %s",ledger)}
+}

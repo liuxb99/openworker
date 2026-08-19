@@ -2,6 +2,8 @@ package casecontroller
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
@@ -53,7 +55,8 @@ func TestReconcileFanoutKeepsStaleStateWhenParentNotFailed(t *testing.T) {
 		Steps: []Step{{StepID: "0004-047", Status: "PENDING", Evidence: map[string]any{}}},
 	}
 
-	completed, _, err := reconcileFanout(context.Background(), nil, "http://127.0.0.1:8848", workspace, filepath.Join(marker, "case-worklist.json"), filepath.Join(marker, "ledger.jsonl"), &w, state)
+	client:=&http.Client{Transport:roundTripFunc(func(*http.Request)(*http.Response,error){return nil,errors.New("queue unavailable")})}
+	completed, _, err := reconcileFanout(context.Background(), client, "http://127.0.0.1:8848", workspace, filepath.Join(marker, "case-worklist.json"), filepath.Join(marker, "ledger.jsonl"), &w, state)
 	if err == nil { t.Fatal("stale fanout with non-failed parent must fail closed") }
 	if completed { t.Fatal("stale non-failed fanout must not be considered completed") }
 	if _, statErr := os.Stat(fanoutPath); statErr != nil { t.Fatalf("fanout state must remain, stat err=%v", statErr) }

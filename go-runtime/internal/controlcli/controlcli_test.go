@@ -13,7 +13,10 @@ func TestValidateServerLocalOnly(t *testing.T){
 }
 func TestCaseConfigUnknownFailsClosed(t *testing.T){if _,e:=caseConfig("9999");e==nil{t.Fatal("unknown case accepted")}}
 func TestCaseConfigCase0004(t *testing.T){
-    root:=t.TempDir();if err:=os.MkdirAll(filepath.Join(root,"case-worklists"),0o755);err!=nil{t.Fatal(err)};if err:=os.WriteFile(filepath.Join(root,"case-worklists","0005.json"),[]byte("{}"),0o644);err!=nil{t.Fatal(err)}
+    root:=t.TempDir();if err:=os.MkdirAll(filepath.Join(root,"case-worklists"),0o755);err!=nil{t.Fatal(err)};if err:=os.MkdirAll(filepath.Join(root,"case-specs"),0o755);err!=nil{t.Fatal(err)}
+    manifest:=`{"case_id":"0004","assigned_host":"DESKTOP-O87PJNR","workspace_root":"D:\\AI-Work\\jobs\\0004-DWG-TO-3D","revision":1}`
+    if err:=os.WriteFile(filepath.Join(root,"case-worklists","0004.json"),[]byte(manifest),0o644);err!=nil{t.Fatal(err)}
+    if err:=os.WriteFile(filepath.Join(root,"case-specs","0004.json"),[]byte(`{"case_id":"0004"}`),0o644);err!=nil{t.Fatal(err)}
     old:=os.Getenv("OPENWORKER_ROOT");t.Cleanup(func(){_ = os.Setenv("OPENWORKER_ROOT",old)});_ = os.Setenv("OPENWORKER_ROOT",root)
     cfg,err:=caseConfig("0004");if err!=nil{t.Fatal(err)}
     if cfg.CaseID!="0004"||cfg.Machine!="DESKTOP-O87PJNR"||cfg.Workspace!=`D:\AI-Work\jobs\0004-DWG-TO-3D`{t.Fatalf("unexpected config: %#v",cfg)}

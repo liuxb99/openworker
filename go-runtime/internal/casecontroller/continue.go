@@ -37,7 +37,7 @@ type ContinueResult struct {
     SubmittedAt time.Time `json:"submitted_at"`
 }
 
-type controllerWorkRef struct { WorkID string `json:"work_id"`; StepID string `json:"step_id"`; ActionID string `json:"action_id"` }
+type controllerWorkRef struct { WorkID string `json:"work_id"`; StepID string `json:"step_id"`; ActionID string `json:"action_id"`; Revision int `json:"revision"` }
 
 func Continue(ctx context.Context, caseID, machine, workspaceRoot, queueURL string, client *http.Client) (ContinueResult, error) {
     if !supportedCaseID(caseID) { return ContinueResult{}, fmt.Errorf("unsupported case %q",caseID) }
@@ -93,6 +93,13 @@ func Continue(ctx context.Context, caseID, machine, workspaceRoot, queueURL stri
             case "failed":
                 step:=findStep(w.Steps,ref.StepID);if step==nil{return ContinueResult{},fmt.Errorf("current work step %s missing from worklist",ref.StepID)}
                 blocker:=strings.TrimSpace(fmt.Sprint(item["error"]));if blocker==""{blocker="durable work failed without error detail"}
+                if ref.Revision>0 && w.Revision>ref.Revision{
+                    step.Status="PENDING";step.Blocker=""
+                    if err:=persistWorklist(worklistPath,w);err!=nil{return ContinueResult{},err}
+                    if err:=appendLedger(ledgerPath,ledgerEvent{Schema:"openworker.case-supervisor-ledger/v1",Timestamp:time.Now().UTC(),CaseID:caseID,Machine:machine,EventType:"go_failed_controller_work_ref_cleared",WorkspaceRoot:workspaceRoot,Revision:w.Revision,StepID:step.StepID,ActionID:ref.ActionID,WorkID:ref.WorkID,Detail:fmt.Sprintf("failed durable work belonged to older revision %d; current revision %d explicitly resets the step for deterministic redispatch",ref.Revision,w.Revision)});err!=nil{return ContinueResult{},err}
+                    if err:=os.Remove(controllerPath);err!=nil&&!os.IsNotExist(err){return ContinueResult{},fmt.Errorf("clear failed controller work reference: %w",err)}
+                    break
+                }
                 step.Status="FAILED";step.Blocker=blocker
                 if err:=persistWorklist(worklistPath,w);err!=nil{return ContinueResult{},err}
                 _=appendLedger(ledgerPath,ledgerEvent{Schema:"openworker.case-supervisor-ledger/v1",Timestamp:time.Now().UTC(),CaseID:caseID,Machine:machine,EventType:"go_step_reconciled_failed",WorkspaceRoot:workspaceRoot,Revision:w.Revision,StepID:step.StepID,ActionID:ref.ActionID,WorkID:ref.WorkID,Detail:blocker})
