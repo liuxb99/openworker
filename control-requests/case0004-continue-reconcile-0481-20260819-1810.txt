@@ -1,0 +1,6 @@
+command: case0004_continue
+requested_by: ChatGPT
+case_id: 0004
+machine: DESKTOP-O87PJNR
+purpose: Idempotently reconcile existing 0004-0481 fanout work; do not duplicate. If terminal success, advance to automatic 0004-0485 Drive publish.
+Boundary: transient command transport only; GitHub Actions does not execute Case business work.
