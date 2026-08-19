@@ -53,8 +53,6 @@ def main() -> int:
     except ValueError as exc:
         raise RuntimeError("evidence path escapes workspace") from exc
 
-    # Idempotent replay: if a prior receipt is bound to the same physical final
-    # MP4 and its revision still exists, return it rather than opening a new HEAD.
     if evidence.is_file() and evidence.stat().st_size > 0:
         prior = json.loads(evidence.read_text(encoding="utf-8-sig"))
         if isinstance(prior, dict) and prior.get("final_mp4_sha256") == final_sha:
@@ -72,13 +70,6 @@ def main() -> int:
     try:
         try:
             work = ledger.get_work_by_code(WORK_CODE)
-            work_id = str(work["work_id"])
-            revision = ledger.open_revision(
-                work_id,
-                kind="progress",
-                goal="Register canonical Snow White final MP4 for semantic/visual review",
-                plan={"case_id": "0005", "final_mp4": str(final_mp4)},
-            )
         except WorkLedgerError:
             work = ledger.create_work(
                 code=WORK_CODE,
@@ -87,10 +78,17 @@ def main() -> int:
                 goal="Produce, review and deliver the canonical Snow White short film",
                 plan={"case_id": "0005", "execution_route": "local_supervisor"},
             )
-            work_id = str(work["work_id"])
             revision = ledger.get_revision(str(work["head_revision_id"]))
-
+        else:
+            revision = ledger.open_revision(
+                str(work["work_id"]),
+                kind="progress",
+                goal="Register canonical Snow White final MP4 for semantic/visual review",
+                plan={"case_id": "0005", "final_mp4": str(final_mp4)},
+            )
+        work_id = str(work["work_id"])
         revision_id = str(revision["revision_id"])
+
         artifact = ledger.add_file_artifact(
             revision_id,
             logical_name="final_mp4",
