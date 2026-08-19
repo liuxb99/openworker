@@ -118,11 +118,21 @@ func mapStepInputs(step *Step,w Worklist,workspaceRoot,machine,specPath string)(
         if action!="comfyx-studio.storyboard.plan"{return "",nil,fmt.Errorf("0005-020 action contract mismatch: %v",step.AllowedActions)}
         parent:=findStep(w.Steps,"0005-010");if parent==nil||!strings.EqualFold(parent.Status,"SUCCEEDED"){return "",nil,fmt.Errorf("0005-020 requires succeeded 0005-010")}
         raw:=strings.TrimSpace(fmt.Sprint(parent.Evidence["director_plan"]));if raw==""{return "",nil,fmt.Errorf("0005-010 evidence missing director_plan")}
-        abs,err:=filepath.Abs(raw);if err!=nil{return "",nil,err};root,err:=filepath.Abs(workspaceRoot);if err!=nil{return "",nil,err};rel,err:=filepath.Rel(root,abs);if err!=nil{return "",nil,err};if rel==".."||strings.HasPrefix(rel,".."+string(filepath.Separator))||filepath.IsAbs(rel){return "",nil,fmt.Errorf("director_plan escapes workspace")};if st,err:=os.Stat(abs);err!=nil||st.IsDir(){return "",nil,fmt.Errorf("director_plan missing: %s",abs)}
+        rel,err:=workspaceRelativeExistingFile(workspaceRoot,raw,"director_plan");if err!=nil{return "",nil,err}
         return action,map[string]any{"workspace_root":workspaceRoot,"assigned_host":machine,"director_plan_relpath":rel},nil
+    case "0005-025":
+        if action!="presentation.openmaic"{return "",nil,fmt.Errorf("0005-025 action contract mismatch: %v",step.AllowedActions)}
+        parent:=findStep(w.Steps,"0005-020");if parent==nil||!strings.EqualFold(parent.Status,"SUCCEEDED"){return "",nil,fmt.Errorf("0005-025 requires succeeded 0005-020")}
+        raw:=strings.TrimSpace(fmt.Sprint(parent.Evidence["storyboard_request"]));if raw==""{return "",nil,fmt.Errorf("0005-020 evidence missing storyboard_request")}
+        rel,err:=workspaceRelativeExistingFile(workspaceRoot,raw,"storyboard_request");if err!=nil{return "",nil,err}
+        return action,map[string]any{"workspace_root":workspaceRoot,"assigned_host":machine,"request_relpath":rel,"output_relpath":filepath.Join("presentation","storyboard-text-only.pptx")},nil
     default:
         return "",nil,fmt.Errorf("Go continue mapping not implemented for %s",step.StepID)
     }
+}
+
+func workspaceRelativeExistingFile(workspaceRoot,raw,label string)(string,error){
+    abs,err:=filepath.Abs(strings.TrimSpace(raw));if err!=nil{return "",err};root,err:=filepath.Abs(workspaceRoot);if err!=nil{return "",err};rel,err:=filepath.Rel(root,abs);if err!=nil{return "",err};if rel==".."||strings.HasPrefix(rel,".."+string(filepath.Separator))||filepath.IsAbs(rel){return "",fmt.Errorf("%s escapes workspace",label)};if st,err:=os.Stat(abs);err!=nil||st.IsDir(){return "",fmt.Errorf("%s missing: %s",label,abs)};return rel,nil
 }
 
 func executionID(caseID,stepID,action string,revision int)string{sum:=sha256.Sum256([]byte(fmt.Sprintf("%s|%s|%s|%d",caseID,stepID,action,revision)));return fmt.Sprintf("case%s-%s-r%06d-%s",safeID(caseID),safeID(stepID),revision,hex.EncodeToString(sum[:4]))}
