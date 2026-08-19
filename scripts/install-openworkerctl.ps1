@@ -6,16 +6,33 @@ $repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $goRoot=Join-Path $repoRoot 'go-runtime'
 if(-not(Test-Path -LiteralPath (Join-Path $goRoot 'go.mod') -PathType Leaf)){throw "go-runtime module missing: $goRoot"}
 New-Item -ItemType Directory -Force -Path $InstallRoot|Out-Null
-$target=Join-Path $InstallRoot 'openworkerctl.exe'
+$openworkerTarget=Join-Path $InstallRoot 'openworker.exe'
+$ctlTarget=Join-Path $InstallRoot 'openworkerctl.exe'
 Push-Location $goRoot
 try{
- & go test ./cmd/openworkerctl -count=1
- if($LASTEXITCODE-ne 0){throw "openworkerctl tests failed: $LASTEXITCODE"}
- & go build -trimpath -o $target ./cmd/openworkerctl
- if($LASTEXITCODE-ne 0){throw "openworkerctl build failed: $LASTEXITCODE"}
+ & go test ./internal/casecontroller ./internal/controlcli ./cmd/openworker ./cmd/openworkerctl -count=1
+ if($LASTEXITCODE-ne 0){throw "openworker Go control tests failed: $LASTEXITCODE"}
+ & go build -trimpath -o $openworkerTarget ./cmd/openworker
+ if($LASTEXITCODE-ne 0){throw "openworker build failed: $LASTEXITCODE"}
+ & go build -trimpath -o $ctlTarget ./cmd/openworkerctl
+ if($LASTEXITCODE-ne 0){throw "openworkerctl compatibility build failed: $LASTEXITCODE"}
 }finally{Pop-Location}
-$shim=Join-Path $InstallRoot 'openworkerctl.cmd'
-$shimText="@echo off`r`n`"$target`" %*`r`n"
-[IO.File]::WriteAllText($shim,$shimText,[Text.UTF8Encoding]::new($false))
-$result=[ordered]@{schema='openworkerctl-install/v1';status='installed';machine=$env:COMPUTERNAME;exe=$target;shim=$shim;server='http://127.0.0.1:8848';github_action_used_for_business_execution=$false;installed_at=[DateTime]::UtcNow.ToString('o')}
+$openworkerShim=Join-Path $InstallRoot 'openworker.cmd'
+$ctlShim=Join-Path $InstallRoot 'openworkerctl.cmd'
+[IO.File]::WriteAllText($openworkerShim,"@echo off`r`n`"$openworkerTarget`" %*`r`n",[Text.UTF8Encoding]::new($false))
+[IO.File]::WriteAllText($ctlShim,"@echo off`r`n`"$ctlTarget`" %*`r`n",[Text.UTF8Encoding]::new($false))
+$result=[ordered]@{
+ schema='openworker-control-install/v2'
+ status='installed'
+ machine=$env:COMPUTERNAME
+ canonical_exe=$openworkerTarget
+ compatibility_exe=$ctlTarget
+ canonical_shim=$openworkerShim
+ compatibility_shim=$ctlShim
+ server='http://127.0.0.1:8848'
+ single_go_control_authority=$true
+ python_required_for_case_bootstrap=$false
+ github_action_used_for_business_execution=$false
+ installed_at=[DateTime]::UtcNow.ToString('o')
+}
 $result|ConvertTo-Json -Depth 5
