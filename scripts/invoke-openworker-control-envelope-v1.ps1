@@ -16,7 +16,7 @@ if(-not(Test-Path -LiteralPath $EnvelopePath -PathType Leaf)){
 $raw=Get-Content -LiteralPath $EnvelopePath -Raw
 $envl=$raw | ConvertFrom-Json -ErrorAction Stop
 
-if($envl.schema -ne 'openworker.control-envelope/v1'){
+if($envl.schema -ne 'openworker.control-envelope.v1'){
   throw "unsupported schema: $($envl.schema)"
 }
 if([string]::IsNullOrWhiteSpace([string]$envl.request_id) -or ([string]$envl.request_id -notmatch '^[A-Za-z0-9._-]{8,128}$')){
@@ -66,7 +66,7 @@ try { $result=$out | ConvertFrom-Json -ErrorAction Stop }
 catch { throw "OpenWorker control command returned non-JSON output: $out" }
 
 $response=[ordered]@{
-  schema='openworker.control-result/v1'
+  schema='openworker.control-result.v1'
   request_id=[string]$envl.request_id
   command=$command
   case_id=[string]$envl.case_id
