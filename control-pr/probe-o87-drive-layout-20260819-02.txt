@@ -1,0 +1,4 @@
+requested_by=ChatGPT
+machine=DESKTOP-O87PJNR
+purpose=inspect G drive root layout for Drive Desktop fallback
+business_execution=false
