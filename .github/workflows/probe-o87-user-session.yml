@@ -20,26 +20,25 @@ jobs:
         run: |
           $ErrorActionPreference='Stop'
           if($env:COMPUTERNAME -ine 'DESKTOP-O87PJNR'){throw "wrong host=$env:COMPUTERNAME"}
-          $driveSessionIds=@(Get-Process -Name GoogleDriveFS -ErrorAction SilentlyContinue|Select-Object -ExpandProperty SessionId -Unique)
+          $driveProcs=@(Get-CimInstance Win32_Process|Where-Object{$_.Name -eq 'GoogleDriveFS.exe'})
+          if($driveProcs.Count -lt 1){throw 'GoogleDriveFS process unavailable'}
+          $driveSessionIds=@($driveProcs|Select-Object -ExpandProperty SessionId -Unique)
           if($driveSessionIds.Count -ne 1){throw "expected exactly one GoogleDriveFS session id, got $($driveSessionIds.Count)"}
           $driveSession=[int]$driveSessionIds[0]
-          Add-Type @'
-          using System;
-          using System.Runtime.InteropServices;
-          public static class WtsQuery {
-            [DllImport("Wtsapi32.dll", SetLastError=true)] public static extern bool WTSQuerySessionInformation(IntPtr hServer, int sessionId, int infoClass, out IntPtr ppBuffer, out int pBytesReturned);
-            [DllImport("Wtsapi32.dll")] public static extern void WTSFreeMemory(IntPtr pointer);
-            public static string Read(int sessionId, int infoClass) {
-              IntPtr p; int n;
-              if(!WTSQuerySessionInformation(IntPtr.Zero, sessionId, infoClass, out p, out n)) return "";
-              try { return Marshal.PtrToStringUni(p) ?? ""; } finally { WTSFreeMemory(p); }
-            }
+          $sids=@()
+          foreach($p in $driveProcs){
+            try {
+              $logons=@(Get-CimInstance -Query ("ASSOCIATORS OF {Win32_Process.Handle='"+$p.ProcessId+"'} WHERE AssocClass=Win32_SessionProcess ResultClass=Win32_LogonSession") -ErrorAction Stop)
+              foreach($logon in $logons){
+                $accounts=@(Get-CimInstance -Query ("ASSOCIATORS OF {Win32_LogonSession.LogonId='"+$logon.LogonId+"'} WHERE AssocClass=Win32_LoggedOnUser ResultClass=Win32_Account") -ErrorAction Stop)
+                foreach($a in $accounts){if(-not [string]::IsNullOrWhiteSpace([string]$a.SID)){$sids += [string]$a.SID}}
+              }
+            } catch {}
           }
-          '@
-          $user=[WtsQuery]::Read($driveSession,5).Trim()
-          $domain=[WtsQuery]::Read($driveSession,7).Trim()
-          if([string]::IsNullOrWhiteSpace($user)){throw "WTS returned no user for Drive session $driveSession"}
-          Write-Host ('OPENWORKER_O87_DRIVE_SESSION_RESOLVED session_id='+$driveSession+' wts_user_present=true')
+          $sids=@($sids|Where-Object{$_ -match '^S-1-5-21-'}|Select-Object -Unique)
+          Write-Host ('OPENWORKER_O87_DRIVE_LOGON_ASSOC session_id='+$driveSession+' sid_count='+$sids.Count)
+          if($sids.Count -ne 1){throw "expected exactly one non-system Drive logon SID, got $($sids.Count)"}
+          $sid=$sids[0]
           $script='C:\ProgramData\OpenWorker\user-session-drive-probe.ps1'
           $receipt='C:\ProgramData\OpenWorker\user-session-drive-probe.json'
           New-Item -ItemType Directory -Force -Path (Split-Path $script)|Out-Null
@@ -47,31 +46,15 @@ jobs:
           `$ErrorActionPreference='Stop'
           `$ok=`$false; `$entries=@(); `$err=''
           try{`$entries=@(Get-ChildItem -LiteralPath 'G:\' -Force -ErrorAction Stop|Select-Object -First 20 -ExpandProperty Name); `$ok=`$true}catch{`$err=`$_.Exception.Message}
-          `$r=[ordered]@{schema='openworker.user-session-drive-probe/v7';machine=`$env:COMPUTERNAME;g_accessible=`$ok;entry_count=`$entries.Count;error=`$err;observed_at=[DateTimeOffset]::UtcNow.ToString('o')}
+          `$r=[ordered]@{schema='openworker.user-session-drive-probe/v8';machine=`$env:COMPUTERNAME;g_accessible=`$ok;entry_count=`$entries.Count;error=`$err;observed_at=[DateTimeOffset]::UtcNow.ToString('o')}
           [IO.File]::WriteAllText('$receipt',(`$r|ConvertTo-Json -Depth 6)+[Environment]::NewLine,[Text.UTF8Encoding]::new(`$false))
           "@|Set-Content -LiteralPath $script -Encoding utf8
           Remove-Item -LiteralPath $receipt -Force -ErrorAction SilentlyContinue
           $task='OpenWorker-O87-UserSessionDriveProbe'
+          Unregister-ScheduledTask -TaskName $task -Confirm:$false -ErrorAction SilentlyContinue
           $action=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "'+$script+'"')
-          $candidates=@()
-          if(-not [string]::IsNullOrWhiteSpace($domain)){$candidates += ($domain+'\'+$user)}
-          $candidates += ($env:COMPUTERNAME+'\'+$user)
-          $candidates += $user
-          if($user -match '@'){
-            $candidates += ('MicrosoftAccount\'+$user)
-            $candidates += ('AzureAD\'+$user)
-          }
-          $registered=$false
-          foreach($candidate in @($candidates|Select-Object -Unique)){
-            Unregister-ScheduledTask -TaskName $task -Confirm:$false -ErrorAction SilentlyContinue
-            try {
-              $principal=New-ScheduledTaskPrincipal -UserId $candidate -LogonType Interactive -RunLevel Highest
-              Register-ScheduledTask -TaskName $task -Action $action -Principal $principal -Force -ErrorAction Stop|Out-Null
-              $registered=$true
-              break
-            } catch {}
-          }
-          if(-not $registered){throw 'no canonical Drive session account form registered as Interactive task principal'}
+          $principal=New-ScheduledTaskPrincipal -UserId $sid -LogonType Interactive -RunLevel Highest
+          Register-ScheduledTask -TaskName $task -Action $action -Principal $principal -Force -ErrorAction Stop|Out-Null
           Write-Host 'OPENWORKER_O87_INTERACTIVE_PRINCIPAL_REGISTERED=true'
           try {
             Start-ScheduledTask -TaskName $task
@@ -80,7 +63,7 @@ jobs:
             if(-not(Test-Path -LiteralPath $receipt -PathType Leaf)){throw 'interactive probe receipt timeout'}
             $r=Get-Content -LiteralPath $receipt -Raw|ConvertFrom-Json
             Write-Host "OPENWORKER_O87_USER_SESSION_BRIDGE g_accessible=$($r.g_accessible) entry_count=$($r.entry_count) error=$($r.error)"
-            if(-not [bool]$r.g_accessible){throw 'Drive interactive principal cannot access G drive'}
+            if(-not [bool]$r.g_accessible){throw 'Drive WMI-associated SID cannot access G drive'}
           } finally {
             Unregister-ScheduledTask -TaskName $task -Confirm:$false -ErrorAction SilentlyContinue
           }
