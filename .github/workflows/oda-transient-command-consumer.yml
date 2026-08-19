@@ -1,0 +1,148 @@
+name: ODA Transient Command Consumer
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'command-requests/oda.json'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: oda-transient-command-consumer
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    runs-on: [self-hosted, Windows, X64, ODA]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify fixed ODA computer
+        shell: powershell
+        run: |
+          if($env:COMPUTERNAME -ine 'DESKTOP-ODAQN0D'){
+            throw "wrong host $env:COMPUTERNAME"
+          }
+
+      - name: Execute bounded local-supervisor command and persist idempotent receipt
+        id: dispatch
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $requestPath=Join-Path $env:GITHUB_WORKSPACE 'command-requests\oda.json'
+          if(-not(Test-Path -LiteralPath $requestPath -PathType Leaf)){ throw "request missing: $requestPath" }
+          try { $req=Get-Content -LiteralPath $requestPath -Raw | ConvertFrom-Json -ErrorAction Stop }
+          catch { throw "invalid request JSON: $($_.Exception.Message)" }
+
+          if($req.schema -ne 'openworker.command-request.v1'){ throw "unsupported schema=$($req.schema)" }
+          if($req.machine -ine 'DESKTOP-ODAQN0D'){ throw "request machine mismatch=$($req.machine)" }
+          if($req.case_id -ne '0005'){ throw "unsupported case_id=$($req.case_id)" }
+          if($req.requested_by -ne 'chatgpt'){ throw "unsupported requested_by=$($req.requested_by)" }
+          if([string]::IsNullOrWhiteSpace($req.request_id) -or $req.request_id -notmatch '^[A-Za-z0-9._-]{8,128}$'){
+            throw "invalid request_id=$($req.request_id)"
+          }
+          $allowed=@('supervisor_status','case_status','case_continue','queue_clear')
+          if($allowed -notcontains [string]$req.command){ throw "unsupported command=$($req.command)" }
+
+          $ctl=Join-Path $env:ProgramData 'OpenWorker\bin\openworkerctl.exe'
+          if(-not(Test-Path -LiteralPath $ctl -PathType Leaf)){ throw "openworkerctl missing: $ctl" }
+
+          $receiptRoot=Join-Path $env:ProgramData 'OpenWorker\command-transport\receipts'
+          New-Item -ItemType Directory -Force -Path $receiptRoot | Out-Null
+          $cachedPath=Join-Path $receiptRoot ($req.request_id + '.json')
+          $resultDir=Join-Path $env:GITHUB_WORKSPACE 'command-results'
+          New-Item -ItemType Directory -Force -Path $resultDir | Out-Null
+          $repoReceipt=Join-Path $resultDir 'oda.json'
+
+          if(Test-Path -LiteralPath $cachedPath -PathType Leaf){
+            Copy-Item -LiteralPath $cachedPath -Destination $repoReceipt -Force
+            "receipt_cached=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+            exit 0
+          }
+
+          switch([string]$req.command){
+            'supervisor_status' { $args=@('supervisor','status') }
+            'case_status'       { $args=@('case','status','0005') }
+            'case_continue'     { $args=@('case','continue','0005') }
+            'queue_clear'       { $args=@('queue','clear','DESKTOP-ODAQN0D') }
+          }
+
+          $started=[DateTimeOffset]::UtcNow
+          $lines=& $ctl @args 2>&1
+          $exitCode=$LASTEXITCODE
+          $raw=($lines | Out-String).Trim()
+          $parsed=$null
+          if($exitCode -eq 0){
+            try { $parsed=$raw | ConvertFrom-Json -ErrorAction Stop }
+            catch { $exitCode=70; $raw="non-JSON openworkerctl success output: $raw" }
+          }
+
+          $accepted=$false
+          if($exitCode -eq 0){
+            if($null -ne $parsed.job -and $null -ne $parsed.job.accepted){ $accepted=[bool]$parsed.job.accepted }
+            elseif($null -ne $parsed.accepted){ $accepted=[bool]$parsed.accepted }
+            else { $accepted=$true }
+          }
+
+          $receipt=[ordered]@{
+            schema='openworker.command-result.v1'
+            request_id=[string]$req.request_id
+            request_commit=$env:GITHUB_SHA
+            machine=$env:COMPUTERNAME
+            case_id=[string]$req.case_id
+            command=[string]$req.command
+            requested_at=[string]$req.requested_at
+            observed_at=[DateTimeOffset]::UtcNow.ToString('o')
+            started_at=$started.ToString('o')
+            transport='github_actions_transient_dispatch'
+            transport_ok=($exitCode -eq 0)
+            accepted=$accepted
+            exit_code=$exitCode
+            result=$parsed
+            error=if($exitCode -eq 0){''}else{$raw}
+            github_action_used_for_command_transport=$true
+            github_action_used_for_business_execution=$false
+            business_completion_claimed=$false
+            authoritative_business_state='openworker'
+            idempotency_cache_path=$cachedPath
+          }
+          $json=$receipt | ConvertTo-Json -Depth 40
+          [IO.File]::WriteAllText($cachedPath,$json,[Text.UTF8Encoding]::new($false))
+          [IO.File]::WriteAllText($repoReceipt,$json,[Text.UTF8Encoding]::new($false))
+          "receipt_cached=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "transport_exit_code=$exitCode" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Commit bounded transport receipt
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          git config user.name 'openworker-transport-bot'
+          git config user.email 'openworker-transport-bot@users.noreply.github.com'
+          git add -- command-results/oda.json
+          if(git diff --cached --quiet){
+            Write-Host 'receipt unchanged; nothing to commit'
+            exit 0
+          }
+          $req=Get-Content -LiteralPath 'command-requests\oda.json' -Raw | ConvertFrom-Json
+          git commit -m "receipt: ODA $($req.command) $($req.request_id)"
+          for($i=0;$i -lt 3;$i++){
+            git pull --rebase origin main
+            if($LASTEXITCODE -ne 0){ throw 'git pull --rebase failed' }
+            git push origin HEAD:main
+            if($LASTEXITCODE -eq 0){ exit 0 }
+            Start-Sleep -Seconds 2
+          }
+          throw 'failed to push command receipt after retries'
+
+      - name: Fail workflow after receipt is durable when transport failed
+        shell: powershell
+        run: |
+          $receipt=Get-Content -LiteralPath 'command-results\oda.json' -Raw | ConvertFrom-Json
+          if(-not $receipt.transport_ok){
+            throw "transport failed request_id=$($receipt.request_id) exit=$($receipt.exit_code) error=$($receipt.error)"
+          }
