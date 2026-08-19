@@ -1,0 +1,3 @@
+machine=DESKTOP-O87PJNR
+purpose=upgrade OpenWorker Embedded Control environment before Case0004
+business_execution=false
