@@ -38,12 +38,6 @@ jobs:
 
       - name: Show latest Case0005 embedded-control evidence
         if: always()
-        shell: powershell
-        run: |
-          $root=Join-Path $env:ProgramData 'OpenWorker\case0005\embedded-control-tests'
-          if(Test-Path $root){
-            Get-ChildItem $root -Filter '*.json' | Sort-Object LastWriteTime -Descending | Select-Object -First 1 | ForEach-Object {
-              Write-Host "EVIDENCE=$($_.FullName)"
-              Get-Content $_.FullName -Raw
-            }
-          }
+        shell: cmd
+        run: >-
+          powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$root=Join-Path $env:ProgramData 'OpenWorker\case0005\embedded-control-tests'; if(Test-Path $root){$f=Get-ChildItem $root -Filter '*.json' ^| Sort-Object LastWriteTime -Descending ^| Select-Object -First 1; if($null-ne$f){Write-Host ('EVIDENCE='+$f.FullName); Get-Content $f.FullName -Raw}}"
