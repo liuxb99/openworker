@@ -37,6 +37,9 @@ func Run(program string, args []string, stdout, stderr io.Writer) int {
     case "case status":
         if len(a)!=3{return usageCode(stderr,program)}
         var cfg caseCfg;cfg,err=caseConfig(a[2]);if err!=nil{break};if err=requireLocalMachine(cfg.Machine);err!=nil{break};out,err=c.caseStatus(cfg)
+    case "case bootstrap":
+        if len(a)!=3{return usageCode(stderr,program)}
+        var cfg caseCfg;cfg,err=caseConfig(a[2]);if err!=nil{break};if err=requireLocalMachine(cfg.Machine);err!=nil{break};if err=c.requireOperational(cfg.Machine);err!=nil{break};out,err=c.post("/api/openworker/case/bootstrap",cfg.payload())
     case "case continue":
         if len(a)!=3{return usageCode(stderr,program)}
         var cfg caseCfg;cfg,err=caseConfig(a[2]);if err!=nil{break};if err=requireLocalMachine(cfg.Machine);err!=nil{break};if err=c.requireOperational(cfg.Machine);err!=nil{break};out,err=c.post("/api/openworker/case/dispatch",cfg.payload())
@@ -61,4 +64,4 @@ func localMachine()(string,error){h,e:=os.Hostname();return strings.TrimSpace(h)
 func requireLocalMachine(w string)error{a,e:=localMachine();if e!=nil{return e};if !strings.EqualFold(a,strings.TrimSpace(w)){return fmt.Errorf("machine mismatch local=%q expected=%q",a,w)};return nil}
 func discoverRoot()string{for _,p:=range[]string{`C:\github-runners\openworker\_work\openworker\openworker`,`D:\AI\openworker`,`D:\AIWork\openworker`,`D:\PyWork\openworker`}{if st,e:=os.Stat(filepath.Join(p,"case-specs","0005.json"));e==nil&&!st.IsDir(){return p}};return ""}
 func usageCode(w io.Writer,p string)int{usage(w,p);return 2}
-func usage(w io.Writer,p string){fmt.Fprintf(w,"usage: %s supervisor status | case status 0005 | case continue 0005 | queue clear [MACHINE]\n",p)}
+func usage(w io.Writer,p string){fmt.Fprintf(w,"usage: %s supervisor status | case bootstrap 0005 | case status 0005 | case continue 0005 | queue clear [MACHINE]\n",p)}
