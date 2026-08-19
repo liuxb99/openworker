@@ -1,2 +1,2 @@
-Case0005 transport recovery marker.
-Reconcile UL7/O87/ODA runner labels before retrying embedded control.
+Case0005 runner diagnostic marker.
+Trigger hosted runner inventory diagnostic before retrying embedded control.
