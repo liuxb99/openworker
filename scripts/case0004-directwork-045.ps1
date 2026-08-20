@@ -50,7 +50,7 @@ $params=$null;$sourcePath='';$checked=0
 $files=@(Get-ChildItem -LiteralPath $workspace -Recurse -File -Filter '*.json' -ErrorAction SilentlyContinue | Where-Object {$_.Length -lt 20MB} | Sort-Object LastWriteTimeUtc -Descending)
 foreach($f in $files){
   $checked++
-  try{$obj=Get-Content -LiteralPath $f.FullName -Raw -Encoding UTF8|ConvertFrom-Json -Depth 100}catch{continue}
+  try{$obj=Get-Content -LiteralPath $f.FullName -Raw -Encoding UTF8|ConvertFrom-Json}catch{continue}
   $candidate=Find-StoryParams $obj
   if($null-ne$candidate){$params=$candidate;$sourcePath=$f.FullName;break}
 }
