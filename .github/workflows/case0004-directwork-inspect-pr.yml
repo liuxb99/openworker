@@ -1,0 +1,43 @@
+name: Case0004 DirectWork Inspect PR
+
+on:
+  pull_request:
+    types: [opened]
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    if: github.event.pull_request.title == '[openworker-control] case0004_directwork_inspect' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Windows, X64, O87]
+    timeout-minutes: 5
+    steps:
+      - name: Inspect DirectWork durable work
+        shell: pwsh
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          $ErrorActionPreference='Stop'
+          if($env:COMPUTERNAME -ine 'DESKTOP-O87PJNR'){throw "wrong host $env:COMPUTERNAME"}
+          $body=[string]$env:PR_BODY
+          $m=[regex]::Match($body,'(?im)^target_dispatch:\s*([^\r\n]+)\s*$')
+          if(-not $m.Success){throw 'target_dispatch missing'}
+          $dispatch=$m.Groups[1].Value.Trim()
+          $list=Invoke-RestMethod -Method GET -Uri 'http://127.0.0.1:8787/v1/work?limit=500' -TimeoutSec 10
+          $work=@($list.works|Where-Object {[string]$_.dispatch_id -eq $dispatch}|Select-Object -First 1)
+          if(-not $work){throw "DirectWork work not found dispatch=$dispatch"}
+          $id=[string]$work.work_id
+          $cur=Invoke-RestMethod -Method GET -Uri ('http://127.0.0.1:8787/v1/work/'+[uri]::EscapeDataString($id)) -TimeoutSec 10
+          $events=Invoke-RestMethod -Method GET -Uri ('http://127.0.0.1:8787/v1/work/'+[uri]::EscapeDataString($id)+'/events') -TimeoutSec 10
+          $stdout='';$stderr=''
+          if($cur.stdout_path -and(Test-Path -LiteralPath $cur.stdout_path)){$stdout=Get-Content -LiteralPath $cur.stdout_path -Raw -ErrorAction SilentlyContinue}
+          if($cur.stderr_path -and(Test-Path -LiteralPath $cur.stderr_path)){$stderr=Get-Content -LiteralPath $cur.stderr_path -Raw -ErrorAction SilentlyContinue}
+          Write-Host '===DIRECTWORK_WORK_JSON==='
+          Write-Host ($cur|ConvertTo-Json -Depth 30 -Compress)
+          Write-Host '===DIRECTWORK_EVENTS_JSON==='
+          Write-Host ($events|ConvertTo-Json -Depth 30 -Compress)
+          Write-Host '===DIRECTWORK_STDOUT==='
+          Write-Host $stdout
+          Write-Host '===DIRECTWORK_STDERR==='
+          Write-Host $stderr
