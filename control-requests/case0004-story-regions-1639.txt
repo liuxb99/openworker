@@ -1,0 +1,7 @@
+requested_by: ChatGPT
+case_id: 0004
+machine: DESKTOP-O87PJNR
+source_work_id: dw-20260820T082930-50cdb590b6fecc66
+accepted_steps: 0004-045,0004-047,0004-049
+purpose: promote five visually confirmed Story Index bounds into confirmed Story Regions
+business_execution: DirectWork
