@@ -101,10 +101,7 @@ func classifyArtifact(rel string) (string, bool) {
     ext := strings.ToLower(filepath.Ext(base))
     kind, extOK := artifactExtKind[ext]
     hinted := false
-    for _, h := range artifactNameHints {
-        if strings.Contains(clean, h) { hinted = true; break }
-    }
-    // Source/config text is only a result when its path/name explicitly looks like an output.
+    for _, h := range artifactNameHints { if strings.Contains(clean, h) { hinted = true; break } }
     switch ext {
     case ".go", ".py", ".js", ".ts", ".tsx", ".jsx", ".c", ".cc", ".cpp", ".h", ".hpp", ".rs", ".java", ".cs", ".ps1", ".bat", ".sh", ".toml", ".ini":
         return "", false
@@ -117,6 +114,10 @@ func classifyArtifact(rel string) (string, bool) {
 }
 
 func shouldSkipArtifactDir(name string) bool { return ignoredArtifactDirs[strings.ToLower(name)] }
+func artifactRoot(job model.Job) string {
+    if v:=strings.TrimSpace(job.WorkspaceRoot); v!="" { return v }
+    return strings.TrimSpace(job.CWD)
+}
 
 func (s *Server) artifacts(w http.ResponseWriter, r *http.Request) {
     job, err := s.store.Get(r.PathValue("jobID"))
@@ -142,7 +143,7 @@ func (s *Server) artifacts(w http.ResponseWriter, r *http.Request) {
     if job.StdoutPath != "" { addFile(job.StdoutPath, "stdout", filepath.Base(job.StdoutPath)) }
     if job.StderrPath != "" { addFile(job.StderrPath, "stderr", filepath.Base(job.StderrPath)) }
 
-    root := strings.TrimSpace(job.WorkspaceRoot)
+    root := artifactRoot(job)
     limit := queryInt(r,"limit",300); if limit < 1 { limit=1 }; if limit > 1000 { limit=1000 }
     scanned := 0
     if root != "" {
@@ -158,7 +159,6 @@ func (s *Server) artifacts(w http.ResponseWriter, r *http.Request) {
             rel,e:=filepath.Rel(root,path); if e!=nil { rel=filepath.Base(path) }
             kind,ok:=classifyArtifact(rel); if !ok { return nil }
             st,e:=d.Info(); if e!=nil { return nil }
-            // Outside the job time window, keep only files whose path/name clearly denotes a final/result artifact.
             if st.ModTime().Before(start) || st.ModTime().After(end) {
                 hinted:=false; low:=strings.ToLower(filepath.ToSlash(rel))
                 for _,h:=range artifactNameHints { if strings.Contains(low,h) { hinted=true; break } }
@@ -174,10 +174,10 @@ func (s *Server) artifacts(w http.ResponseWriter, r *http.Request) {
         return rows[i].ModifiedAt.After(rows[j].ModifiedAt)
     })
     writeJSON(w,200,map[string]any{
-        "job_id":job.JobID,"slot":job.AgentSlot,"workspace_root":job.WorkspaceRoot,
+        "job_id":job.JobID,"slot":job.AgentSlot,"workspace_root":job.WorkspaceRoot,"artifact_root":root,
         "artifacts":rows,"count":len(rows),"hash_limit_bytes":512<<20,"scan_limit":limit,
         "files_scanned":scanned,"window_start":start,"window_end":end,
-        "discovery":"project_agnostic_workspace_index_v1",
+        "discovery":"project_agnostic_workspace_index_v2",
     })
 }
 
@@ -191,9 +191,9 @@ func (s *Server) serveArtifact(w http.ResponseWriter, r *http.Request) {
     allowed := false
     if job.StdoutPath != "" { if p,_:=filepath.Abs(job.StdoutPath); samePath(p,full) { allowed=true } }
     if job.StderrPath != "" { if p,_:=filepath.Abs(job.StderrPath); samePath(p,full) { allowed=true } }
-    if !allowed && strings.TrimSpace(job.WorkspaceRoot) != "" {
-        root, e := filepath.Abs(job.WorkspaceRoot)
-        if e == nil && pathWithin(root, full) { allowed=true }
+    if !allowed {
+        rootName:=artifactRoot(job)
+        if rootName!="" { if root,e:=filepath.Abs(rootName); e==nil && pathWithin(root,full) { allowed=true } }
     }
     if !allowed { writeErr(w,403,errors.New("artifact path outside job workspace")); return }
     st, err := os.Stat(full)
