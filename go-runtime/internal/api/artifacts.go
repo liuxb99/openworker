@@ -20,7 +20,10 @@ import (
 type jobArtifact struct {
     Path            string    `json:"path"`
     RelativePath    string    `json:"relative_path,omitempty"`
+    Folder          string    `json:"folder,omitempty"`
     Kind            string    `json:"kind"`
+    Role            string    `json:"role"`
+    Priority        int       `json:"priority"`
     Size            int64     `json:"size"`
     SHA256          string    `json:"sha256,omitempty"`
     ModifiedAt      time.Time `json:"modified_at"`
@@ -113,6 +116,33 @@ func classifyArtifact(rel string) (string, bool) {
     return "", false
 }
 
+func artifactRole(rel, kind string) (string, int) {
+    low := strings.ToLower(filepath.ToSlash(rel))
+    base := strings.ToLower(filepath.Base(low))
+    if kind == "stdout" || kind == "stderr" || kind == "log" || strings.HasSuffix(base, ".log") {
+        return "log", 400
+    }
+    if strings.Contains(low, "receipt") || strings.Contains(low, "manifest") || strings.Contains(low, "evidence") || strings.Contains(low, "review") || strings.Contains(low, "ledger") {
+        return "evidence", 300
+    }
+    switch kind {
+    case "presentation", "document", "spreadsheet", "cad", "bim", "engineering", "3d", "video", "audio", "archive", "binary":
+        return "deliverable", 100
+    case "image", "report":
+        if strings.Contains(low, "render") || strings.Contains(low, "final") || strings.Contains(low, "deliverable") || strings.Contains(low, "report") || strings.Contains(low, "presentation") {
+            return "deliverable", 100
+        }
+        return "supporting", 200
+    case "data":
+        if strings.Contains(low, "result") || strings.Contains(low, "output") || strings.Contains(low, "export") || strings.Contains(low, "final") {
+            return "supporting", 200
+        }
+        return "evidence", 300
+    default:
+        return "supporting", 200
+    }
+}
+
 func shouldSkipArtifactDir(name string) bool { return ignoredArtifactDirs[strings.ToLower(name)] }
 func artifactRoot(job model.Job) string {
     if v:=strings.TrimSpace(job.WorkspaceRoot); v!="" { return v }
@@ -133,7 +163,9 @@ func (s *Server) artifacts(w http.ResponseWriter, r *http.Request) {
         st, e := os.Stat(abs); if e != nil || !st.Mode().IsRegular() { return }
         during := !st.ModTime().Before(start) && !st.ModTime().After(end)
         q := url.Values{}; q.Set("path", abs)
-        row := jobArtifact{Path:abs, RelativePath:rel, Kind:kind, Size:st.Size(), ModifiedAt:st.ModTime().UTC(), DuringJobWindow:during, URL:"/v1/jobs/"+url.PathEscape(job.JobID)+"/artifact?"+q.Encode()}
+        role, priority := artifactRole(rel, kind)
+        folder := filepath.ToSlash(filepath.Dir(rel)); if folder == "." { folder = "" }
+        row := jobArtifact{Path:abs, RelativePath:rel, Folder:folder, Kind:kind, Role:role, Priority:priority, Size:st.Size(), ModifiedAt:st.ModTime().UTC(), DuringJobWindow:during, URL:"/v1/jobs/"+url.PathEscape(job.JobID)+"/artifact?"+q.Encode()}
         if st.Size() <= 512<<20 {
             if f, e := os.Open(abs); e == nil { h:=sha256.New(); if _,e=io.Copy(h,f); e==nil { row.SHA256=hex.EncodeToString(h.Sum(nil)) }; _=f.Close() }
         }
@@ -169,15 +201,18 @@ func (s *Server) artifacts(w http.ResponseWriter, r *http.Request) {
         })
     }
     sort.SliceStable(rows, func(i,j int) bool {
+        if rows[i].Priority != rows[j].Priority { return rows[i].Priority < rows[j].Priority }
         if rows[i].DuringJobWindow != rows[j].DuringJobWindow { return rows[i].DuringJobWindow }
-        if rows[i].Kind != rows[j].Kind { return rows[i].Kind < rows[j].Kind }
+        if rows[i].Folder != rows[j].Folder { return rows[i].Folder < rows[j].Folder }
         return rows[i].ModifiedAt.After(rows[j].ModifiedAt)
     })
+    counts := map[string]int{"deliverable":0,"supporting":0,"evidence":0,"log":0}
+    for _, row := range rows { counts[row.Role]++ }
     writeJSON(w,200,map[string]any{
         "job_id":job.JobID,"slot":job.AgentSlot,"workspace_root":job.WorkspaceRoot,"artifact_root":root,
-        "artifacts":rows,"count":len(rows),"hash_limit_bytes":512<<20,"scan_limit":limit,
+        "artifacts":rows,"count":len(rows),"role_counts":counts,"hash_limit_bytes":512<<20,"scan_limit":limit,
         "files_scanned":scanned,"window_start":start,"window_end":end,
-        "discovery":"project_agnostic_workspace_index_v2",
+        "discovery":"project_agnostic_workspace_index_v3",
     })
 }
 
