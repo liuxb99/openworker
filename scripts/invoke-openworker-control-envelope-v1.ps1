@@ -57,17 +57,16 @@ if(Test-Path -LiteralPath $receiptPath -PathType Leaf){
   if(($null -ne $cachedObj) -and ([string]$cachedObj.request_id -eq $requestId)){
     if((-not [string]::IsNullOrWhiteSpace([string]$cachedObj.request_fingerprint)) -and ([string]$cachedObj.request_fingerprint -ne $fingerprint)){
       $conflict=[ordered]@{
-        schema='openworker.control-result.v2';request_id=$requestId;command=$command;case_id=if($needsCase){[string]$envl.case_id}else{$null};machine=$ExpectedMachine
+        schema='openworker.control-result.v3';request_id=$requestId;command=$command;case_id=if($needsCase){[string]$envl.case_id}else{$null};machine=$ExpectedMachine
         accepted=$false;exit_code=73;error_class='request_id_conflict';error='request_id already exists with a different control envelope';max_parallel=$maxParallel
         request_fingerprint=$fingerprint;cached_request_fingerprint=[string]$cachedObj.request_fingerprint;idempotent_hit=$false
-        business_authority='openworker-go-native-case-controller';execution_authority='go-tool-runtime-local-supervisor'
+        business_authority='openworker-local-supervisor';execution_authority='openworker-local-supervisor'
         github_action_used_for_command_transport=$true;github_action_used_for_business_execution=$false
         started_at=[DateTimeOffset]::UtcNow.ToString('o');completed_at=[DateTimeOffset]::UtcNow.ToString('o');result=$null
       }
       $conflict|ConvertTo-Json -Depth 50
       exit 73
     }
-    # Backward-compatible cache hits are accepted when legacy receipts have no fingerprint.
     $cachedObj | Add-Member -NotePropertyName idempotent_hit -NotePropertyValue $true -Force
     $cachedObj|ConvertTo-Json -Depth 50
     exit ([int]$cachedObj.exit_code)
@@ -90,7 +89,9 @@ $started=[DateTimeOffset]::UtcNow
 $exitCode=0;$errorClass='';$errorText='';$result=$null
 $outFile=Join-Path $env:TEMP ("openworker-out-$requestId-"+[Guid]::NewGuid().ToString('N')+'.txt')
 $errFile=Join-Path $env:TEMP ("openworker-err-$requestId-"+[Guid]::NewGuid().ToString('N')+'.txt')
+$oldRequestId=$env:OPENWORKER_CONTROL_REQUEST_ID
 try{
+  $env:OPENWORKER_CONTROL_REQUEST_ID=$requestId
   $argLine=($cliArgs|ForEach-Object{Quote-Arg ([string]$_)}) -join ' '
   $p=Start-Process -FilePath $ctl -ArgumentList $argLine -NoNewWindow -PassThru -RedirectStandardOutput $outFile -RedirectStandardError $errFile
   if(-not $p.WaitForExit($TimeoutSeconds*1000)){
@@ -102,23 +103,25 @@ try{
     $stderr=if(Test-Path $errFile){Get-Content -LiteralPath $errFile -Raw}else{''}
     $combined=($stdout+"`n"+$stderr).Trim()
     if($exitCode -ne 0){
-      if(($combined -match '127\.0\.0\.1:8848') -and ($combined -match '(refused|connectex|connection)')){$errorClass='go_tool_unreachable'}else{$errorClass='openworker_process_failed'}
+      if(($combined -match '127\.0\.0\.1:8787') -and ($combined -match '(refused|connectex|connection)')){$errorClass='openworker_unreachable'}else{$errorClass='openworker_process_failed'}
       $errorText=$combined
     }else{
       try{$result=$stdout|ConvertFrom-Json -ErrorAction Stop}catch{$exitCode=72;$errorClass='invalid_control_output';$errorText=$combined}
     }
   }
 }finally{
+  $env:OPENWORKER_CONTROL_REQUEST_ID=$oldRequestId
   Remove-Item -LiteralPath $outFile,$errFile -Force -ErrorAction SilentlyContinue
 }
 
 $accepted = ($exitCode -eq 0)
 $response=[ordered]@{
-  schema='openworker.control-result.v2';request_id=$requestId;command=$command;case_id=if($needsCase){[string]$envl.case_id}else{$null};machine=$ExpectedMachine
+  schema='openworker.control-result.v3';request_id=$requestId;command=$command;case_id=if($needsCase){[string]$envl.case_id}else{$null};machine=$ExpectedMachine
   accepted=$accepted;exit_code=$exitCode;error_class=$errorClass;error=$errorText;max_parallel=$maxParallel
   request_fingerprint=$fingerprint;idempotent_hit=$false
-  dispatch_semantics=if($command-eq'CASE.CONTINUE_BATCH'){'reconcile_ready_fanout'}else{'single_control_operation'}
-  business_authority='openworker-go-native-case-controller';execution_authority='go-tool-runtime-local-supervisor'
+  dispatch_semantics=if($command-eq'CASE.CONTINUE_BATCH'){'openworker_native_durable_case_admission'}else{'single_control_operation'}
+  business_authority='openworker-local-supervisor';execution_authority='openworker-local-supervisor'
+  dashboard_url='http://127.0.0.1:8787/ui/'
   github_action_used_for_command_transport=$true;github_action_used_for_business_execution=$false;timeout_seconds=$TimeoutSeconds
   started_at=$started.ToString('o');completed_at=[DateTimeOffset]::UtcNow.ToString('o');result=$result
 }
