@@ -124,6 +124,15 @@ jobs:
               if($null-eq$durableJob){throw "OpenWorker durable job not readable: $jobId"}
               try{$durableEvents=Invoke-RestMethod ("http://127.0.0.1:8787/v1/jobs/"+[uri]::EscapeDataString($jobId)+"/events?limit=100") -TimeoutSec 5}catch{$durableEvents=[ordered]@{error=$_.Exception.Message}}
             }
+            if($accepted -and [string]$envl.command -eq 'CASE.STATUS'){
+              $eventMap=[ordered]@{}
+              foreach($job in @($result.result.jobs) | Select-Object -First 40){
+                $id=[string]$job.job_id
+                if([string]::IsNullOrWhiteSpace($id)){continue}
+                try{$ev=Invoke-RestMethod ("http://127.0.0.1:8787/v1/jobs/"+[uri]::EscapeDataString($id)+"/events?limit=20") -TimeoutSec 5;$eventMap[$id]=$ev.events}catch{$eventMap[$id]=@([ordered]@{error=$_.Exception.Message})}
+              }
+              $durableEvents=$eventMap
+            }
           } catch {
             $accepted=$false
             $errorText=$_.Exception.Message
