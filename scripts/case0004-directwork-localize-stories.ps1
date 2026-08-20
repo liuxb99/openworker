@@ -12,17 +12,18 @@ $invoke=Join-Path ([string]$authority.root) 'scripts\invoke-agent-cad-local.ps1'
 if(-not(Test-Path -LiteralPath $invoke -PathType Leaf)){throw "DWG_LOCAL_WRAPPER_MISSING path=$invoke"}
 
 if($CandidateViews){
-  # Bounds are derived only after ChatGPT visual review of the REAL 3000x5000 relocalization PNG.
-  # Labels visibly confirmed in that PNG: 地面一層平面圖, 二層平面圖, 三層至四層平面圖, 屋突一層平面圖.
-  # These remain review zooms, not final Story Index assignment.
+  # Bounds come from visual review of REAL 3000x5000 relocalization PNG.
+  # Keep this Windows PowerShell 5.1 executor source ASCII-only to avoid UTF-8/no-BOM parser corruption.
+  # Semantic labels: 1F ground-floor plan; 2F plan; shared 3F-4F plan; R1F penthouse plan.
+  # These are review zooms only, not final Story Index assignment.
   $views=@(
-    [ordered]@{key='1f-candidate';label='地面一層平面圖';bounds=[ordered]@{min_x=48000.0;min_y=57100.0;max_x=50300.0;max_y=60050.0}},
-    [ordered]@{key='2f-candidate';label='二層平面圖';bounds=[ordered]@{min_x=46450.0;min_y=54200.0;max_x=48400.0;max_y=57300.0}},
-    [ordered]@{key='3f-4f-candidate';label='三層至四層平面圖';bounds=[ordered]@{min_x=47950.0;min_y=54200.0;max_x=50250.0;max_y=57300.0}},
-    [ordered]@{key='r1f-candidate';label='屋突一層平面圖';bounds=[ordered]@{min_x=46450.0;min_y=51050.0;max_x=48450.0;max_y=54400.0}}
+    [ordered]@{key='1f-candidate';label='ground-floor-plan';bounds=[ordered]@{min_x=48000.0;min_y=57100.0;max_x=50300.0;max_y=60050.0}},
+    [ordered]@{key='2f-candidate';label='second-floor-plan';bounds=[ordered]@{min_x=46450.0;min_y=54200.0;max_x=48400.0;max_y=57300.0}},
+    [ordered]@{key='3f-4f-candidate';label='third-to-fourth-floor-plan';bounds=[ordered]@{min_x=47950.0;min_y=54200.0;max_x=50250.0;max_y=57300.0}},
+    [ordered]@{key='r1f-candidate';label='penthouse-first-floor-plan';bounds=[ordered]@{min_x=46450.0;min_y=51050.0;max_x=48450.0;max_y=54400.0}}
   )
 }else{
-  $views=@([ordered]@{key='relocalize';label='unassigned stacked plan-like region';bounds=[ordered]@{min_x=46400.0;min_y=51000.0;max_x=50800.0;max_y=63100.0}})
+  $views=@([ordered]@{key='relocalize';label='unassigned-stacked-plan-like-region';bounds=[ordered]@{min_x=46400.0;min_y=51000.0;max_x=50800.0;max_y=63100.0}})
 }
 
 $renders=@()
