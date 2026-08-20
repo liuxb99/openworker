@@ -1,6 +1,6 @@
 # Case0005 白雪公主：DirectWork + go-tool REAL 閉環執行紀錄
 
-更新時間：2026-08-20 15:06（Asia/Taipei）
+更新時間：2026-08-20 15:11（Asia/Taipei）
 
 ## 1. 案例目標與權威原則
 
@@ -163,61 +163,95 @@ Exact dw04 diagnostic 已取回；8848 再次回覆 `drive.file.publish-verified
 
 因此第二次 deployment 雖已 build/copy/bootstrap，新 binary 並未可靠成為目前 servicing request 的完整四元 runtime contract，或 runtime restart/owner convergence 尚未完成。這個缺口不能再靠盲目重發 0005-026 解決。
 
-## 10. 補缺口：改用正式 `go-tool.runtime.update-local` detached self-update
+## 10. 補缺口：正式 `go-tool.runtime.update-local` detached self-update
 
 舊 8848 contract 本身已支援 `go-tool.runtime.update-local`，所以改用它讓本機總控升級自己，而不是再靠 Action 安裝流程。
 
 此 capability 的硬約束：
 
 - Windows-only。
-- assigned_host 必須同時匹配 claim + input + local hostname。
+- assigned_host 必須匹配 claim + input + local hostname。
 - source_root 必須是 already-present 完整 checkout；不 fetch、不 pull。
 - install_root 只能是 `%ProgramData%\go-tool-runtime\work-agent`。
 - update 前跑 Go tests。
 - 一次 stage 四 binary：`tool-runtime.exe`、`gtr-work-agent.exe`、`gtr-work-executor.exe`、`gtr-local-exec.exe`。
-- durable update work 必須先寫成 completed，再由 detached updater 停 resident runtime。
+- durable update work 先完成，再由 detached updater 停 resident runtime。
 - 以原 runtime mode 重啟。
 - 驗證 `:8848/health`。
 - 跑 REAL four-slot smoke 並要求 verification endpoint=`REAL_VERIFIED`。
-- 任一 health / REAL 驗證失敗：四 binary 一起 rollback，重啟 previous runtime。
+- 任一 health / REAL 驗證失敗：四 binary 一起 rollback。
 
-本次 allowlisted source root 使用上述真實 ODA checkout：
+Allowlisted source root：
 
 `C:\github-runners\go-tool-runtime\_work\go-tool-runtime\go-tool-runtime\gtr-deploy-32341891483-ODA`
 
-並要求 marker：`internal/localexec/file_hash_helpers_test.go`，避免誤用 compile blocker 修復前 checkout。
+## 11. Case0005 bounded runtime-repair 密語
 
-## 11. 新增 Case0005 bounded runtime-repair 密語
-
-DirectWork workflow commit：`b02c23987dd3a464b1113d9f83cffb22eba81f4a`
+Workflow commit：`b02c23987dd3a464b1113d9f83cffb22eba81f4a`
 
 workflow：`.github/workflows/secret-case0005-runtime-repair-oda.yml`
 
 密語：`CASE0005.RUNTIME-REPAIR`
 
-規則：GitHub Action 只把 request 送進 DirectWork；business repair 由 DirectWork durable command 呼叫 ODA 8848 `go-tool.runtime.update-local`，`github_action_used_for_business_execution=false`。
+GitHub 只送 ingress；DirectWork durable command 才呼叫 ODA 8848 `go-tool.runtime.update-local`，且 receipt 固定 `github_action_used_for_business_execution=false`。
 
-repair request commit：`f7f010f47cd245a4364e3a17e8a6ee6dc5a62cd6`
+## 12. Runtime repair r01：DirectWork REAL 接案，但 guard marker 寫錯
+
+request commit：`f7f010f47cd245a4364e3a17e8a6ee6dc5a62cd6`
 
 request：`case0005-runtime-repair-20260820-r01`
 
-repair workflow 會：
+receipt commit：`a4a8e0ac6542d4afcd72f503f498323c77a57b96`
 
-1. 驗證 ODA hostname。
-2. 驗證 source root 為唯一 allowlisted checkout。
-3. 驗證 go.mod / regression marker / Drive publish implementation marker。
-4. DirectWork 建 durable work。
-5. durable work 向舊 8848 submit `go-tool.runtime.update-local`。
-6. 等 work completed。
-7. detached updater 等 durable completion 後停止舊 runtime、四 binary swap、restart。
-8. health check。
-9. REAL four-slot verifier。
-10. verification endpoint 必須 `REAL_VERIFIED`。
-11. 將 DirectWork events + update work + health + verification 回寫 receipt。
+DirectWork work：`dw-20260820T070602-bbb49eab0695b50e`
 
-目前 repair request 已送出；未取得 receipt 前不宣告 runtime 升級成功。
+事件：accepted seq77 → claimed slot2 seq78 → running pid37068 seq79 → failed seq80，exit=1。
 
-## 12. 0005-025 / 026 / 027 驗收規則
+Exact diagnostic commit：`d64f5a66a4e1382eaddb677a1ed5048a549b184b`
+
+stderr：
+
+`required source marker missing: ...\internal\localexec\google_drive_file_publish_verified.go`
+
+因此 r01 不是 `go-tool.runtime.update-local` 自身失敗；repair wrapper 在向 8848 submit 前，因為使用了**不存在的檔名**作 source guard 而 fail closed。
+
+這個錯誤不影響 source checkout 本身。go-tool 真實 `internal/localexec` 目錄已確認存在：
+
+- `registry.go`
+- `google_drive_file_upload.go`
+- `case0005_drive_gate.go`
+- `file_hash_helpers_test.go`
+
+而 `registry.go` 真實內容明確註冊：
+
+- `drive.file.upload`
+- `drive.file.verify`
+- `drive.file.publish-verified`
+
+所以真正可靠的 guard 應驗證真實檔案，並進一步讀 `registry.go` 檢查 capability string，而不是猜 implementation filename。
+
+## 13. r01 guard 缺口已補；r02 已發出
+
+Repair workflow 修復 commit：`1c1512a35ece19e3f27b27ccf20ee4e0122f1d17`
+
+新 guard：
+
+1. `go.mod` 必須存在。
+2. `internal/localexec/file_hash_helpers_test.go` 必須存在，證明 compile-blocker regression 已進 source。
+3. `internal/localexec/registry.go` 必須存在。
+4. `internal/localexec/google_drive_file_upload.go` 必須存在。
+5. `internal/localexec/case0005_drive_gate.go` 必須存在。
+6. 讀取 `registry.go` 原文，必須實際匹配 `drive.file.publish-verified`。
+
+因此 guard 現在驗證的是**真實 source contract**，而不是推測檔名。
+
+r02 request commit：`cc25bb4db04a99082eaf6b5a2cfeff1edd8740e8`
+
+request：`case0005-runtime-repair-20260820-r02`
+
+截至 15:11，r02 尚未回寫 terminal receipt。與 r01 不同，r01 約 0.25 秒即因 guard fail；r02 若通過 guard，會真正進入 go tests → four-binary staging → detached swap → restart → health → REAL four-slot verification，故不以「尚無 receipt」推論失敗。
+
+## 14. 0005-025 / 026 / 027 驗收規則
 
 ### 0005-025
 
@@ -237,7 +271,7 @@ combined proof：schema=`go-tool-google-drive-publish-verified/v1`、status=`ver
 
 只有 0005-026 proof 成立才允許 `openworker.review.await-drive`。gate 還要重新驗證 canonical PPTX bytes + fresh Drive metadata，然後才進 approval boundary。
 
-## 13. 負面知識
+## 15. 負面知識
 
 1. Action success ≠ Case completion。
 2. deployment start marker ≠ deployment complete。
@@ -249,18 +283,21 @@ combined proof：schema=`go-tool-google-drive-publish-verified/v1`、status=`ver
 8. 不得只換 `tool-runtime.exe`；四 binary 必須同一 bounded update。
 9. 不得用 GitHub Action 當 runtime self-update business fallback。
 10. 不得退回 Case-specific Python Drive uploader。
-11. 沒有 exact file_id + SHA256 + size verified combined proof，不得進 0005-027。
-12. 0005-025 已有 artifact 時不得因 runtime/transport 修復重做故事內容。
+11. source guard 不得猜 implementation filename；必須驗證真實檔案 + registry capability binding。
+12. 沒有 exact file_id + SHA256 + size verified combined proof，不得進 0005-027。
+13. 0005-025 已有 artifact 時不得因 runtime/transport 修復重做故事內容。
 
-## 14. checkpoint（2026-08-20 15:06 Asia/Taipei）
+## 16. checkpoint（2026-08-20 15:11 Asia/Taipei）
 
 - DirectWork ingress：REAL。
 - argv quoting：FIXED。
 - duplicate `fileSHA256` compile blocker：FIXED + regression。
 - second deployment tests/build/install/bootstrap：PASS；terminal REAL verify：被 concurrency cancel，不能算 complete。
 - dw04：證明 live 8848 仍 stale。
-- bounded `go-tool.runtime.update-local` repair：已由 `CASE0005.RUNTIME-REPAIR` 發出，等待 durable receipt + REAL verification evidence。
+- runtime repair r01：DirectWork REAL 接案；guard 假檔名缺口已定位。
+- r01 guard 缺口：FIXED commit `1c1512a3`。
+- runtime repair r02：已發出 commit `cc25bb4d`，等待 durable terminal receipt + REAL verification。
 - 0005-026：尚未完成。
 - 0005-027：尚未進入。
 
-下一 authority checkpoint：runtime repair receipt → `REAL_VERIFIED` → 8848 preflight 支援 `drive.file.publish-verified` → 發 dw05 → combined Drive proof → 0005-027 gate。
+下一 authority checkpoint：r02 receipt → `REAL_VERIFIED` → live 8848 支援 `drive.file.publish-verified` → 發 dw05 → combined Drive proof → 0005-027 gate。
