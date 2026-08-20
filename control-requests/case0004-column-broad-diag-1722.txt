@@ -1,0 +1,10 @@
+requested_by: ChatGPT
+case_id: 0004
+machine: DESKTOP-O87PJNR
+previous_work_id: dw-20260820T091317-9d0dcb2dd5f88b97
+source_story_region_work_id: dw-20260820T083831-efc1b644d6d5966c
+executor_commit: d141b304e68bdf888cd631a0920e8192244aef43
+purpose: read-only broad relocalization cad.query_bounds to diagnose INSERT/block anchors behind zero column candidates
+business_execution: DirectWork
+column_authority: none
+no_promotion: true
