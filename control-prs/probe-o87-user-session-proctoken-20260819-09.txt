@@ -1,0 +1,4 @@
+requested_by=ChatGPT
+machine=DESKTOP-O87PJNR
+case_id=0004
+purpose=duplicate GoogleDriveFS process token and prove bounded G drive access
