@@ -23,22 +23,23 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.23.x'
-      - name: Clear every other non-terminal Actions run
+      - name: Best-effort clear actionable Actions queue
         working-directory: go-runtime
         shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail
           go run ./cmd/openworker-actions-queue-clear \
             -repo "${GH_REPO}" \
             -exclude-run-id "${GITHUB_RUN_ID}" \
             -run-id "${GITHUB_RUN_ID}" \
             -source-sha "${GITHUB_SHA}" \
-            -timeout 7m \
+            -timeout 90s \
             -poll 5s \
-            -stuck-after 30m > "${RUNNER_TEMP}/directwork-cutover-queue-clear.json"
-      - name: Dispatch deterministic DirectWork migration only after queue clear
+            -stuck-after 30m > "${RUNNER_TEMP}/directwork-cutover-queue-clear.json" || true
+          echo 'Queue clear is best-effort: GitHub ghost runs must not block production cutover.'
+      - name: Dispatch deterministic DirectWork migration
         shell: bash
         run: |
           set -euo pipefail
           gh workflow run migrate-to-directwork-v2.yml --repo "${GH_REPO}" --ref main
-          echo "DirectWork migration V2 dispatched after queue clear"
+          echo "DirectWork migration V2 dispatched; ghost runs are non-blocking"
