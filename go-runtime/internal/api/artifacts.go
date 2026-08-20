@@ -3,13 +3,14 @@ package api
 import (
     "crypto/sha256"
     "encoding/hex"
+    "errors"
     "io"
     "io/fs"
     "net/http"
+    "net/url"
     "os"
     "path/filepath"
     "sort"
-    "strconv"
     "strings"
     "time"
 
@@ -17,22 +18,23 @@ import (
 )
 
 type jobArtifact struct {
-    Path             string    `json:"path"`
-    RelativePath     string    `json:"relative_path,omitempty"`
-    Kind             string    `json:"kind"`
-    Size             int64     `json:"size"`
-    SHA256           string    `json:"sha256,omitempty"`
-    ModifiedAt       time.Time `json:"modified_at"`
-    DuringJobWindow  bool      `json:"during_job_window"`
+    Path            string    `json:"path"`
+    RelativePath    string    `json:"relative_path,omitempty"`
+    Kind            string    `json:"kind"`
+    Size            int64     `json:"size"`
+    SHA256          string    `json:"sha256,omitempty"`
+    ModifiedAt      time.Time `json:"modified_at"`
+    DuringJobWindow bool      `json:"during_job_window"`
+    URL             string    `json:"url,omitempty"`
 }
 
 type slotSnapshot struct {
-    Slot       int         `json:"slot"`
-    Current    *model.Job  `json:"current,omitempty"`
-    History    []model.Job `json:"history"`
-    Total      int         `json:"total"`
-    Succeeded  int         `json:"succeeded"`
-    Failed     int         `json:"failed"`
+    Slot      int         `json:"slot"`
+    Current   *model.Job  `json:"current,omitempty"`
+    History   []model.Job `json:"history"`
+    Total     int         `json:"total"`
+    Succeeded int         `json:"succeeded"`
+    Failed    int         `json:"failed"`
 }
 
 func (s *Server) slots(w http.ResponseWriter, r *http.Request) {
@@ -76,7 +78,9 @@ func (s *Server) artifacts(w http.ResponseWriter, r *http.Request) {
         end := time.Now().UTC().Add(2*time.Minute)
         if job.FinishedAt != nil { end = job.FinishedAt.Add(2*time.Minute) }
         during := !st.ModTime().Before(start) && !st.ModTime().After(end)
-        row := jobArtifact{Path:path, RelativePath:rel, Kind:kind, Size:st.Size(), ModifiedAt:st.ModTime().UTC(), DuringJobWindow:during}
+        q := url.Values{}
+        q.Set("path", path)
+        row := jobArtifact{Path:path, RelativePath:rel, Kind:kind, Size:st.Size(), ModifiedAt:st.ModTime().UTC(), DuringJobWindow:during, URL:"/v1/jobs/"+url.PathEscape(job.JobID)+"/artifact?"+q.Encode()}
         if st.Size() <= 512<<20 {
             if f, e := os.Open(path); e == nil { h:=sha256.New(); if _,e=io.Copy(h,f); e==nil { row.SHA256=hex.EncodeToString(h.Sum(nil)) }; _=f.Close() }
         }
@@ -110,9 +114,31 @@ func (s *Server) artifacts(w http.ResponseWriter, r *http.Request) {
     writeJSON(w,200,map[string]any{"job_id":job.JobID,"slot":job.AgentSlot,"workspace_root":job.WorkspaceRoot,"artifacts":rows,"count":len(rows),"hash_limit_bytes":512<<20,"scan_limit":limit,"window_start":job.CreatedAt.Add(-2*time.Minute),"window_end":artifactWindowEnd(job)})
 }
 
-func artifactWindowEnd(job model.Job) time.Time {
-    if job.FinishedAt != nil { return job.FinishedAt.Add(2*time.Minute) }
-    return time.Now().UTC().Add(2*time.Minute)
+func (s *Server) serveArtifact(w http.ResponseWriter, r *http.Request) {
+    job, err := s.store.Get(r.PathValue("jobID"))
+    if err != nil { writeErr(w, 404, err); return }
+    requested := strings.TrimSpace(r.URL.Query().Get("path"))
+    if requested == "" { writeErr(w,400,errors.New("path required")); return }
+    full, err := filepath.Abs(requested)
+    if err != nil { writeErr(w,400,err); return }
+    allowed := false
+    if job.StdoutPath != "" { if p,_:=filepath.Abs(job.StdoutPath); samePath(p,full) { allowed=true } }
+    if job.StderrPath != "" { if p,_:=filepath.Abs(job.StderrPath); samePath(p,full) { allowed=true } }
+    if !allowed && strings.TrimSpace(job.WorkspaceRoot) != "" {
+        root, e := filepath.Abs(job.WorkspaceRoot)
+        if e == nil && pathWithin(root, full) { allowed=true }
+    }
+    if !allowed { writeErr(w,403,errors.New("artifact path outside job workspace")); return }
+    st, err := os.Stat(full)
+    if err != nil || !st.Mode().IsRegular() { writeErr(w,404,errors.New("artifact file not found")); return }
+    w.Header().Set("Content-Disposition", "inline; filename*=UTF-8''"+url.PathEscape(filepath.Base(full)))
+    http.ServeFile(w,r,full)
 }
 
-var _ = strconv.Itoa
+func samePath(a,b string) bool { return strings.EqualFold(filepath.Clean(a), filepath.Clean(b)) }
+func pathWithin(root, p string) bool {
+    rel, err := filepath.Rel(filepath.Clean(root), filepath.Clean(p))
+    if err != nil { return false }
+    return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)))
+}
+func artifactWindowEnd(job model.Job) time.Time { if job.FinishedAt != nil { return job.FinishedAt.Add(2*time.Minute) }; return time.Now().UTC().Add(2*time.Minute) }
