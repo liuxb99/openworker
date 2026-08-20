@@ -1,6 +1,6 @@
 # Case0005 白雪公主：DirectWork + go-tool REAL 閉環執行紀錄
 
-更新時間：2026-08-20 14:55（Asia/Taipei）
+更新時間：2026-08-20 14:59（Asia/Taipei）
 
 ## 1. 案例目標與目前權威狀態
 
@@ -94,19 +94,13 @@ go-tool local supervisor 回應：
 - schema：`gtr-local-capability-preflight/v1`
 - status：`rejected`
 
-ODA 當時 installed contract 列出的 capabilities 包含 `drive.review.publish`、`openworker.review.await-drive`、`presentation.openmaic` 等，但沒有：
+ODA 當時 installed contract 列出的 capabilities 包含 `drive.review.publish`、`openworker.review.await-drive`、`presentation.openmaic` 等，但沒有 `drive.file.upload`、`drive.file.verify`、`drive.file.publish-verified`。
 
-- `drive.file.upload`
-- `drive.file.verify`
-- `drive.file.publish-verified`
+因此 dw03 的真正失敗點：DirectWork transport 已修好；ODA `127.0.0.1:8848` installed local executor contract 尚未註冊新版純 Go Drive capabilities。這不是 Drive credential error、PPTX error，也不是 DirectWork 不接案。
 
-因此 dw03 的真正失敗點已經明確：**DirectWork transport 已修好；目前 ODA 127.0.0.1:8848 所載入的 installed local executor contract 尚未註冊新版純 Go Drive capabilities。**
+## 7. repo capability 與 ODA runtime 差異
 
-這不是 Drive credential error，也不是 PPTX error，也不是 DirectWork 不接案。
-
-## 7. 為什麼 repo 有 capability、ODA runtime 卻沒有
-
-go-tool main 已有 registry binding commit：`cbb25ecd891385293855eaa57274cd9f4a61b13b`，在 `internal/localexec/registry.go` 註冊：
+go-tool main registry binding commit：`cbb25ecd891385293855eaa57274cd9f4a61b13b`，已註冊：
 
 - `drive.file.upload`
 - `drive.file.verify`
@@ -114,13 +108,44 @@ go-tool main 已有 registry binding commit：`cbb25ecd891385293855eaa57274cd9f4
 
 capability guidance commit：`49cc7a8d3db21826a19b60de3f1aea950696d30f`，明確指定 Case0005 0005-026 優先使用 `drive.file.publish-verified`，並要求 exact file_id + SHA256 + exact size 一致。
 
-但 ODA latest deployment start marker `b33d70ecf896e4d8c4df8cb8a19e21b5dffeb1a2` 只證明 deployment run `32338686187` 於 14:13:52 開始，source commit=`6767537b...`；目前 main 上 `latest-local-executors-ODA.json` 的完整 REAL verified deployment receipt 仍是舊 run `32247124329`、舊 commit `0b47b75...`、deployed_at 2026-08-19。
+ODA deployment run `32338686187` 雖寫入 start marker，但 terminal run conclusion=`failure`，所以沒有新的 REAL verified deployment receipt 取代舊版本。
 
-所以目前 evidence 顯示：新版 deployment 有 start evidence，但尚沒有新的 ODA v5 terminal deployment receipt 取代舊 receipt；而 dw03 preflight 又直接證明實際 8848 runtime contract 仍缺新版 Drive capability。
+## 8. deployment run 32338686187 的精確失敗原因
 
-下一修復方向不是修改 Case0005 business workflow，而是先讓 ODA go-tool local executor 真正完成最新版部署 / contract refresh。
+ODA job id：`96333184523`
 
-## 8. 0005-025 / 026 / 027 完成規則
+流程已成功到：
+
+- Verify fixed machine：PASS，machine=`DESKTOP-ODAQN0D`
+- checkout：PASS
+- Persist deployment start marker：PASS
+- Refresh checkout：PASS
+
+在 `Targeted local-work and localexec tests` 編譯失敗，Go compiler 原文：
+
+`internal\localexec\google_drive_file_upload.go:234:6: fileSHA256 redeclared in this block`
+
+另一個 declaration：
+
+`internal\localexec\comfyx_video.go:118:6: other declaration of fileSHA256`
+
+所以後續 Build / Stop old runtime / Install / Bootstrap 8848 / REAL four-slot verification / terminal receipt 全部被 skipped。這完整解釋為什麼 repo 已有新 capability、ODA runtime 還停在舊 contract。
+
+## 9. 已補齊 compile blocker
+
+修復 commit：`9d28d311de65e170478e16a8b76f7462fa4ec31e`
+
+修法：保留 Google Drive helper `fileSHA256`；將 ComfyX 私有 helper 改名為 `comfyXFileSHA256`，同步修改 `copyFileSHA256Atomic` 呼叫點。兩者功能不變，只解除同 package symbol collision。
+
+新增 regression commit：`3b89b93b646a199bd8abb7d3dc061ee1822180ab`
+
+新增 `internal/localexec/file_hash_helpers_test.go`，驗證 Drive helper 與 ComfyX helper 對同一 bytes 算得完全相同 SHA256，防止未來再次因共用 helper 命名而破壞行為。
+
+修復 commit 已觸發 deployment run `32341842391`，ODA 已寫入 start marker `b59bfc10cbcd160d31dd556741db5b7830dc3f06`。但隨後 regression commit 進 main，workflow concurrency `cancel-in-progress=true` 令 run `32341842391` conclusion=`cancelled`；這是新 commit 取代舊 deploy attempt，不應誤判為編譯修復失敗。
+
+目前等待以 `3b89b93...` 為 head 的最新 deploy attempt 成為 authority；不再追加無關 commit，避免再次把 deploy run cancel 掉。
+
+## 10. 0005-025 / 026 / 027 完成規則
 
 ### 0005-025
 
@@ -140,26 +165,31 @@ combined proof 必須：schema=`go-tool-google-drive-publish-verified/v1`、stat
 
 只有 0005-026 proof 成立才允許 `openworker.review.await-drive`。最新 go-tool gate 還要求重新驗證 canonical PPTX bytes 與 fresh Drive metadata，通過後才可進 approval boundary。
 
-## 9. 負面知識
+## 11. 負面知識
 
 1. Action success ≠ Case completion。
 2. DirectWork accepted/claimed/running ≠ artifact complete。
 3. dw01/dw02 的 `0xfffd0000` = quoted `-File` transport bug。
-4. dw03 不得再歸因 quoted argv；其 exact root cause = installed local executor contract 不支援 `drive.file.publish-verified`。
+4. dw03 exact root cause = installed local executor contract 不支援 `drive.file.publish-verified`。
 5. repo capability 定義存在 ≠ ODA runtime 已載入；必須以 8848 preflight / terminal deployment receipt 為 authority。
-6. 不得退回舊 Python uploader。
-7. 沒有 exact file_id + SHA256 + size verified combined proof，不得進 0005-027。
-8. 0005-025 已有 artifact 時不得因 transport/runtime 修復重做故事內容。
+6. deployment start marker ≠ deployment complete；run `32338686187` 已證明可能 start 後在 compile 階段失敗。
+7. `fileSHA256` duplicate symbol 是本輪真實 deployment blocker，已補 code + regression。
+8. 不得退回舊 Python uploader。
+9. 沒有 exact file_id + SHA256 + size verified combined proof，不得進 0005-027。
+10. 0005-025 已有 artifact 時不得因 transport/runtime 修復重做故事內容。
 
-## 10. checkpoint（2026-08-20 14:55 Asia/Taipei）
+## 12. checkpoint（2026-08-20 14:59 Asia/Taipei）
 
 - DirectWork durable ingress：REAL 已證明。
 - ODA claim / executor slots：REAL 已證明。
-- Windows argv quoting：已修復並由 dw03 command 證明生效。
+- Windows argv quoting：已修復。
 - dw03 exact root cause：已取得。
-- go-tool main source：已有 `drive.file.publish-verified` registry + guidance。
-- ODA 8848 installed contract：仍缺 `drive.file.publish-verified`，preflight fail closed。
+- go-tool repo registry：已有 `drive.file.publish-verified`。
+- 舊 ODA deployment failure：已定位到 duplicate `fileSHA256` compile error。
+- compile blocker：已修 commit `9d28d311`。
+- regression：已補 commit `3b89b93b`。
+- ODA runtime contract refresh：正在由最新 deploy attempt 接續，尚未取得新 terminal REAL receipt。
 - 0005-026：尚未完成。
 - 0005-027：尚未進入。
 
-下一 checkpoint：完成 ODA go-tool local executor 最新版部署/contract refresh → preflight 能列出 `drive.file.publish-verified` → 發新 `CASE0005.PUBLISH-REVIEW` → 取得 combined proof → 進 0005-027 approval gate → 停止等待審查。
+下一 checkpoint：取得 ODA 新 deployment terminal receipt → 8848 preflight 列出 `drive.file.publish-verified` → 發新 `CASE0005.PUBLISH-REVIEW` → combined proof verified → 0005-027 approval gate → 停止等待審查。
