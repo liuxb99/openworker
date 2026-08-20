@@ -23,14 +23,15 @@ jobs:
           Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
-          # Prefer DirectWork column-candidate / candidate zoom / relocalization /
-          # Story Index evidence before generic overview copies. Read-only transport only.
+          # Prefer DirectWork 055 diagnostics / column-candidate / candidate zoom /
+          # relocalization / Story Index evidence before generic overview copies.
+          # Read-only evidence transport only.
           $all=@(Get-ChildItem -LiteralPath $workspace -Recurse -File -ErrorAction SilentlyContinue | Where-Object {
             $_.Extension -match '^\.(png|json)$' -and $_.Length -le 25MB
           })
-          $columnCandidates=@($all | Where-Object {
-            $_.Name -match '(?i)column-candidate|column_candidates|column-candidates' -or
-            $_.FullName -match '(?i)column-candidate|column_candidates|column-candidates|directwork\\pr-13[78]-'
+          $columnDiagnostics=@($all | Where-Object {
+            $_.Name -match '(?i)query-bounds|column-candidate|column_candidates|column-candidates' -or
+            $_.FullName -match '(?i)query-bounds|column-candidate|column_candidates|column-candidates|directwork\\pr-13[789]-'
           } | Sort-Object LastWriteTimeUtc -Descending)
           $candidateZoom=@($all | Where-Object {
             $_.Name -match '(?i)(1f|2f|3f-4f|r1f)-candidate|candidate-pr-130-32346888039' -or
@@ -47,7 +48,7 @@ jobs:
           $overview=@($all | Where-Object {
             $_.Name -match '(?i)overview' -or $_.FullName -match '(?i)case0004.*overview'
           } | Sort-Object LastWriteTimeUtc -Descending)
-          $candidates=@($columnCandidates + $candidateZoom + $relocalize + $priority + $overview)
+          $candidates=@($columnDiagnostics + $candidateZoom + $relocalize + $priority + $overview)
 
           $manifest=@(); $n=0
           $seen=New-Object 'System.Collections.Generic.HashSet[string]'
