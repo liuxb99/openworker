@@ -23,11 +23,15 @@ jobs:
           Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
-          # Prefer DirectWork candidate zoom / relocalization / semantic localization /
+          # Prefer DirectWork column-candidate / candidate zoom / relocalization /
           # Story Index evidence before generic overview copies. Read-only transport only.
           $all=@(Get-ChildItem -LiteralPath $workspace -Recurse -File -ErrorAction SilentlyContinue | Where-Object {
             $_.Extension -match '^\.(png|json)$' -and $_.Length -le 25MB
           })
+          $columnCandidates=@($all | Where-Object {
+            $_.Name -match '(?i)column-candidate|column_candidates|column-candidates' -or
+            $_.FullName -match '(?i)column-candidate|column_candidates|column-candidates|directwork\\pr-13[78]-'
+          } | Sort-Object LastWriteTimeUtc -Descending)
           $candidateZoom=@($all | Where-Object {
             $_.Name -match '(?i)(1f|2f|3f-4f|r1f)-candidate|candidate-pr-130-32346888039' -or
             $_.FullName -match '(?i)pr-130-32346888039.*candidate|candidate.*pr-130-32346888039'
@@ -43,7 +47,7 @@ jobs:
           $overview=@($all | Where-Object {
             $_.Name -match '(?i)overview' -or $_.FullName -match '(?i)case0004.*overview'
           } | Sort-Object LastWriteTimeUtc -Descending)
-          $candidates=@($candidateZoom + $relocalize + $priority + $overview)
+          $candidates=@($columnCandidates + $candidateZoom + $relocalize + $priority + $overview)
 
           $manifest=@(); $n=0
           $seen=New-Object 'System.Collections.Generic.HashSet[string]'
