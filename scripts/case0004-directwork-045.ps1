@@ -7,7 +7,6 @@ if(-not(Test-Path -LiteralPath $workspace -PathType Container)){throw "CASE0004_
 $evidence=Join-Path $workspace ('evidence\directwork\'+$RequestId)
 New-Item -ItemType Directory -Force -Path $evidence|Out-Null
 
-# Query the current go-tool authority first. This is guidance/evidence, never business completion.
 $query=[ordered]@{
   session_id=('case0004-directwork-'+$RequestId)
   project='DWG_todo Case 0004'
@@ -66,7 +65,14 @@ if($null-eq$params){
 $paramsJson=$params|ConvertTo-Json -Depth 80 -Compress
 [IO.File]::WriteAllText((Join-Path $evidence 'story-index-params.json'),($params|ConvertTo-Json -Depth 80)+[Environment]::NewLine,[Text.UTF8Encoding]::new($false))
 $workId=('directwork-case0004-045-'+$RequestId).ToLowerInvariant()
-$result=& $invoke -Method 'cad.build_story_index' -ParamsJson $paramsJson -WorkspaceRoot $workspace -WorkId $workId
+# The authority wrapper predates the caller's StrictMode policy. Run it in a child
+# scope with StrictMode disabled so a successful response that omits optional
+# properties is not converted into a false business failure.
+$result=& {
+  param($invokePath,$json,$root,$id)
+  Set-StrictMode -Off
+  & $invokePath -Method 'cad.build_story_index' -ParamsJson $json -WorkspaceRoot $root -WorkId $id
+} $invoke $paramsJson $workspace $workId
 if($LASTEXITCODE -ne 0){throw "CASE0004_045_CAD_FAILED exit=$LASTEXITCODE"}
 $resultText=($result -join "`n")
 [IO.File]::WriteAllText((Join-Path $evidence 'cad-build-story-index.stdout.json'),$resultText+[Environment]::NewLine,[Text.UTF8Encoding]::new($false))
