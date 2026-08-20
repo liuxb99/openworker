@@ -1,6 +1,6 @@
 {
   "schema": "openworker.control-envelope.v1",
-  "request_id": "case0005-smoke-continue-20260820-a4",
+  "request_id": "case0005-smoke-continue-20260820-a5",
   "command": "CASE.CONTINUE_BATCH",
   "machine": "DESKTOP-ODAQN0D",
   "case_id": "0005",
