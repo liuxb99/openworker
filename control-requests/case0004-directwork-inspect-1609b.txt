@@ -1,0 +1,6 @@
+requested_by: ChatGPT
+case_id: 0004
+target_dispatch: pr-130-32346888039
+purpose: read-only DirectWork durable work inspection for candidate zoom V2
+business_execution: false
+created_at: 2026-08-20T16:09:00+08:00
