@@ -1,0 +1,7 @@
+requested_by: ChatGPT
+case_id: 0004
+machine: DESKTOP-O87PJNR
+target_dispatch: pr-134-32349019492
+source_work_id: dw-20260820T082930-50cdb590b6fecc66
+purpose: read-only collect corrected five-story viewport PNGs and manifest for visual validation
+business_execution: false
