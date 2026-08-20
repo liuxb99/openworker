@@ -1,0 +1,6 @@
+requested_by: ChatGPT
+case_id: 0004
+machine: DESKTOP-O87PJNR
+target_dispatch: pr-130-32346888039
+purpose: read-only collect V2 candidate zoom PNGs for visual validation
+business_execution: false
