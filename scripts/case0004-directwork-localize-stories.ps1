@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$RequestId)
+param([Parameter(Mandatory=$true)][string]$RequestId,[switch]$CandidateViews)
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 if($env:COMPUTERNAME -ine 'DESKTOP-O87PJNR'){throw "CASE0004_WRONG_HOST actual=$env:COMPUTERNAME"}
@@ -11,27 +11,34 @@ $authority=Get-Content -LiteralPath $pointer -Raw|ConvertFrom-Json
 $invoke=Join-Path ([string]$authority.root) 'scripts\invoke-agent-cad-local.ps1'
 if(-not(Test-Path -LiteralPath $invoke -PathType Leaf)){throw "DWG_LOCAL_WRAPPER_MISSING path=$invoke"}
 
-# This is a zoom request, not a story assignment. Bounds come from REAL overview text/block
-# evidence around the stacked plan-like sheets. Do not label any story until visual review.
-$params=[ordered]@{
-  name=('case0004-story-relocalize-'+$RequestId)
-  width_px=3000
-  height_px=5000
-  bounds=[ordered]@{min_x=46400.0;min_y=51000.0;max_x=50800.0;max_y=63100.0}
+if($CandidateViews){
+  # Bounds are derived only after ChatGPT visual review of the REAL 3000x5000 relocalization PNG.
+  # Labels visibly confirmed in that PNG: 地面一層平面圖, 二層平面圖, 三層至四層平面圖, 屋突一層平面圖.
+  # These remain review zooms, not final Story Index assignment.
+  $views=@(
+    [ordered]@{key='1f-candidate';label='地面一層平面圖';bounds=[ordered]@{min_x=48000.0;min_y=57100.0;max_x=50300.0;max_y=60050.0}},
+    [ordered]@{key='2f-candidate';label='二層平面圖';bounds=[ordered]@{min_x=46450.0;min_y=54200.0;max_x=48400.0;max_y=57300.0}},
+    [ordered]@{key='3f-4f-candidate';label='三層至四層平面圖';bounds=[ordered]@{min_x=47950.0;min_y=54200.0;max_x=50250.0;max_y=57300.0}},
+    [ordered]@{key='r1f-candidate';label='屋突一層平面圖';bounds=[ordered]@{min_x=46450.0;min_y=51050.0;max_x=48450.0;max_y=54400.0}}
+  )
+}else{
+  $views=@([ordered]@{key='relocalize';label='unassigned stacked plan-like region';bounds=[ordered]@{min_x=46400.0;min_y=51000.0;max_x=50800.0;max_y=63100.0}})
 }
-$paramsPath=Join-Path $evidence 'relocalize-render-params.json'
-[IO.File]::WriteAllText($paramsPath,($params|ConvertTo-Json -Depth 20)+[Environment]::NewLine,[Text.UTF8Encoding]::new($false))
-$paramsJson=$params|ConvertTo-Json -Depth 20 -Compress
-$result=& {
-  param($invokePath,$json,$root,$id)
-  Set-StrictMode -Off
-  & $invokePath -Method 'cad.render_png' -ParamsJson $json -WorkspaceRoot $root -WorkId $id
-} $invoke $paramsJson $workspace ('directwork-case0004-localize-'+$RequestId)
-if($LASTEXITCODE -ne 0){throw "CASE0004_LOCALIZE_RENDER_FAILED exit=$LASTEXITCODE"}
-$text=($result -join "`n")
-$out=Join-Path $evidence 'relocalize-render.stdout.json'
-[IO.File]::WriteAllText($out,$text+[Environment]::NewLine,[Text.UTF8Encoding]::new($false))
-$parsed=$text|ConvertFrom-Json
-$summary=[ordered]@{schema='case0004.directwork.story-relocalize.v1';case_id='0004';request_id=$RequestId;status='succeeded';machine=$env:COMPUTERNAME;authority_commit=[string]$authority.commit;render=$parsed;params_sha256=(Get-FileHash $paramsPath -Algorithm SHA256).Hash.ToLowerInvariant();completed_at=[DateTimeOffset]::UtcNow.ToString('o')}
-[IO.File]::WriteAllText((Join-Path $evidence 'final.json'),($summary|ConvertTo-Json -Depth 60)+[Environment]::NewLine,[Text.UTF8Encoding]::new($false))
-$summary|ConvertTo-Json -Depth 60 -Compress
+
+$renders=@()
+foreach($v in $views){
+  $params=[ordered]@{name=('case0004-'+$v.key+'-'+$RequestId);width_px=2400;height_px=3200;bounds=$v.bounds}
+  if(-not $CandidateViews){$params.width_px=3000;$params.height_px=5000}
+  $paramsPath=Join-Path $evidence ($v.key+'-render-params.json')
+  [IO.File]::WriteAllText($paramsPath,($params|ConvertTo-Json -Depth 20)+[Environment]::NewLine,[Text.UTF8Encoding]::new($false))
+  $paramsJson=$params|ConvertTo-Json -Depth 20 -Compress
+  $result=& { param($invokePath,$json,$root,$id) Set-StrictMode -Off; & $invokePath -Method 'cad.render_png' -ParamsJson $json -WorkspaceRoot $root -WorkId $id } $invoke $paramsJson $workspace ('directwork-case0004-'+$v.key+'-'+$RequestId)
+  if($LASTEXITCODE -ne 0){throw "CASE0004_CANDIDATE_RENDER_FAILED key=$($v.key) exit=$LASTEXITCODE"}
+  $text=($result -join "`n")
+  $out=Join-Path $evidence ($v.key+'-render.stdout.json')
+  [IO.File]::WriteAllText($out,$text+[Environment]::NewLine,[Text.UTF8Encoding]::new($false))
+  $renders+=@([ordered]@{key=$v.key;visually_observed_label=$v.label;review_status='pending';render=($text|ConvertFrom-Json);params_sha256=(Get-FileHash $paramsPath -Algorithm SHA256).Hash.ToLowerInvariant()})
+}
+$summary=[ordered]@{schema='case0004.directwork.story-relocalize.v2';case_id='0004';request_id=$RequestId;status='succeeded';machine=$env:COMPUTERNAME;authority_commit=[string]$authority.commit;candidate_mode=[bool]$CandidateViews;renders=$renders;completed_at=[DateTimeOffset]::UtcNow.ToString('o')}
+[IO.File]::WriteAllText((Join-Path $evidence 'final.json'),($summary|ConvertTo-Json -Depth 80)+[Environment]::NewLine,[Text.UTF8Encoding]::new($false))
+$summary|ConvertTo-Json -Depth 80 -Compress
