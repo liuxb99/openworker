@@ -1,0 +1,50 @@
+name: Case0004 Overview Evidence PR
+
+on:
+  pull_request:
+    types: [opened]
+
+permissions:
+  contents: read
+
+jobs:
+  collect:
+    if: github.event.pull_request.title == '[openworker-control] case0004_overview_evidence' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Windows, X64, O87]
+    timeout-minutes: 8
+    steps:
+      - name: Collect REAL Case0004 overview evidence
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if($env:COMPUTERNAME -ine 'DESKTOP-O87PJNR'){throw "wrong host $env:COMPUTERNAME"}
+          $workspace='D:\AI-Work\jobs\0004-DWG-TO-3D'
+          $stage=Join-Path $env:RUNNER_TEMP 'case0004-overview-evidence'
+          Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          $candidates=@(Get-ChildItem -LiteralPath $workspace -Recurse -File -ErrorAction SilentlyContinue | Where-Object {
+            $_.Extension -match '^\.(png|json)$' -and (
+              $_.Name -match '(?i)candidate-overview|overview|floor-label|story-index|render-manifest' -or
+              $_.FullName -match '(?i)case0004.*overview|story.*localization'
+            )
+          } | Sort-Object LastWriteTimeUtc -Descending)
+          $manifest=@()
+          $n=0
+          foreach($f in $candidates){
+            if($n -ge 80){break}
+            if($f.Length -gt 25MB){continue}
+            $n++
+            $safe=('{0:D3}-{1}' -f $n,($f.Name -replace '[^A-Za-z0-9._-]','_'))
+            $dest=Join-Path $stage $safe
+            Copy-Item -LiteralPath $f.FullName -Destination $dest -Force
+            $manifest += [ordered]@{artifact_name=$safe;source_path=$f.FullName;bytes=$f.Length;sha256=(Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash.ToLowerInvariant();last_write_utc=$f.LastWriteTimeUtc.ToString('o')}
+          }
+          if($manifest.Count -eq 0){throw 'no Case0004 overview evidence found'}
+          $manifest | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $stage 'manifest.json') -Encoding UTF8
+          Write-Host ($manifest|ConvertTo-Json -Depth 10 -Compress)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: case0004-overview-evidence
+          path: ${{ runner.temp }}\case0004-overview-evidence
+          if-no-files-found: error
+          retention-days: 7
