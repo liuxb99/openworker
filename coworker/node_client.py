@@ -1,16 +1,50 @@
-"""Thin Python control-plane adapter for the local OpenWorker Go execution node and cluster."""
+"""Thin dependency-free Python adapter for the resident OpenWorker Go node."""
 from __future__ import annotations
+
 from dataclasses import dataclass
+import json
 from typing import Any
-import httpx
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
+
 
 @dataclass(slots=True)
 class OpenWorkerNodeClient:
     base_url: str = "http://127.0.0.1:8787"
     timeout: float = 10.0
+
     def _request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
-        with httpx.Client(base_url=self.base_url.rstrip("/"), timeout=self.timeout) as client:
-            response=client.request(method,path,**kwargs);response.raise_for_status();return response.json()
+        params = kwargs.pop("params", None)
+        payload = kwargs.pop("json", None)
+        if kwargs:
+            raise TypeError(f"unsupported request options: {', '.join(sorted(kwargs))}")
+        target = self.base_url.rstrip("/") + path
+        if params:
+            query = urlencode({k: v for k, v in params.items() if v is not None})
+            if query:
+                target += ("&" if "?" in target else "?") + query
+        body = None
+        headers: dict[str, str] = {"Accept": "application/json"}
+        if payload is not None:
+            body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+        request = Request(target, data=body, headers=headers, method=method)
+        try:
+            with urlopen(request, timeout=self.timeout) as response:
+                raw = response.read(16 * 1024 * 1024)
+        except HTTPError as exc:
+            detail = exc.read(1024 * 1024).decode("utf-8", errors="replace").strip()
+            raise RuntimeError(f"OpenWorker HTTP {exc.code} {method} {path}: {detail}") from exc
+        except (URLError, TimeoutError, OSError) as exc:
+            raise RuntimeError(f"OpenWorker request failed {method} {path}: {exc}") from exc
+        if not raw.strip():
+            return {}
+        value = json.loads(raw.decode("utf-8"))
+        if not isinstance(value, dict):
+            raise RuntimeError(f"OpenWorker returned non-object JSON for {method} {path}")
+        return value
+
     def node_status(self)->dict[str,Any]: return self._request("GET","/v1/node/status")
     def case_bootstrap(self,payload:dict[str,Any])->dict[str,Any]: return self._request("POST","/v1/cases/bootstrap",json=payload)
     def submit(self,payload:dict[str,Any])->dict[str,Any]: return self._request("POST","/v1/jobs",json=payload)
