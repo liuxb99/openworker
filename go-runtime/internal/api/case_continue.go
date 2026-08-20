@@ -22,7 +22,7 @@ func ensureNativeCaseContinueRoute(s *Server){
     if _,loaded:=nativeCaseContinueRoutes.LoadOrStore(s,struct{}{});!loaded{
         s.mux.HandleFunc("POST /v1/cases/continue",s.caseContinue)
         s.mux.HandleFunc("GET /ui",func(w http.ResponseWriter,r *http.Request){http.Redirect(w,r,"/ui/",http.StatusTemporaryRedirect)})
-        s.mux.HandleFunc("GET /ui/",s.dashboard)
+        s.mux.HandleFunc("GET /ui/",s.dashboardV2)
     }
 }
 
@@ -56,8 +56,6 @@ func (s *Server) caseContinue(w http.ResponseWriter,r *http.Request){
         refresh=refreshed
     }
 
-    // Case0005 now enters the OpenWorker durable queue first. The coordinator
-    // then materializes the real step jobs back into this same :8787 node.
     if req.CaseID=="0005" {
         if req.OpenWorkerRoot=="" { writeErr(w,400,errors.New("openworker_root is required for Case0005 native supervisor job")); return }
         root,err:=filepath.Abs(req.OpenWorkerRoot);if err!=nil||!filepath.IsAbs(root){writeErr(w,400,errors.New("absolute openworker_root required"));return}
