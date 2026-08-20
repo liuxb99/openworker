@@ -38,10 +38,14 @@ function Find-StoryParams($node){
     foreach($x in $node){$r=Find-StoryParams $x;if($null-ne$r){return $r}}
     return $null
   }
-  if($node.PSObject -and $node.PSObject.Properties){
-    $names=@($node.PSObject.Properties.Name)
-    if($names -contains 'camera_bounds' -and $names -contains 'image_width' -and $names -contains 'image_height' -and $names -contains 'stories'){return $node}
-    foreach($p in $node.PSObject.Properties){$r=Find-StoryParams $p.Value;if($null-ne$r){return $r}}
+  $psobj=$node.PSObject
+  if($null-ne$psobj){
+    $props=@($psobj.Properties)
+    if($props.Count -gt 0){
+      $names=@($props | ForEach-Object { [string]$_.Name })
+      if($names -contains 'camera_bounds' -and $names -contains 'image_width' -and $names -contains 'image_height' -and $names -contains 'stories'){return $node}
+      foreach($p in $props){$r=Find-StoryParams $p.Value;if($null-ne$r){return $r}}
+    }
   }
   return $null
 }
