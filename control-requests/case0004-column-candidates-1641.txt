@@ -1,0 +1,8 @@
+requested_by: ChatGPT
+case_id: 0004
+machine: DESKTOP-O87PJNR
+source_story_region_work_id: dw-20260820T083831-efc1b644d6d5966c
+accepted_step: 0004-050
+purpose: read-only inventory of real OpenCAD column candidates for all confirmed story regions
+business_execution: DirectWork
+column_authority: none
