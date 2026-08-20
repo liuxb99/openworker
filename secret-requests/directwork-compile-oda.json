@@ -1,8 +1,8 @@
 {
   "schema": "openworker.secret-command.v1",
   "phrase": "DIRECTWORK.COMPILE",
-  "request_id": "directwork-compile-20260820-01",
+  "request_id": "directwork-compile-20260820-02",
   "requested_by": "chatgpt",
   "machine": "DESKTOP-ODAQN0D",
-  "purpose": "Compile and test vendored DirectWork source through the OpenWorker durable local authority, not as GitHub business execution."
+  "purpose": "Compile and test DirectWork through one OpenWorker durable local job so all build errors land in job stdout/stderr/events."
 }
