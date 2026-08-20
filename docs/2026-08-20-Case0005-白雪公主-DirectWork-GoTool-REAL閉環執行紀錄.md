@@ -1,14 +1,14 @@
 # Case0005 白雪公主：DirectWork + go-tool REAL 閉環執行紀錄
 
-更新時間：2026-08-20 14:49（Asia/Taipei）
+更新時間：2026-08-20 14:55（Asia/Taipei）
 
 ## 1. 案例目標與目前權威狀態
 
-Case0005 的本輪目標不是重新製作前段內容，而是沿 revision 15 工作清單完成最後成果閉環：
+Case0005 本輪沿 revision 15 工作清單完成最後成果閉環，不重新製作前段內容：
 
-1. 0005-025：在 ODA 實機工作區取得 `presentation/storyboard-text-only.pptx` 實體成果。
-2. 0005-026：使用最新版 DirectWork 作 durable business execution authority，並由最新版 go-tool `drive.file.publish-verified` 執行純 Go Google Drive 上傳 + 獨立完整性驗證。
-3. 0005-027：只有在 0005-026 取得 verified combined proof 後才進入 LLM / 使用者 approval gate；到 gate 後停止，不擅自繼續後續製片。
+1. 0005-025：ODA 實機工作區取得 `presentation/storyboard-text-only.pptx` 實體成果。
+2. 0005-026：最新版 DirectWork 作 durable business execution authority；最新版 go-tool `drive.file.publish-verified` 作純 Go Google Drive 上傳 + 獨立完整性驗證。
+3. 0005-027：0005-026 verified combined proof 成立後才進 LLM / 使用者 approval gate；到 gate 後停止。
 
 固定執行機：`DESKTOP-ODAQN0D`（ODA）
 
@@ -18,167 +18,148 @@ Case0005 的本輪目標不是重新製作前段內容，而是沿 revision 15 �
 
 Drive folder id：`1ORqerxTPVUcAmxiE0fcXMUS-XnDu3F9r`
 
-重要原則：GitHub Actions 只負責 ingress / transport / receipt 回寫，不作 Case business execution authority。DirectWork durable work / go-tool local-work / REAL artifact / Drive proof 才是完成依據。
+權威原則：GitHub Actions 只作 ingress / transport / receipt 回寫；DirectWork durable work、go-tool local-work、REAL artifact、Drive proof 才是業務完成依據。
 
 ## 2. 最新工具鏈
-
-本輪採用：
 
 `CASE0005.PUBLISH-REVIEW` 密語
 → GitHub transport
 → ODA DirectWork `127.0.0.1:8787/v1/work`
-→ DirectWork durable work accepted / claimed / running
-→ ODA PowerShell case driver
+→ DirectWork durable accepted / claimed / running
+→ ODA Case driver
 → go-tool `127.0.0.1:8848/api/execution/local-work`
-→ capability `drive.file.publish-verified`
-→ 純 Go Google Drive uploader
+→ `drive.file.publish-verified`
+→ 純 Go resumable Drive upload
 → independent `drive.file.verify`
-→ combined proof `evidence/0005-026-drive-publish-proof.json`
+→ `evidence/0005-026-drive-publish-proof.json`
 → `openworker.review.await-drive`
 → 0005-027 approval gate。
 
-本輪明確禁止退回舊 Case-specific Python uploader；Google Drive 正式路徑使用 go-tool 的純 Go uploader / verifier。
+禁止退回 Case-specific Python uploader。
 
-## 3. DirectWork dw01：第一次 durable evidence
+## 3. dw01：DirectWork 已接案，最初 transport failure
 
 request：`case0005-publish-review-20260820-dw01`
 
-DirectWork work id：`dw-20260820T060416-51efe43ad163af00`
+work id：`dw-20260820T060416-51efe43ad163af00`
 
-ODA 已實際建立 durable work，事件序列：
+事件：accepted seq45 → claimed slot3 seq46 → running pid20392 seq47 → failed seq48 `0xfffd0000`。
 
-- seq 45 accepted：durable work created
-- seq 46 claimed：slot=3，machine=`DESKTOP-ODAQN0D`
-- seq 47 running：pid=20392
-- seq 48 failed：`exit status 0xfffd0000`
+ODA diagnostic 證明 PowerShell `-File` 收到 literal quoted path，business script 根本未開始。故 dw01 不能歸因 Drive/go-tool。
 
-結論：DirectWork ingress、durable queue、claim slot、ODA executor 均有 REAL evidence；失敗點不是「沒有接單」。
-
-後續 ODA diagnostic 抓到 stderr，確認 Windows PowerShell 收到的 `-File` 值含 literal quote，形如：
-
-`-File '"C:\WINDOWS\TEMP\case0005-publish-review-...ps1"'`
-
-PowerShell 因此判定 script path 無效，Case driver 根本尚未開始；所以 dw01 不可歸因於 Drive 或 go-tool。
-
-## 4. DirectWork dw02：確認同一 transport bug 可重現
+## 4. dw02：同一 quoted argv bug 重現
 
 request：`case0005-publish-review-20260820-dw02`
 
-DirectWork work id：`dw-20260820T062619-0a167adc742aaa9a`
+work id：`dw-20260820T062619-0a167adc742aaa9a`
 
-事件：
+事件：accepted seq65 → claimed slot1 seq66 → running pid36504 seq67 → failed seq68 `0xfffd0000`。
 
-- seq 65 accepted
-- seq 66 claimed：slot=1，ODA
-- seq 67 running：pid=36504
-- seq 68 failed：`exit status 0xfffd0000`
+result=null、artifact 空。再次確認 DirectWork durable ingress 正常，錯在 Windows argv quoting。
 
-finished_at：`2026-08-20T06:26:20.0119924Z`
+## 5. DirectWork argv 修復
 
-result：null；artifact：空。
+commit：`f6479da2863d779b13bff2a8a3d618d48a24be8a`
 
-結論：再次證明 DirectWork 能接案，但舊 quoted argv 使 PowerShell 在 business script 之前立即失敗。
+Case0005 publish workflow 改為 DirectWork tokenizer 可接受的 unquoted argv。這是 transport 修復，不改變 business authority。
 
-## 5. 修復：DirectWork Windows argv quoting
-
-DirectWork commit：`f6479da2863d779b13bff2a8a3d618d48a24be8a`
-
-修復內容：Case0005 publish workflow 不再把 `-File`、request id、workspace、PPTX、receipt path 等值包成會被 DirectWork tokenizer 保留為 literal 的雙引號。Case0005 本輪所有相關 path / ID 均不含空白，因此改成 unquoted argv。
-
-這是 transport 修復，不改變 Case business semantics，也不把 GitHub Actions 升格為 business executor。
-
-## 6. DirectWork dw03：quoting 修復已生效，但進入下一層錯誤
+## 6. dw03：已跨過 quoting，精確根因改為 go-tool installed contract 過舊
 
 request：`case0005-publish-review-20260820-dw03`
 
-DirectWork receipt commit：`15fc66b2ad3607e7faf6d7be2fd30e666986e638`
+receipt commit：`15fc66b2ad3607e7faf6d7be2fd30e666986e638`
 
-DirectWork work id：`dw-20260820T063227-b0a02b53ec13a719`
-
-實際 command 已變為 unquoted argv，例如：
-
-`powershell.exe ... -File C:\WINDOWS\TEMP\case0005-publish-review-case0005-publish-review-20260820-dw03.ps1 ...`
-
-這證明 `f6479da` 的 quoting 修復確實已進入 REAL ODA dispatch。
+work id：`dw-20260820T063227-b0a02b53ec13a719`
 
 事件：
 
-- seq 69 accepted：`2026-08-20T06:32:27.2739433Z`
-- seq 70 claimed：slot=2，machine=ODA
-- seq 71 running：pid=19736
-- seq 72 failed：`exit status 1`
+- seq69 accepted：`2026-08-20T06:32:27.2739433Z`
+- seq70 claimed：slot=2，ODA
+- seq71 running：pid=19736
+- seq72 failed：exit status 1
 
-finished_at：`2026-08-20T06:32:27.7791535Z`
+exact diagnostic commit：`912aeb171ceedd1ba25f14af5775159845428e89`
 
-這次 exit code 已從 `0xfffd0000` 變為普通 `1`，表示舊的 `-File literal quote` 問題已被跨過；目前已進入下一層實際 PowerShell / Case driver failure。由於 receipt 的 `result=null`、artifact 空，尚不能聲稱已進入或完成 `drive.file.publish-verified`。
+### dw03 exact stderr
 
-## 7. 目前正在做的診斷
+go-tool local supervisor 回應：
 
-已更新 DirectWork diagnostic workflow，使其額外抓取：
+- `assigned_host=DESKTOP-ODAQN0D`
+- `capability_id=drive.file.publish-verified`
+- `capability_supported=false`
+- `execution_route=local_supervisor`
+- `github_action_fallback_allowed=false`
+- `github_action_used_for_business_execution=false`
+- reason：`capability is not registered by the installed local executor contract`
+- schema：`gtr-local-capability-preflight/v1`
+- status：`rejected`
 
-- `dw-20260820T063227-b0a02b53ec13a719.stdout.log`
-- `dw-20260820T063227-b0a02b53ec13a719.stderr.log`
-- 同時保留 dw02 / dw01 對照。
+ODA 當時 installed contract 列出的 capabilities 包含 `drive.review.publish`、`openworker.review.await-drive`、`presentation.openmaic` 等，但沒有：
 
-workflow 更新 commit：`3da6bdf9e87914a440497887faa96cbcb9a8e597`
+- `drive.file.upload`
+- `drive.file.verify`
+- `drive.file.publish-verified`
 
-診斷 request commit：`b41d3c05bc62fbf60438b50477e355b8c17b4cb1`
+因此 dw03 的真正失敗點已經明確：**DirectWork transport 已修好；目前 ODA 127.0.0.1:8848 所載入的 installed local executor contract 尚未註冊新版純 Go Drive capabilities。**
 
-診斷 request token：`case0005-directwork-log-diagnostic-20260820-03`
+這不是 Drive credential error，也不是 PPTX error，也不是 DirectWork 不接案。
 
-下一步必須以 dw03 exact stderr/stdout 為 authority，不以猜測判定原因。
+## 7. 為什麼 repo 有 capability、ODA runtime 卻沒有
 
-## 8. 0005-025 / 0005-026 / 0005-027 判定規則
+go-tool main 已有 registry binding commit：`cbb25ecd891385293855eaa57274cd9f4a61b13b`，在 `internal/localexec/registry.go` 註冊：
+
+- `drive.file.upload`
+- `drive.file.verify`
+- `drive.file.publish-verified`
+
+capability guidance commit：`49cc7a8d3db21826a19b60de3f1aea950696d30f`，明確指定 Case0005 0005-026 優先使用 `drive.file.publish-verified`，並要求 exact file_id + SHA256 + exact size 一致。
+
+但 ODA latest deployment start marker `b33d70ecf896e4d8c4df8cb8a19e21b5dffeb1a2` 只證明 deployment run `32338686187` 於 14:13:52 開始，source commit=`6767537b...`；目前 main 上 `latest-local-executors-ODA.json` 的完整 REAL verified deployment receipt 仍是舊 run `32247124329`、舊 commit `0b47b75...`、deployed_at 2026-08-19。
+
+所以目前 evidence 顯示：新版 deployment 有 start evidence，但尚沒有新的 ODA v5 terminal deployment receipt 取代舊 receipt；而 dw03 preflight 又直接證明實際 8848 runtime contract 仍缺新版 Drive capability。
+
+下一修復方向不是修改 Case0005 business workflow，而是先讓 ODA go-tool local executor 真正完成最新版部署 / contract refresh。
+
+## 8. 0005-025 / 026 / 027 完成規則
 
 ### 0005-025
 
-只有 ODA 上 `storyboard-text-only.pptx` 為非空實體檔，且取得 size + SHA256，才算 artifact evidence。若檔案不存在，應回到 0005-025 生成；若已存在，不重做前段故事內容。
+ODA `storyboard-text-only.pptx` 必須是非空實體檔並取得 size + SHA256。已存在就不重做前段內容。
 
 ### 0005-026
 
-必須由 `drive.file.publish-verified` 完成並產生 combined proof。預期 evidence：
+必須取得：
 
 - `evidence/0005-026-drive-upload.json`
 - `evidence/0005-026-drive-verify.json`
 - `evidence/0005-026-drive-publish-proof.json`
 
-combined proof 至少必須滿足：
-
-- schema = `go-tool-google-drive-publish-verified/v1`
-- status = `verified`
-- exact `file_id` 非空
-- proof SHA256 = ODA 本地 PPTX SHA256
-- proof size = ODA 本地 PPTX exact size
-- upload 與 independent verify 指向同一 exact file_id
-
-未滿足以上條件，0005-026 不得標記完成。
+combined proof 必須：schema=`go-tool-google-drive-publish-verified/v1`、status=`verified`、exact file_id 非空、SHA256 與本地一致、size 與本地一致、upload/verify 綁定同一 exact file_id。
 
 ### 0005-027
 
-只有 0005-026 verified proof 成立後，才提交 `openworker.review.await-drive`。目標 evidence：`evidence/0005-027-drive-gate.json`。
+只有 0005-026 proof 成立才允許 `openworker.review.await-drive`。最新 go-tool gate 還要求重新驗證 canonical PPTX bytes 與 fresh Drive metadata，通過後才可進 approval boundary。
 
-Case 到達 WAITING_LLM_REVIEW / approval gate 後停止，等待 ChatGPT / 使用者審查 storyboard-text-only PPTX。
+## 9. 負面知識
 
-## 9. 已知失敗與負面知識
+1. Action success ≠ Case completion。
+2. DirectWork accepted/claimed/running ≠ artifact complete。
+3. dw01/dw02 的 `0xfffd0000` = quoted `-File` transport bug。
+4. dw03 不得再歸因 quoted argv；其 exact root cause = installed local executor contract 不支援 `drive.file.publish-verified`。
+5. repo capability 定義存在 ≠ ODA runtime 已載入；必須以 8848 preflight / terminal deployment receipt 為 authority。
+6. 不得退回舊 Python uploader。
+7. 沒有 exact file_id + SHA256 + size verified combined proof，不得進 0005-027。
+8. 0005-025 已有 artifact 時不得因 transport/runtime 修復重做故事內容。
 
-1. GitHub Action success 不能當成 Case business completion。
-2. DirectWork accepted / claimed / running 只能證明 durable execution 已開始，不代表成果完成。
-3. `0xfffd0000` 在本次 dw01/dw02 是 PowerShell `-File` literal quote transport bug，不是 Drive auth failure。
-4. 修復 quoting 後 dw03 已進入 exit code 1；不得再用舊 quoting 根因解釋 dw03。
-5. 不得為 Case0005 再發明 Python Drive uploader；正式單檔發布使用 go-tool `drive.file.publish-verified`。
-6. 沒有 exact file_id + SHA256 + size matching combined proof，不得進 0005-027。
-7. 若 0005-025 artifact 已存在，不得為了修 transport 重做前段白雪公主內容。
+## 10. checkpoint（2026-08-20 14:55 Asia/Taipei）
 
-## 10. 目前 checkpoint
+- DirectWork durable ingress：REAL 已證明。
+- ODA claim / executor slots：REAL 已證明。
+- Windows argv quoting：已修復並由 dw03 command 證明生效。
+- dw03 exact root cause：已取得。
+- go-tool main source：已有 `drive.file.publish-verified` registry + guidance。
+- ODA 8848 installed contract：仍缺 `drive.file.publish-verified`，preflight fail closed。
+- 0005-026：尚未完成。
+- 0005-027：尚未進入。
 
-截至 2026-08-20 14:49 Asia/Taipei：
-
-- DirectWork REAL durable ingress：已證明。
-- ODA claim / executor slot：已證明。
-- Windows quoted argv bug：已定位並修復。
-- dw03：已跨過舊 `0xfffd0000`，目前 exit code 1。
-- dw03 exact stderr/stdout：已發 diagnostic request，等待 REAL 回寫。
-- 0005-026 Drive verified publish：尚未有 combined proof，不可宣告完成。
-- 0005-027 approval gate：尚未進入。
-
-下一個 checkpoint：讀取 dw03 exact stderr/stdout → 修下一個實際 failure → 重新發 `CASE0005.PUBLISH-REVIEW` → 取得 `drive.file.publish-verified` combined proof → 進 0005-027 gate → 停止等待審查。
+下一 checkpoint：完成 ODA go-tool local executor 最新版部署/contract refresh → preflight 能列出 `drive.file.publish-verified` → 發新 `CASE0005.PUBLISH-REVIEW` → 取得 combined proof → 進 0005-027 approval gate → 停止等待審查。
