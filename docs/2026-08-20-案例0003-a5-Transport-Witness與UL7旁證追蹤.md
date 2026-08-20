@@ -11,74 +11,72 @@
 ## 1. 已有 REAL authority
 request a2 已取得 DirectWork durable evidence：work_id=dw-20260820T072026-2b13548d00bf965a；accepted PASS；claimed PASS（slot=4 / DESKTOP-UL7V2VV）；running PASS（pid=21080）；terminal failed；exit_code=1。因此歷史上已證明 GitHub short transport → UL7 → DirectWork /v1/work → durable queue → claim → slot → executor 真實成立，a2 不可描述為 DirectWork 沒接案。
 
-## 2. a3 / a4 transport 缺口
-a3 已部署 self-diagnosing payload，失敗應帶回 stage/error/workspace_exists/geo_exists/tool_root/producer_commit/stdout/stderr，但 fresh receipt 未觀察到。a4 request-only retrigger 亦未觀察到 fresh receipt。因此 GAP-0003-TRANSPORT-01 定義為：request 已落 master，但無 fresh evidence 證明 UL7 workflow runner 已開始。此 gap 位於 transport/runner-start 層，與 a2 business exit=1 不同。
+## 2. a3 / a4 / a5 transport 缺口
+a3 已部署 self-diagnosing payload，但 a3 receipt 未觀察到；a4 retrigger 亦無 receipt。a5 新增 UL7 transport witness，commit 5dec37d5a5836c3409d60dd4b2b9d110bce1d6c4；witness 與 a5 business receipt多次 fresh recheck 均未觀察到。因此 GAP-0003-TRANSPORT-01 仍 OPEN，但現在不再猜 business root cause。
 
-## 3. a5 transport witness
-DirectWork 已新增 .github/workflows/case0003-transport-witness-ul7.yml，正式落 master commit 5dec37d5a5836c3409d60dd4b2b9d110bce1d6c4；同一 atomic commit 將 request 更新為 case0003-orthophoto-20260820-a5。witness 只在 UL7 runner 開始時寫 transport-results/case0003/case0003-orthophoto-20260820-a5.json，business_execution=false，不執行正射業務。
+## 3. O87 fresh authority
+2026-08-20 15:42（Asia/Taipei），Case0006 O87 remote-admission receipt commit 241b58b0cc4d340da6eaf1e1e335564204546085 證明 O87 self-hosted runner仍可消費新 job，且能跨機 POST durable work 到 ODA DirectWork：work_id=dw-20260820T074210-48814d97fcd6d9ee，accepted→claimed(slot4)→running(pid2824)→succeeded，exit0。因此不是所有 self-hosted runners 都掛。
 
-本輪再次讀取後：transport witness 仍為 404 / NOT OBSERVED；secret-results/case0003/case0003-orthophoto-20260820-a5.json 亦為 404 / NOT OBSERVED。此證據只能證明「尚未觀察到」，不能單獨宣告 UL7 offline 或 workflow failure。
+## 4. O87→UL7 LAN service probe：UL7 DirectWork FRESH ONLINE
+Case0003 O87 probe receipt：diagnostics/case0003/case0003-o87-probe-ul7-services-20260820-r01.json，GitHub run id 32346394659。
 
-## 4. ODA→UL7 runner inventory 旁證
-為避免 UL7 自證在線，go-tool-runtime 已部署 .github/workflows/case0003-query-ul7-runner-inventory-oda.yml，由 DESKTOP-ODAQN0D / ODA runner查 http://127.0.0.1:8848/api/information/runners/current，預期寫 evidence/case0003/ul7-runner-inventory-from-oda.json。
+Fresh evidence（15:57 +08）：observer runner DESKTOP-O87PJNR-R001；UL7 DNS=100.78.110.79；http://DESKTOP-UL7V2VV:8787/v1/node/status 回 HTTP200，內容明確為 online=true、max_workers=4、free_workers=4、busy_workers=0、queued_works=0、upgrade_verified=true，commit/target_commit=ec38bdd3b2cbd90089e1ad1fe9f4269b3ee12c32。UL7 同時觀察到 ODA peer online（64ms）與 O87 peer online（56ms）。
 
-第一輪與 a2 request-only retrigger（commit 1e69d9bb720ca54f0c9923165929eb1322c90bae）後，evidence 仍未觀察到。因此這條 ODA 旁證目前不能提供 UL7 fresh online/offline authority。
+8787/health 回404僅表示 route不存在；/v1/node/status 已提供 positive authority。遠端 8848 /health 與 /api/information/runners/current 回401，代表 LAN request 到達但需要授權，不能當 service offline。
 
-## 5. O87 fresh authority：否定「所有 runner 都掛」
-2026-08-20 15:42（Asia/Taipei），DirectWork 已有 fresh O87 self-hosted runner 回傳的 Case0006 remote-admission receipt，commit 241b58b0cc4d340da6eaf1e1e335564204546085。該 receipt 明確記錄：observer=DESKTOP-O87PJNR、target=DESKTOP-ODAQN0D、remote work_id=dw-20260820T074210-48814d97fcd6d9ee、accepted→claimed(slot=4)→running(pid=2824)→succeeded、exit_code=0。
+結論：已排除 UL7 主機斷線、UL7 DirectWork offline、worker 滿載與 queue 堵塞。
 
-因此「所有 self-hosted runners 都停止消費新 job」已被 fresh evidence 否定。至少 O87 在 a5 之後仍能取得 job，且能跨機把 durable work 送進另一台 DirectWork 並完成。
+## 5. GAP-0003-TRANSPORT-01 scope 已收斂
+UL7 host + DirectWork fresh online，但 Case0003 UL7 GitHub transport witness不出現，所以最可疑層已收斂為：UL7 GitHub self-hosted runner listener/service、repo registration、label assignment 或 job routing。此時不得清 DirectWork queue（queued_works=0），也不得修改 Terrain_To_DXF producer。
 
-## 6. 新缺口修補：O87→UL7 LAN service probe
-為直接區分 UL7 主機/服務問題與 UL7 GitHub runner 問題，DirectWork 新增：
+## 6. 直接繞過 UL7 GitHub runner 做本機 runner-service diagnostic
+為避免故障中的 UL7 GitHub listener 自證，已由 O87 使用 UL7 DirectWork /v1/work 投遞本機 infrastructure diagnostic。
 
-.github/workflows/case0003-o87-probe-ul7-services.yml
+request：case0003-ul7-runner-service-diagnose-20260820-r01
+master atomic commit：ed91f74e2090cccbd09bf8628fb114c4b784bd1a
 
-request：case0003-o87-probe-ul7-services-20260820-r01
+Fresh durable receipt 已回：
 
-該 workflow 固定 runs-on=[self-hosted, Windows, X64, O87]，由已具 fresh authority 的 DESKTOP-O87PJNR 對 DESKTOP-UL7V2VV 做 DNS 與 query-only probes：
+- work_id=dw-20260820T080044-6c5b5ca111f88506
+- target machine=DESKTOP-UL7V2VV
+- accepted seq37
+- claimed seq38 / slot=1
+- running seq39 / pid=32476
+- succeeded seq40
+- exit_code=0
+- artifact=D:\AI-Work\jobs\0003-YUJING-BRIDGE\evidence\case0003-ul7-runner-service-diagnose.json
+- artifact size=36242 bytes
+- SHA256=a198be91fca748da8cd6391d3726b6697274ccbc456871d61139c53ca7c9346c
 
-- http://DESKTOP-UL7V2VV:8787/health
-- http://DESKTOP-UL7V2VV:8787/v1/node/status
-- http://DESKTOP-UL7V2VV:8848/health
-- http://DESKTOP-UL7V2VV:8848/api/information/runners/current
+所以 UL7 DirectWork 不只 health online，還能 fresh 接受並執行新的 durable infrastructure work。
 
-結果預定寫回：diagnostics/case0003/case0003-o87-probe-ul7-services-20260820-r01.json。
-
-部署 commits：workflow=e4f5c82e1e065b15767e3e70778df7fe6b267438；request=889ad67c342a158198f7900a0174da27f0ab2244。merge 前 compare 為 ahead=2 / behind=0，已 force=false fast-forward 到 DirectWork master。立即 fresh recheck 時 diagnostics receipt 尚未觀察到，因此只能記 DEPLOYED / RECEIPT PENDING。
+該 artifact 包含 Win32_Service actions.runner.*、service state/start mode/account/PID/path、runner dirs、Runner.Listener.exe/.runner config 與 executor identity。因 DirectWork artifacts listing只回 metadata，已再部署 O87 artifact-fetch workflow，把該 JSON 內容經 UL7 DirectWork artifact HTTP endpoint回寫：diagnostics/case0003/case0003-ul7-runner-service-diagnose-content-r01.json。部署 branch fast-forward commit 96a19b5acd6a176f3494e1ae83898e6a6c232227；截至本段更新內容 receipt尚未觀察到。
 
 ## 7. go-tool 8848 負面知識
-127.0.0.1:8848 是新版 per-machine local-work queue-only profile；codebase/git/knowledge/actions disabled 是允許且預期。不得再把 /tools disabled 當完整 go-tool query runtime 故障，也不得因此重裝 queue runtime。本案 runner 旁證使用 /api/information/runners/current information endpoint。
+127.0.0.1:8848 是 per-machine local-work queue-only profile；codebase/git/knowledge/actions disabled允許且預期。不得再把 /tools disabled 當完整 query runtime故障。遠端8848回401只代表需要授權。
 
 ## 8. 最新 acceptance matrix
 ```text
-a2 DirectWork ingress              PASS
-a2 durable queue                   PASS
-a2 claim / slot                    PASS (slot 4)
-a2 executor                        PASS (pid 21080)
-a2 business                        FAIL (exit 1)
-a3 self-diagnosing payload         DEPLOYED
-a3 receipt                         NOT OBSERVED
-a4 retrigger                       SENT
-a4 receipt                         NOT OBSERVED
-a5 transport witness               DEPLOYED
-a5 transport receipt               NOT OBSERVED
-a5 business receipt                NOT OBSERVED
-ODA→UL7 inventory query            RETRIGGERED / NO RECEIPT
-O87 self-hosted runner              FRESH PASS (15:42 +08)
-O87 remote DirectWork admission     PASS (work_id dw-20260820T074210-48814d97fcd6d9ee)
-O87→UL7 LAN service probe           DEPLOYED / RECEIPT PENDING
-Fresh DirectWork work_id            PENDING
-Fresh PHOTO2 JPEG                   NOT PROVEN
-Artifact size/SHA256                NOT PROVEN
-NLSC PHOTO2 evidence                NOT PROVEN
-Drive verified publish              NOT STARTED
-ChatGPT exact-image visual QA       NOT STARTED
+a2 DirectWork ingress                 PASS
+a2 durable queue                      PASS
+a2 claim / slot                       PASS (slot 4)
+a2 executor                           PASS (pid 21080)
+a2 business                           FAIL (exit 1)
+a3/a4/a5 GitHub transport receipts    NOT OBSERVED
+O87 self-hosted runner                FRESH PASS
+O87→UL7 DNS                            PASS (100.78.110.79)
+UL7 DirectWork node status             PASS / online=true
+UL7 workers                            4 free / 0 busy
+UL7 queued works                       0
+UL7 peers ODA/O87                      ONLINE
+UL7 durable runner diagnostic          PASS
+UL7 diagnostic work_id                dw-20260820T080044-6c5b5ca111f88506
+UL7 diagnostic artifact               PASS 36242 bytes / SHA256 recorded
+UL7 GitHub runner listener             SUSPECT / DETAILS FETCHING
+Fresh orthophoto                       NOT PROVEN
+Drive publish                          NOT STARTED
+ChatGPT exact-image visual QA          NOT STARTED
 ```
 
-## 9. 缺口與補齊策略
-GAP-0003-TRANSPORT-01 保持 OPEN，但 scope 已縮小：GitHub repo 本身持續更新、O87 self-hosted runner fresh PASS，所以不再把「整個 self-hosted Actions 都停擺」當主假設。
-
-下一個 authority 以 O87→UL7 probe 為優先：若 DNS/8787/8848 全部不可達，先修 UL7 host/network/service；若 8787/8848 可達但 UL7 witness 不出現，收斂到 UL7 GitHub runner service / label / workflow assignment；若 a5 business receipt出現，直接依 self-diagnosing stage/error/stdout/stderr 補 business gap。
-
-只有 fresh orthophoto durable PASS 後才可 Drive publish；只有 ChatGPT 取得 exact JPEG 並實際看圖後才可記 visual QA PASS/TUNE/FAIL。
+## 9. 下一步 gate
+優先讀 case0003-ul7-runner-service-diagnose-content-r01.json。若 DirectWork-specific UL7 GitHub runner service stopped，啟動該 service；若 running，核對 .runner repo binding、runner name/labels、listener PID；只修精確服務，不無差別重裝。修好後發 a6 request驗 transport witness，然後才恢復正射 business chain。
