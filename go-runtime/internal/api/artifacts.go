@@ -68,50 +68,117 @@ func (s *Server) slots(w http.ResponseWriter, r *http.Request) {
     writeJSON(w, 200, map[string]any{"slots": out, "count": len(out)})
 }
 
+var artifactExtKind = map[string]string{
+    ".pdf":"document", ".doc":"document", ".docx":"document", ".ppt":"presentation", ".pptx":"presentation",
+    ".xls":"spreadsheet", ".xlsx":"spreadsheet", ".xlsm":"spreadsheet", ".csv":"data", ".tsv":"data",
+    ".dwg":"cad", ".dxf":"cad", ".dgn":"cad", ".ifc":"bim", ".rvt":"bim", ".mct":"engineering", ".s2k":"engineering",
+    ".op2":"engineering", ".f06":"engineering", ".out":"engineering", ".res":"engineering",
+    ".obj":"3d", ".fbx":"3d", ".gltf":"3d", ".glb":"3d", ".stl":"3d", ".blend":"3d", ".3dm":"3d",
+    ".png":"image", ".jpg":"image", ".jpeg":"image", ".webp":"image", ".gif":"image", ".bmp":"image", ".tif":"image", ".tiff":"image", ".svg":"image",
+    ".mp4":"video", ".mov":"video", ".mkv":"video", ".avi":"video", ".webm":"video",
+    ".wav":"audio", ".mp3":"audio", ".flac":"audio", ".m4a":"audio", ".aac":"audio",
+    ".json":"data", ".jsonl":"data", ".geojson":"data", ".xml":"data", ".yaml":"data", ".yml":"data",
+    ".zip":"archive", ".7z":"archive", ".rar":"archive", ".tar":"archive", ".gz":"archive",
+    ".exe":"binary", ".msi":"binary", ".dll":"binary",
+    ".html":"report", ".htm":"report", ".md":"report", ".txt":"report", ".log":"log",
+}
+
+var artifactNameHints = []string{
+    "artifact", "deliverable", "result", "report", "receipt", "manifest", "evidence", "render", "export",
+    "output", "final", "presentation", "storyboard", "drawing", "model", "analysis", "calculation", "summary",
+}
+
+var ignoredArtifactDirs = map[string]bool{
+    ".git":true, ".github":true, ".idea":true, ".vscode":true, "node_modules":true,
+    ".venv":true, "venv":true, "env":true, "__pycache__":true, ".pytest_cache":true,
+    ".mypy_cache":true, ".ruff_cache":true, ".cache":true, "target":true, "vendor":true,
+    "packages":true, ".next":true, ".nuxt":true, "dist-cache":true, "models":true,
+}
+
+func classifyArtifact(rel string) (string, bool) {
+    clean := strings.ToLower(filepath.ToSlash(rel))
+    base := strings.ToLower(filepath.Base(clean))
+    ext := strings.ToLower(filepath.Ext(base))
+    kind, extOK := artifactExtKind[ext]
+    hinted := false
+    for _, h := range artifactNameHints {
+        if strings.Contains(clean, h) { hinted = true; break }
+    }
+    // Source/config text is only a result when its path/name explicitly looks like an output.
+    switch ext {
+    case ".go", ".py", ".js", ".ts", ".tsx", ".jsx", ".c", ".cc", ".cpp", ".h", ".hpp", ".rs", ".java", ".cs", ".ps1", ".bat", ".sh", ".toml", ".ini":
+        return "", false
+    case ".json", ".jsonl", ".xml", ".yaml", ".yml", ".md", ".txt", ".log", ".html", ".htm":
+        if !hinted { return "", false }
+    }
+    if extOK { return kind, true }
+    if hinted { return "artifact", true }
+    return "", false
+}
+
+func shouldSkipArtifactDir(name string) bool { return ignoredArtifactDirs[strings.ToLower(name)] }
+
 func (s *Server) artifacts(w http.ResponseWriter, r *http.Request) {
     job, err := s.store.Get(r.PathValue("jobID"))
     if err != nil { writeErr(w, 404, err); return }
-    rows := make([]jobArtifact, 0, 32)
+    rows := make([]jobArtifact, 0, 64)
+    seen := map[string]bool{}
+    start := job.CreatedAt.Add(-2*time.Minute)
+    end := artifactWindowEnd(job)
+
     addFile := func(path, kind, rel string) {
-        st, e := os.Stat(path); if e != nil || !st.Mode().IsRegular() { return }
-        start := job.CreatedAt.Add(-2*time.Minute)
-        end := time.Now().UTC().Add(2*time.Minute)
-        if job.FinishedAt != nil { end = job.FinishedAt.Add(2*time.Minute) }
+        abs, e := filepath.Abs(path); if e != nil { return }
+        key := strings.ToLower(filepath.Clean(abs)); if seen[key] { return }
+        st, e := os.Stat(abs); if e != nil || !st.Mode().IsRegular() { return }
         during := !st.ModTime().Before(start) && !st.ModTime().After(end)
-        q := url.Values{}
-        q.Set("path", path)
-        row := jobArtifact{Path:path, RelativePath:rel, Kind:kind, Size:st.Size(), ModifiedAt:st.ModTime().UTC(), DuringJobWindow:during, URL:"/v1/jobs/"+url.PathEscape(job.JobID)+"/artifact?"+q.Encode()}
+        q := url.Values{}; q.Set("path", abs)
+        row := jobArtifact{Path:abs, RelativePath:rel, Kind:kind, Size:st.Size(), ModifiedAt:st.ModTime().UTC(), DuringJobWindow:during, URL:"/v1/jobs/"+url.PathEscape(job.JobID)+"/artifact?"+q.Encode()}
         if st.Size() <= 512<<20 {
-            if f, e := os.Open(path); e == nil { h:=sha256.New(); if _,e=io.Copy(h,f); e==nil { row.SHA256=hex.EncodeToString(h.Sum(nil)) }; _=f.Close() }
+            if f, e := os.Open(abs); e == nil { h:=sha256.New(); if _,e=io.Copy(h,f); e==nil { row.SHA256=hex.EncodeToString(h.Sum(nil)) }; _=f.Close() }
         }
-        rows = append(rows, row)
+        rows = append(rows, row); seen[key]=true
     }
+
     if job.StdoutPath != "" { addFile(job.StdoutPath, "stdout", filepath.Base(job.StdoutPath)) }
     if job.StderrPath != "" { addFile(job.StderrPath, "stderr", filepath.Base(job.StderrPath)) }
 
     root := strings.TrimSpace(job.WorkspaceRoot)
-    roots := []string{"presentation","artifacts","artifact","output","outputs","evidence","deliverables","renders","results","reports"}
-    limit := queryInt(r,"limit",200); if limit < 1 { limit=1 }; if limit > 500 { limit=500 }
+    limit := queryInt(r,"limit",300); if limit < 1 { limit=1 }; if limit > 1000 { limit=1000 }
+    scanned := 0
     if root != "" {
-        for _, name := range roots {
-            base := filepath.Join(root,name)
-            st,e:=os.Stat(base); if e!=nil || !st.IsDir(){continue}
-            _ = filepath.WalkDir(base, func(path string, d fs.DirEntry, walkErr error) error {
-                if walkErr != nil { return nil }
-                if len(rows) >= limit { return fs.SkipAll }
-                if d.IsDir() { return nil }
-                rel,e:=filepath.Rel(root,path); if e!=nil { rel=filepath.Base(path) }
-                addFile(path,"workspace_artifact",rel)
+        _ = filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
+            if walkErr != nil { return nil }
+            if len(rows) >= limit { return fs.SkipAll }
+            if d.IsDir() {
+                if path != root && shouldSkipArtifactDir(d.Name()) { return fs.SkipDir }
                 return nil
-            })
-            if len(rows)>=limit { break }
-        }
+            }
+            scanned++
+            if scanned > 50000 { return fs.SkipAll }
+            rel,e:=filepath.Rel(root,path); if e!=nil { rel=filepath.Base(path) }
+            kind,ok:=classifyArtifact(rel); if !ok { return nil }
+            st,e:=d.Info(); if e!=nil { return nil }
+            // Outside the job time window, keep only files whose path/name clearly denotes a final/result artifact.
+            if st.ModTime().Before(start) || st.ModTime().After(end) {
+                hinted:=false; low:=strings.ToLower(filepath.ToSlash(rel))
+                for _,h:=range artifactNameHints { if strings.Contains(low,h) { hinted=true; break } }
+                if !hinted { return nil }
+            }
+            addFile(path,kind,rel)
+            return nil
+        })
     }
     sort.SliceStable(rows, func(i,j int) bool {
         if rows[i].DuringJobWindow != rows[j].DuringJobWindow { return rows[i].DuringJobWindow }
+        if rows[i].Kind != rows[j].Kind { return rows[i].Kind < rows[j].Kind }
         return rows[i].ModifiedAt.After(rows[j].ModifiedAt)
     })
-    writeJSON(w,200,map[string]any{"job_id":job.JobID,"slot":job.AgentSlot,"workspace_root":job.WorkspaceRoot,"artifacts":rows,"count":len(rows),"hash_limit_bytes":512<<20,"scan_limit":limit,"window_start":job.CreatedAt.Add(-2*time.Minute),"window_end":artifactWindowEnd(job)})
+    writeJSON(w,200,map[string]any{
+        "job_id":job.JobID,"slot":job.AgentSlot,"workspace_root":job.WorkspaceRoot,
+        "artifacts":rows,"count":len(rows),"hash_limit_bytes":512<<20,"scan_limit":limit,
+        "files_scanned":scanned,"window_start":start,"window_end":end,
+        "discovery":"project_agnostic_workspace_index_v1",
+    })
 }
 
 func (s *Server) serveArtifact(w http.ResponseWriter, r *http.Request) {
