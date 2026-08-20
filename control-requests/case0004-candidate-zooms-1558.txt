@@ -1,0 +1,6 @@
+requested_by: ChatGPT
+case_id: 0004
+machine: DESKTOP-O87PJNR
+source_visual_sha256: 969e41e17057d539ad1c85400425f9cf67cf57f52279892929ae0d7915b9f680
+purpose: DirectWork bounded zoom renders for visually observed labels 地面一層平面圖 / 二層平面圖 / 三層至四層平面圖 / 屋突一層平面圖; review only, no Story Index mutation yet
+business_execution: DirectWork
