@@ -1,0 +1,6 @@
+requested_by: ChatGPT
+case_id: 0004
+machine: DESKTOP-O87PJNR
+source_work_id: dw-20260820T091317-9d0dcb2dd5f88b97
+purpose: read-only collect 055 zero-candidate diagnostics and story viewports
+business_execution: false
