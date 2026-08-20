@@ -10,12 +10,21 @@ import (
     "os/exec"
     "path/filepath"
     "strings"
+    "sync"
     "time"
 
     "github.com/liuxb99/openworker/go-runtime/internal/buildinfo"
 )
 
 type githubCommitHead struct { SHA string `json:"sha"` }
+var selfUpgradeRoutes sync.Map
+
+func ensureSelfUpgradeRoutes(s *Server) {
+    if _, loaded := selfUpgradeRoutes.LoadOrStore(s, struct{}{}); !loaded {
+        s.mux.HandleFunc("GET /v1/node/upgrade", s.nodeUpgradeStatus)
+        s.mux.HandleFunc("POST /v1/node/upgrade", s.nodeUpgrade)
+    }
+}
 
 func loopbackOnly(r *http.Request) bool {
     host, _, err := net.SplitHostPort(r.RemoteAddr)
@@ -69,8 +78,9 @@ func (s *Server) nodeUpgrade(w http.ResponseWriter, r *http.Request) {
     if err := os.WriteFile(script, []byte(selfUpgradePowerShell), 0644); err != nil { writeErr(w, 500, err); return }
     cmd := exec.Command("powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script, "-TargetCommit", target)
     if err := cmd.Start(); err != nil { writeErr(w, 500, err); return }
+    pid := cmd.Process.Pid
     _ = cmd.Process.Release()
-    writeJSON(w, http.StatusAccepted, map[string]any{"ok":true,"phase":"STARTED","current_commit":current,"target_commit":target,"pid":cmd.Process.Pid,"state":"/v1/node/upgrade"})
+    writeJSON(w, http.StatusAccepted, map[string]any{"ok":true,"phase":"STARTED","current_commit":current,"target_commit":target,"pid":pid,"state":"/v1/node/upgrade"})
 }
 
 const selfUpgradePowerShell = `param([Parameter(Mandatory=$true)][string]$TargetCommit)
