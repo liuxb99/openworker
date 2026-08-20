@@ -1,0 +1,4 @@
+source_work_id: dw-20260820T080310-d2afff3075cd8205
+source_terminal: command-results/o87/pr-130-32346888039/story-relocalize-terminal.json
+expected_pngs: 1f-candidate,2f-candidate,3f-4f-candidate,r1f-candidate
+visual_acceptance: pending ChatGPT vision
