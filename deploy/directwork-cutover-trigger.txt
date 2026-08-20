@@ -1,6 +1,7 @@
-DirectWork production cutover
-Date: 2026-08-20T10:53+08:00
-Sequence: clear Actions queue -> dispatch deterministic migration V2 -> ODA -> O87 -> UL7
+DirectWork production cutover retry
+Date: 2026-08-20T11:05+08:00
+Sequence: best-effort queue cleanup -> deterministic migration V2 -> ODA -> O87 -> UL7
 Target: DirectWork 5c54101c34f3e1aaafcd33a354c7e7a83d7cc649
 Replace: OpenWorkerNode service -> DirectWorkNode service
+Ghost Actions: non-blocking
 Preserve: C:\ProgramData\OpenWorker historical evidence
