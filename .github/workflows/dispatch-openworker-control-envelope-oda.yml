@@ -43,6 +43,9 @@ jobs:
     name: ODA control envelope
     runs-on: [self-hosted, Windows, X64, ODA]
     timeout-minutes: 5
+    defaults:
+      run:
+        shell: powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ". '{0}'"
     steps:
       - name: Checkout transport code
         uses: actions/checkout@v4
@@ -55,7 +58,6 @@ jobs:
           cache: false
 
       - name: Install persistent OpenWorker control runtime
-        shell: powershell
         run: |
           $ErrorActionPreference='Stop'
           $runtime='C:\ProgramData\OpenWorker\runtime\openworker'
@@ -73,7 +75,6 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'new OpenWorker control CLI cannot reach resident 8787 supervisor'}
 
       - name: Build, dispatch and persist smoke receipt
-        shell: powershell
         env:
           OW_EVENT: ${{ github.event_name }}
           OW_COMMAND: ${{ inputs.command }}
