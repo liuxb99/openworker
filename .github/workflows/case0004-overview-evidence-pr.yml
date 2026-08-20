@@ -23,10 +23,15 @@ jobs:
           Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
-          # Prefer semantic localization / Story Index evidence before generic overview copies.
+          # Prefer DirectWork relocalization / semantic localization / Story Index evidence
+          # before generic overview copies. This collector is read-only transport only.
           $all=@(Get-ChildItem -LiteralPath $workspace -Recurse -File -ErrorAction SilentlyContinue | Where-Object {
             $_.Extension -match '^\.(png|json)$' -and $_.Length -le 25MB
           })
+          $relocalize=@($all | Where-Object {
+            $_.Name -match '(?i)relocalize|story-relocalize' -or
+            $_.FullName -match '(?i)relocalize|story-relocalize'
+          } | Sort-Object LastWriteTimeUtc -Descending)
           $priority=@($all | Where-Object {
             $_.Name -match '(?i)floor-label|story-index|story-viewport|render-manifest|candidate-overview' -or
             $_.FullName -match '(?i)story-index|story.*localization|floor.*label'
@@ -34,7 +39,7 @@ jobs:
           $overview=@($all | Where-Object {
             $_.Name -match '(?i)overview' -or $_.FullName -match '(?i)case0004.*overview'
           } | Sort-Object LastWriteTimeUtc -Descending)
-          $candidates=@($priority + $overview)
+          $candidates=@($relocalize + $priority + $overview)
 
           $manifest=@(); $n=0
           $seen=New-Object 'System.Collections.Generic.HashSet[string]'
