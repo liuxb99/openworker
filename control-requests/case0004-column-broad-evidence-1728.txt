@@ -1,0 +1,6 @@
+requested_by: ChatGPT
+case_id: 0004
+machine: DESKTOP-O87PJNR
+source_work_id: dw-20260820T092240-af864ce334439209
+purpose: read-only collect broad query bounds evidence for exploded linework rectangle inference
+business_execution: false
