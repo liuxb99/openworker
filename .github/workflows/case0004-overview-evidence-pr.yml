@@ -22,22 +22,31 @@ jobs:
           $stage=Join-Path $env:RUNNER_TEMP 'case0004-overview-evidence'
           Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
-          $candidates=@(Get-ChildItem -LiteralPath $workspace -Recurse -File -ErrorAction SilentlyContinue | Where-Object {
-            $_.Extension -match '^\.(png|json)$' -and (
-              $_.Name -match '(?i)candidate-overview|overview|floor-label|story-index|render-manifest' -or
-              $_.FullName -match '(?i)case0004.*overview|story.*localization'
-            )
+
+          # Prefer semantic localization / Story Index evidence before generic overview copies.
+          $all=@(Get-ChildItem -LiteralPath $workspace -Recurse -File -ErrorAction SilentlyContinue | Where-Object {
+            $_.Extension -match '^\.(png|json)$' -and $_.Length -le 25MB
+          })
+          $priority=@($all | Where-Object {
+            $_.Name -match '(?i)floor-label|story-index|story-viewport|render-manifest|candidate-overview' -or
+            $_.FullName -match '(?i)story-index|story.*localization|floor.*label'
           } | Sort-Object LastWriteTimeUtc -Descending)
-          $manifest=@()
-          $n=0
+          $overview=@($all | Where-Object {
+            $_.Name -match '(?i)overview' -or $_.FullName -match '(?i)case0004.*overview'
+          } | Sort-Object LastWriteTimeUtc -Descending)
+          $candidates=@($priority + $overview)
+
+          $manifest=@(); $n=0
+          $seen=New-Object 'System.Collections.Generic.HashSet[string]'
           foreach($f in $candidates){
-            if($n -ge 80){break}
-            if($f.Length -gt 25MB){continue}
+            if($n -ge 120){break}
+            $sha=(Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            if(-not $seen.Add($sha)){continue}
             $n++
             $safe=('{0:D3}-{1}' -f $n,($f.Name -replace '[^A-Za-z0-9._-]','_'))
             $dest=Join-Path $stage $safe
             Copy-Item -LiteralPath $f.FullName -Destination $dest -Force
-            $manifest += [ordered]@{artifact_name=$safe;source_path=$f.FullName;bytes=$f.Length;sha256=(Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash.ToLowerInvariant();last_write_utc=$f.LastWriteTimeUtc.ToString('o')}
+            $manifest += [ordered]@{artifact_name=$safe;source_path=$f.FullName;bytes=$f.Length;sha256=$sha;last_write_utc=$f.LastWriteTimeUtc.ToString('o')}
           }
           if($manifest.Count -eq 0){throw 'no Case0004 overview evidence found'}
           $manifest | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $stage 'manifest.json') -Encoding UTF8
