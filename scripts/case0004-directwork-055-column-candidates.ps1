@@ -10,7 +10,7 @@ $query=[ordered]@{
   session_id=('case0004-055-'+$RequestId)
   project='DWG_todo Case 0004'
   workspace_root=$workspace
-  question='Confirm current contract for cad.list_story_column_candidates and cad.query_bounds. Keep this read-only; do not promote handles or invent Column Authority. Zero candidates must be diagnosed from REAL entity and block-anchor evidence.'
+  question='Confirm current contract for cad.list_story_column_candidates and cad.query_bounds. Keep this read-only; do not promote handles or invent Column Authority. Zero candidates must be diagnosed from REAL entity and full-model block-anchor evidence.'
   task='Provide method guidance only for Case0004 step 0004-055 zero-candidate diagnosis.'
 }
 try{$goTool=Invoke-RestMethod -Method POST -Uri 'http://127.0.0.1:8848/agent/query' -ContentType 'application/json' -Body ($query|ConvertTo-Json -Depth 20) -TimeoutSec 60}catch{$goTool=[ordered]@{error=$_.Exception.Message}}
@@ -44,17 +44,23 @@ function Get-EntityDiagnostic([object[]]$Entities){
     if($min.Count -lt 2 -or $max.Count -lt 2){$missingBounds++;continue}
     $w=[Math]::Abs([double]$max[0]-[double]$min[0]);$d=[Math]::Abs([double]$max[1]-[double]$min[1])
     if($w -gt 0.000001 -and $d -gt 0.000001){$positive2D++}else{$degenerate2D++}
-    if($samples.Count -lt 60){$samples+=@([ordered]@{handle=[string]$entity.handle;type=$type;bounds_status=$status;width=$w;depth=$d;block_name=[string]$entity.block_name;layer=[string]$entity.layer_resolved;insert_point=$entity.insert_point})}
-    if($type -eq 'INSERT' -and $blockSamples.Count -lt 80){$blockSamples+=@([ordered]@{handle=[string]$entity.handle;block_name=[string]$entity.block_name;bounds=$entity.bounds;insert_point=$entity.insert_point;layer=[string]$entity.layer_resolved})}
+    if($samples.Count -lt 80){$samples+=@([ordered]@{handle=[string]$entity.handle;type=$type;bounds_status=$status;width=$w;depth=$d;block_name=[string]$entity.block_name;layer=[string]$entity.layer_resolved;insert_point=$entity.insert_point})}
+    if($type -eq 'INSERT' -and $blockSamples.Count -lt 200){$blockSamples+=@([ordered]@{handle=[string]$entity.handle;block_name=[string]$entity.block_name;bounds=$entity.bounds;insert_point=$entity.insert_point;layer=[string]$entity.layer_resolved})}
   }
   $types=@();foreach($k in @($typeCounts.Keys|Sort-Object)){$types+=@([ordered]@{type=$k;count=[int]$typeCounts[$k]})}
   $statuses=@();foreach($k in @($statusCounts.Keys|Sort-Object)){$statuses+=@([ordered]@{status=$k;count=[int]$statusCounts[$k]})}
   return [ordered]@{entity_count=@($Entities).Count;positive_2d_bounds=$positive2D;degenerate_2d_bounds=$degenerate2D;missing_bounds=$missingBounds;type_counts=$types;bounds_status_counts=$statuses;samples=$samples;insert_samples=$blockSamples}
 }
 
-# Broad REAL relocalization area, read-only. This is intentionally wider than any
-# single Story Region so INSERT anchors whose block geometry crosses a story crop
-# are visible to the diagnosis.
+# Full overview/model-space bounds from accepted step 040 evidence. This scan is
+# read-only and exists only to discover INSERT anchors that may sit outside a
+# Story Region while their transformed block geometry crosses into it.
+$fullBounds=[ordered]@{min_x=44443.25117;min_y=35301.30501;max_x=117008.65482;max_y=92030.00566}
+$full=Invoke-LocalCAD 'cad.query_bounds' ([ordered]@{bounds=$fullBounds}) ('directwork-case0004-055-full-query-'+$RequestId)
+$fullPath=Join-Path $evidence 'full-model-query-bounds.stdout.json'
+[IO.File]::WriteAllText($fullPath,$full.text+[Environment]::NewLine,[Text.UTF8Encoding]::new($false))
+$fullDiag=Get-EntityDiagnostic @($full.obj.result.entities)
+
 $broadBounds=[ordered]@{min_x=46400.0;min_y=51000.0;max_x=50800.0;max_y=63100.0}
 $broad=Invoke-LocalCAD 'cad.query_bounds' ([ordered]@{bounds=$broadBounds}) ('directwork-case0004-055-broad-query-'+$RequestId)
 $broadPath=Join-Path $evidence 'broad-query-bounds.stdout.json'
@@ -66,29 +72,26 @@ $inventories=@();$diagnostics=@()
 foreach($story in $stories){
   $get=Invoke-LocalCAD 'cad.get_story_region' ([ordered]@{story_id=$story}) ('directwork-case0004-055-region-'+$story.ToLowerInvariant()+'-'+$RequestId)
   if([string]$get.obj.result.story_region.review_status -ne 'confirmed'){throw "CASE0004_055_REGION_NOT_CONFIRMED story=$story"}
-
   $cand=Invoke-LocalCAD 'cad.list_story_column_candidates' ([ordered]@{story_id=$story;limit=500}) ('directwork-case0004-055-candidates-'+$story.ToLowerInvariant()+'-'+$RequestId)
   $path=Join-Path $evidence ($story.ToLowerInvariant()+'-column-candidates.stdout.json')
   [IO.File]::WriteAllText($path,$cand.text+[Environment]::NewLine,[Text.UTF8Encoding]::new($false))
   if([string]$cand.obj.result.authority -ne 'none'){throw "CASE0004_055_UNEXPECTED_AUTHORITY story=$story authority=$($cand.obj.result.authority)"}
   $count=[int]$cand.obj.result.candidate_count
   $inventories+=@([ordered]@{story_id=$story;candidate_count=$count;source_sha256=[string]$cand.obj.result.source_sha256;story_region=$cand.obj.result.story_region;receipt_path=$path;receipt_sha256=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()})
-
   if($count -eq 0){
     $bounds=$get.obj.result.story_region.bounds
     $qb=Invoke-LocalCAD 'cad.query_bounds' ([ordered]@{bounds=[ordered]@{min_x=[double]$bounds.min_x;min_y=[double]$bounds.min_y;max_x=[double]$bounds.max_x;max_y=[double]$bounds.max_y}}) ('directwork-case0004-055-query-'+$story.ToLowerInvariant()+'-'+$RequestId)
     $qpath=Join-Path $evidence ($story.ToLowerInvariant()+'-query-bounds.stdout.json')
     [IO.File]::WriteAllText($qpath,$qb.text+[Environment]::NewLine,[Text.UTF8Encoding]::new($false))
-    $diag=Get-EntityDiagnostic @($qb.obj.result.entities)
-    $diagnostics+=@([ordered]@{story_id=$story;query_receipt_path=$qpath;query_receipt_sha256=(Get-FileHash -LiteralPath $qpath -Algorithm SHA256).Hash.ToLowerInvariant();diagnostic=$diag})
+    $diagnostics+=@([ordered]@{story_id=$story;query_receipt_path=$qpath;query_receipt_sha256=(Get-FileHash -LiteralPath $qpath -Algorithm SHA256).Hash.ToLowerInvariant();diagnostic=(Get-EntityDiagnostic @($qb.obj.result.entities))})
   }
 }
 
 $state=Join-Path $workspace 'dwg\agent-cad-state.json'
 $summary=[ordered]@{
-  schema='case0004.directwork.055.column-candidates.v3';case_id='0004';step='0004-055';request_id=$RequestId;status='succeeded';machine=$env:COMPUTERNAME
-  authority_root=$authorityRoot;authority_commit=[string]$authority.commit
-  source_story_region_work_id='dw-20260820T083831-efc1b644d6d5966c'
+  schema='case0004.directwork.055.column-candidates.v4';case_id='0004';step='0004-055';request_id=$RequestId;status='succeeded';machine=$env:COMPUTERNAME
+  authority_root=$authorityRoot;authority_commit=[string]$authority.commit;source_story_region_work_id='dw-20260820T083831-efc1b644d6d5966c'
+  full_model_query=[ordered]@{bounds=$fullBounds;receipt_path=$fullPath;receipt_sha256=(Get-FileHash -LiteralPath $fullPath -Algorithm SHA256).Hash.ToLowerInvariant();diagnostic=$fullDiag}
   broad_query=[ordered]@{bounds=$broadBounds;receipt_path=$broadPath;receipt_sha256=(Get-FileHash -LiteralPath $broadPath -Algorithm SHA256).Hash.ToLowerInvariant();diagnostic=$broadDiag}
   inventory_count=$inventories.Count;inventories=$inventories;zero_candidate_diagnostics=$diagnostics;column_authority='none';visual_review_required=$true
   state_path=$state;state_sha256=(Get-FileHash -LiteralPath $state -Algorithm SHA256).Hash.ToLowerInvariant();completed_at=[DateTimeOffset]::UtcNow.ToString('o')
