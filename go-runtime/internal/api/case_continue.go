@@ -22,7 +22,7 @@ func ensureNativeCaseContinueRoute(s *Server){
     if _,loaded:=nativeCaseContinueRoutes.LoadOrStore(s,struct{}{});!loaded{
         s.mux.HandleFunc("POST /v1/cases/continue",s.caseContinue)
         s.mux.HandleFunc("GET /ui",func(w http.ResponseWriter,r *http.Request){http.Redirect(w,r,"/ui/",http.StatusTemporaryRedirect)})
-        s.mux.HandleFunc("GET /ui/",s.dashboardV3)
+        s.mux.HandleFunc("GET /ui/",s.dashboardV4)
     }
 }
 
