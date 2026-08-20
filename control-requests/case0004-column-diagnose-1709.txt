@@ -1,0 +1,8 @@
+requested_by: ChatGPT
+case_id: 0004
+machine: DESKTOP-O87PJNR
+previous_work_id: dw-20260820T084846-9d2ec5343662e329
+purpose: rerun read-only 055 with cad.query_bounds diagnostics for zero candidate stories
+business_execution: DirectWork
+column_authority: none
+no_promotion: true
