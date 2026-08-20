@@ -1,0 +1,9 @@
+requested_by: ChatGPT
+case_id: 0004
+machine: DESKTOP-O87PJNR
+previous_failed_work_id: dw-20260820T082713-b73a9a0cd0ac7394
+source_candidate_work_id: dw-20260820T080310-d2afff3075cd8205
+visual_review: passed for 1F,2F,3F-4F,R1F candidate PNGs
+fix: pinned exact pixel bounds derived from DWG_todo projection formula; no PowerShell arithmetic
+purpose: DirectWork corrected multi-story Story Index reconcile plus five story viewport renders
+business_execution: DirectWork
