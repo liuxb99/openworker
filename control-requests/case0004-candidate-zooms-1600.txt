@@ -1,0 +1,8 @@
+requested_by: ChatGPT
+case_id: 0004
+machine: DESKTOP-O87PJNR
+purpose: rerun DirectWork bounded candidate zooms after Windows PowerShell 5.1 ASCII-safe fix
+previous_failed_work_id: dw-20260820T075823-48cd60f7af989bb8
+source_visual_sha256: 969e41e17057d539ad1c85400425f9cf67cf57f52279892929ae0d7915b9f680
+business_execution: DirectWork
+created_at: 2026-08-20T16:00:00+08:00
