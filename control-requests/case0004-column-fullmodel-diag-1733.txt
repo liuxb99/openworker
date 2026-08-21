@@ -1,0 +1,9 @@
+requested_by: ChatGPT
+case_id: 0004
+machine: DESKTOP-O87PJNR
+previous_work_id: dw-20260820T092240-af864ce334439209
+executor_commit: 91f9879f898c3dc67e8c11e39ca38a32f7688ecd
+purpose: read-only full drawing entity inventory for Case0004 055 diagnosis
+business_execution: DirectWork
+column_authority: none
+no_promotion: true
