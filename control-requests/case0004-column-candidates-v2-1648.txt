@@ -1,0 +1,10 @@
+requested_by: ChatGPT
+case_id: 0004
+machine: DESKTOP-O87PJNR
+previous_failed_work_id: dw-20260820T084226-8ee083421244dc6c
+source_story_region_work_id: dw-20260820T083831-efc1b644d6d5966c
+authority_fix_commit: a8805ea2db56bd597e1157b2d4013ea327490797
+authority_root: C:\ProgramData\go-tool-runtime\work-agent\authorities\dwg-todo-a8805ea2db56
+purpose: retry read-only inventory of real OpenCAD column candidates for all confirmed story regions
+business_execution: DirectWork
+column_authority: none
