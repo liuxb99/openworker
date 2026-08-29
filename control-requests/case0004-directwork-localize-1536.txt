@@ -1,0 +1,4 @@
+requested_by=ChatGPT
+case_id=0004
+machine=DESKTOP-O87PJNR
+purpose=DirectWork durable zoom render of REAL stacked plan-like region after visual rejection of old 1F viewport; zoom request only, no story identity guessed
