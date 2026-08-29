@@ -1,0 +1,7 @@
+requested_by: ChatGPT
+case_id: 0004
+machine: DESKTOP-O87PJNR
+purpose: read-only collection of REAL relocalization PNG/metadata after DirectWork succeeded
+target_dispatch: pr-126-32344450704
+business_execution: false
+created_at: 2026-08-20T15:54:00+08:00
