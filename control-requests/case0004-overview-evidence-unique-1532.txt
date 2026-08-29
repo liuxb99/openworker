@@ -1,0 +1,4 @@
+requested_by=ChatGPT
+case_id=0004
+machine=DESKTOP-O87PJNR
+purpose=read-only REAL floor-label/story-index/overview evidence collection after durable 045 execution success; deduplicate generic overview copies; no business mutation
