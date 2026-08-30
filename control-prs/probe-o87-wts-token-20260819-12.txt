@@ -1,0 +1,4 @@
+requested_by=ChatGPT
+machine=DESKTOP-O87PJNR
+case_id=0004
+purpose=use WTSQueryUserToken on GoogleDriveFS session to prove bounded G drive access
