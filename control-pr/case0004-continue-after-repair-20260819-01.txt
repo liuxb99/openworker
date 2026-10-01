@@ -1,0 +1,4 @@
+requested_by=ChatGPT
+machine=DESKTOP-O87PJNR
+case_id=0004
+purpose=continue Case0004 after latest queue-clear stale-ref recovery is deployed and queue is empty
