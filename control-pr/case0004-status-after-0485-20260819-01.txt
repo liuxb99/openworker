@@ -1,0 +1,4 @@
+requested_by=ChatGPT
+machine=DESKTOP-O87PJNR
+case_id=0004
+purpose=read OpenWorker authority after 0004-0485 durable dispatch
