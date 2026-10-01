@@ -1,0 +1,6 @@
+command: supervisor_status
+requested_by: ChatGPT
+case_id: 0004
+machine: DESKTOP-O87PJNR
+purpose: Read-only inspect O87 go-tool local supervisor because revision 148 Story viewport child remains pending with attempts=0. Do not clear queue and do not create business work.
+Boundary: transient command transport only; GitHub Actions does not execute or wait for Case business work.
