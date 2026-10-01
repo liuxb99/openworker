@@ -1,0 +1,6 @@
+command: case0004_continue
+requested_by: ChatGPT
+case_id: 0004
+machine: DESKTOP-O87PJNR
+purpose: Reconcile failed 048, refresh revision 149, and advance to the new 0481 Story viewport retry without duplicating prior work.
+Boundary: transient command transport only; GitHub Actions does not execute Case business work.
