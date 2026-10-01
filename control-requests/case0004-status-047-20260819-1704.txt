@@ -1,0 +1,6 @@
+command=case0004_status
+requested_by=ChatGPT
+case_id=0004
+machine=DESKTOP-O87PJNR
+purpose=read-only inspect 0004-047 fanout child case0004-0004-047-1F-r000147-57cc86c5 and collect terminal PNG evidence
+business_execution=false
