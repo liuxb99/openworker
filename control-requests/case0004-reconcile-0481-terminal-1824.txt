@@ -1,0 +1,6 @@
+command: case0004_continue
+requested_by: ChatGPT
+case_id: 0004
+machine: DESKTOP-O87PJNR
+purpose: Idempotently read terminal state of existing 0004-0481 at the bounded 900-second timeout window; do not duplicate work. If completed, reconcile and advance to 0004-0485 Drive publish; if failed, preserve exact blocker.
+Boundary: transient command transport only; GitHub Actions does not execute Case business work.
