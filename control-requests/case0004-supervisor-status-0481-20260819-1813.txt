@@ -1,0 +1,6 @@
+command: supervisor_status
+requested_by: ChatGPT
+case_id: 0004
+machine: DESKTOP-O87PJNR
+purpose: Read-only detailed execution-layer health for active Case0004 0004-0481 work; inspect slot/PID/heartbeat/lease/inflight without clearing or mutating queue.
+Boundary: transient read-only command transport only; GitHub Actions does not execute Case business work.
