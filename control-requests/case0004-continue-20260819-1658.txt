@@ -1,0 +1,6 @@
+command=case0004_continue
+requested_by=ChatGPT
+case_id=0004
+machine=DESKTOP-O87PJNR
+purpose=continue canonical step 0004-045 after DWG capability preflight fix deployment
+business_execution=false
