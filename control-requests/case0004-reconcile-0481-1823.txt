@@ -1,0 +1,6 @@
+command: case0004_continue
+requested_by: ChatGPT
+case_id: 0004
+machine: DESKTOP-O87PJNR
+purpose: Idempotently re-read the same 0004-0481 work at the bounded render timeout window; do not duplicate work.
+Boundary: transient command transport only; GitHub Actions does not execute Case business work.
