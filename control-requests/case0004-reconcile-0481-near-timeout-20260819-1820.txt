@@ -1,0 +1,6 @@
+command: case0004_continue
+requested_by: ChatGPT
+case_id: 0004
+machine: DESKTOP-O87PJNR
+purpose: Idempotently re-read existing 0004-0481 as it approaches the bounded 900-second DWG method timeout; do not duplicate work.
+Boundary: transient command transport only; GitHub Actions does not execute Case business work.
