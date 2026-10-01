@@ -1,0 +1,71 @@
+{
+  "camera": {
+    "far": 19800.0,
+    "fov": 50.0,
+    "near": 0.197999998927116,
+    "position": [
+      3663.0,
+      1833.92004394531,
+      3663.0
+    ],
+    "target": [
+      990.0,
+      51.9199981689453,
+      990.0
+    ]
+  },
+  "failures": [],
+  "geometry_diagnostics": {
+    "colliders_enabled": false,
+    "terrain_geometry_count": 1
+  },
+  "ok": true,
+  "presentation": {
+    "requires_coarse_structure": true,
+    "terrain_material": [
+      0.419999986886978,
+      0.5,
+      0.239999994635582
+    ]
+  },
+  "region_id": "scenex-prj_ba726e251d380d72507e2172d4946d78",
+  "region_pack": "D:\\AI-Work\\jobs\\0003-YUJING-BRIDGE\\scenex\\terrain.region.json",
+  "region_pack_diagnostics": {
+    "loaded_regions": [
+      "scenex-prj_ba726e251d380d72507e2172d4946d78"
+    ],
+    "region_pack_count": 1
+  },
+  "render_target": "subviewport-d3d12",
+  "schema_version": "scenex-real-browse/v1",
+  "screenshot": "D:\\AI-Work\\jobs\\0003-YUJING-BRIDGE\\scenex\\terrain-browse.png",
+  "terrain_diagnostics": {
+    "active_chunk_count": 1,
+    "chunk_count": 1,
+    "region_count": 1,
+    "stream_radius": 3960.0,
+    "unload_radius": 5940.0,
+    "world_origin": "(0.0, 0.0, 0.0)"
+  },
+  "viewport": {
+    "height": 720,
+    "width": 1280
+  },
+  "visibility": {
+    "background_delta_ratio": 1.0,
+    "coarse_block_count": 920,
+    "coarse_block_size": 32,
+    "coarse_luma_mean": 0.242389165874296,
+    "coarse_luma_range": 0.616544025410712,
+    "coarse_luma_stddev": 0.156403566696637,
+    "luma_max": 0.805529421204328,
+    "luma_min": 0.165163926625252,
+    "luma_range": 0.640365494579077,
+    "minimum_background_delta_ratio": 0.01,
+    "minimum_coarse_luma_range": 0.1,
+    "minimum_coarse_luma_stddev": 0.035,
+    "minimum_luma_range": 0.03,
+    "sample_count": 14400,
+    "sample_step": 8
+  }
+}

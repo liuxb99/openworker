@@ -1,0 +1,44 @@
+{
+    "schema_version":  "scenex-case-launcher-evidence/v3",
+    "case_id":  "0003",
+    "workspace_root":  "D:\\AI-Work\\jobs\\0003-YUJING-BRIDGE",
+    "assigned_host":  "DESKTOP-UL7V2VV",
+    "computer_name":  "DESKTOP-UL7V2VV",
+    "runner_name":  "DESKTOP-UL7V2VV-R005",
+    "producer_commit":  "27a8481e082259b0e6bd75e6eade65ac68793653",
+    "launcher":  {
+                     "path":  "D:\\AI-Work\\jobs\\0003-YUJING-BRIDGE\\Open-Case0003-SceneX.bat",
+                     "sha256":  "bac969098b700873d9e8ef6cdf7124aaeef45fa8c3e3d91264b20ef32e7a76a7",
+                     "check_only":  "PASS",
+                     "version":  "v3-explicit-scene",
+                     "launch_mode":  "godot-explicit-scene-switch",
+                     "log_path":  "D:\\AI-Work\\jobs\\0003-YUJING-BRIDGE\\scenex\\scenex-launch.log"
+                 },
+    "godot_exe":  "C:\\github-runners\\SceneX\\_work\\_tool\\SceneX\\Godot\\4.6.3\\Godot_v4.6.3-stable_win64_console.exe",
+    "scenex_project":  {
+                           "path":  "C:\\github-runners\\SceneX\\_work\\SceneX\\SceneX\\godot",
+                           "project_file":  "C:\\github-runners\\SceneX\\_work\\SceneX\\SceneX\\godot\\project.godot",
+                           "project_sha256":  "c76d0a8e632adbb880151cadb4dcfe7b7dd51256ad0a4d399b4dffaafd1d26b5"
+                       },
+    "main_scene":  {
+                       "path":  "C:\\github-runners\\SceneX\\_work\\SceneX\\SceneX\\godot\\scenes\\region_pack_race_demo.tscn",
+                       "sha256":  "34deb8f51a032d7053f42a2bfd92f8eaad17990fb5bf4c9afb7d42c5b42b3701",
+                       "resource":  "res://scenes/region_pack_race_demo.tscn"
+                   },
+    "region_pack":  {
+                        "path":  "D:\\AI-Work\\jobs\\0003-YUJING-BRIDGE\\scenex\\terrain.region.json",
+                        "sha256":  "15e5b6f6ae01ef94506a26322118991d3e7b17de0d8b668a34f9d2863ea69a7b"
+                    },
+    "launch_args":  [
+                        "--path",
+                        "C:\\github-runners\\SceneX\\_work\\SceneX\\SceneX\\godot",
+                        "--scene",
+                        "res://scenes/region_pack_race_demo.tscn",
+                        "--resolution",
+                        "1280x720",
+                        "--",
+                        "--region-pack=",
+                        "D:\\AI-Work\\jobs\\0003-YUJING-BRIDGE\\scenex\\terrain.region.json"
+                    ],
+    "human_acceptance":  "Double-click Open-Case0003-SceneX.bat. The console must print CASE0003_SCENEX_LAUNCHER_VERSION=v3-explicit-scene and SceneX must open the explicit region_pack_race_demo.tscn."
+}

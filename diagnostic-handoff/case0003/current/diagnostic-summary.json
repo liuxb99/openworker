@@ -1,0 +1,85 @@
+{
+    "schema_version":  "openworker-case0003-current-workspace-diagnostic/v3",
+    "case_id":  "0003",
+    "assigned_host":  "DESKTOP-UL7V2VV",
+    "computer_name":  "DESKTOP-UL7V2VV",
+    "runner_name":  "DESKTOP-UL7V2VV-R003",
+    "github_run_id":  "32090792091",
+    "workspace":  "D:\\AI-Work\\jobs\\0003-YUJING-BRIDGE",
+    "files":  {
+                  "final_acceptance":  {
+                                           "relative_path":  "acceptance\\openworker-final\\work-ledger-final-acceptance.json",
+                                           "exists":  true,
+                                           "size":  289455,
+                                           "sha256":  "c6190c24de185941a772fcfd35d2c9716a992e8b8e7ba83787814c0c28e9fb78"
+                                       },
+                  "scenex_png":  {
+                                     "relative_path":  "scenex\\terrain-browse.png",
+                                     "exists":  true,
+                                     "size":  203633,
+                                     "sha256":  "f193a008d143c6b210f2051d3f1dc16304eb282ce5e62cdad7ed670f19845a3d"
+                                 },
+                  "scenex_evidence":  {
+                                          "relative_path":  "scenex\\terrain-browse-evidence.json",
+                                          "exists":  true,
+                                          "size":  1807,
+                                          "sha256":  "e2148076998f20aee34d1728e7d45a4e156a0cbd6084cfe881f1884d842a03c2"
+                                      },
+                  "scenex_workspace":  {
+                                           "relative_path":  "scenex\\scenex-workspace.json",
+                                           "exists":  true,
+                                           "size":  1258,
+                                           "sha256":  "9488337e9e4a61f9f019c9011c77e95c889e106a9796c14e6c5b2bbe683da823"
+                                       },
+                  "launcher":  {
+                                   "relative_path":  "Open-Case0003-SceneX.bat",
+                                   "exists":  true,
+                                   "size":  1980,
+                                   "sha256":  "bac969098b700873d9e8ef6cdf7124aaeef45fa8c3e3d91264b20ef32e7a76a7"
+                               },
+                  "launcher_evidence":  {
+                                            "relative_path":  "scenex\\scenex-launcher-evidence.json",
+                                            "exists":  true,
+                                            "size":  2701,
+                                            "sha256":  "abeed1dfa1fbef4b24124df42f7d0e5be5966d899717db9f9ff99f5ce8d3eb1d"
+                                        },
+                  "worklist":  {
+                                   "relative_path":  ".openworker\\case-worklist.json",
+                                   "exists":  true,
+                                   "size":  6575,
+                                   "sha256":  "1d91e27c7f8d91f59fe60f4c67c6d59637519679b673df9ea6151b77f8ebdf83"
+                               },
+                  "streetview_semantic":  {
+                                              "relative_path":  "streetview\\streetview-semantic-acceptance.json",
+                                              "exists":  false
+                                          },
+                  "nlsc_imagery":  {
+                                       "relative_path":  "imagery\\nlsc-site-imagery.json",
+                                       "exists":  false
+                                   },
+                  "textured_assembly":  {
+                                            "relative_path":  "imagery\\scenex-textured-assembly.json",
+                                            "exists":  false
+                                        },
+                  "imagery_repair":  {
+                                         "relative_path":  "imagery\\case0003-imagery-repair.json",
+                                         "exists":  false
+                                     }
+              },
+    "scenex_imagery_required":  null,
+    "scenex_imagery_texture_sha256":  "",
+    "latest_imagery_run":  {
+                               "path":  "D:\\AI-Work\\jobs\\0003-YUJING-BRIDGE\\runs\\imagery-32090616518",
+                               "name":  "imagery-32090616518",
+                               "last_write_utc":  "2026-08-18T02:07:07.3476492Z",
+                               "files":  [
+                                             {
+                                                 "name":  "engineering-os.exe",
+                                                 "size":  23229952,
+                                                 "sha256":  "b71e22c6e1f0a51eb4ca8ad3c560f32996a98614d17dac16c6b29a4737f48b50"
+                                             }
+                                         ]
+                           },
+    "revision_id":  "rev_2bab34a3e12b4c1689ee2b1de8d794de",
+    "acceptance_status":  "WAITING_DRIVE_HANDOFF"
+}

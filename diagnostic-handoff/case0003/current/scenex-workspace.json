@@ -1,0 +1,25 @@
+{
+    "schema_version":  "scenex-workspace-browse/v1",
+    "ok":  true,
+    "run_id":  "32084552717",
+    "producer_commit":  "a6ef2ea17c998b9c84bca864b88b0f055077e6d2",
+    "required_winding_test_commit":  "afe74d7ded5f88ca6d971f3eef2d3ab099147183",
+    "runner_name":  "DESKTOP-UL7V2VV-R005",
+    "computer_name":  "DESKTOP-UL7V2VV",
+    "assigned_host":  "DESKTOP-UL7V2VV",
+    "workspace_root":  "D:\\AI-Work\\jobs\\0003-YUJING-BRIDGE",
+    "region_id":  "scenex-prj_ba726e251d380d72507e2172d4946d78",
+    "region_pack":  {
+                        "path":  "D:\\AI-Work\\jobs\\0003-YUJING-BRIDGE\\scenex\\terrain.region.json",
+                        "sha256":  "15e5b6f6ae01ef94506a26322118991d3e7b17de0d8b668a34f9d2863ea69a7b"
+                    },
+    "screenshot":  {
+                       "path":  "D:\\AI-Work\\jobs\\0003-YUJING-BRIDGE\\scenex\\terrain-browse.png",
+                       "sha256":  "f193a008d143c6b210f2051d3f1dc16304eb282ce5e62cdad7ed670f19845a3d",
+                       "width":  1280,
+                       "height":  720
+                   },
+    "evidence":  "D:\\AI-Work\\jobs\\0003-YUJING-BRIDGE\\scenex\\terrain-browse-evidence.json",
+    "active_chunks":  1,
+    "terrain_geometry_count":  1
+}
