@@ -1,0 +1,4 @@
+requested_by=ChatGPT
+machine=DESKTOP-O87PJNR
+case_id=0004
+purpose=resolve GoogleDriveFS logon SID through WMI associations and prove G drive access
