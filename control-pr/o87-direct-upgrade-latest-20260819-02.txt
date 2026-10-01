@@ -1,0 +1,3 @@
+purpose=direct O87 resident OpenWorker upgrade to latest main
+required_fix=3fb94496be84e3954bd99bcefb4a595ce4766fb5
+business_execution=false
